@@ -8,22 +8,19 @@ import {
   toggleTaskComplete,
   getSubtasks,
   createSubtask,
-  updateSubtask,
-  deleteSubtask,
-  toggleSubtaskComplete,
+  getTaskDependencies,
+  createTaskDependency,
 } from '../../../lib/supabase/tasks'
 import type {
   Task,
-  Subtask,
   CreateTaskInput,
   UpdateTaskInput,
-  CreateSubtaskInput,
   TaskFilters,
 } from '../types'
 
 /**
- * Custom hook for managing tasks and subtasks
- * Provides state management, loading states, and CRUD operations
+ * Custom hook for managing tasks and subtasks.
+ * Provides state management, loading states, and CRUD operations.
  */
 export function useTasks(initialFilters?: TaskFilters) {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -31,7 +28,7 @@ export function useTasks(initialFilters?: TaskFilters) {
   const [error, setError] = useState<string | null>(null)
   const [filters, setFilters] = useState<TaskFilters>(initialFilters ?? {})
 
-  // Fetch tasks with current filters
+  /* Fetch tasks with current filters */
   const fetchTasks = useCallback(async () => {
     try {
       setLoading(true)
@@ -46,12 +43,12 @@ export function useTasks(initialFilters?: TaskFilters) {
     }
   }, [filters])
 
-  // Initial fetch and refetch when filters change
+  /* Initial fetch and refetch when filters change */
   useEffect(() => {
     fetchTasks()
   }, [fetchTasks])
 
-  // Create a new task
+  /* Create a new task */
   const handleCreateTask = useCallback(
     async (input: CreateTaskInput) => {
       try {
@@ -60,7 +57,8 @@ export function useTasks(initialFilters?: TaskFilters) {
         setTasks((prev) => [newTask, ...prev])
         return newTask
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to create task'
+        const errorMessage =
+          err instanceof Error ? err.message : 'Failed to create task'
         setError(errorMessage)
         throw err
       }
@@ -68,7 +66,7 @@ export function useTasks(initialFilters?: TaskFilters) {
     [],
   )
 
-  // Update an existing task
+  /* Update an existing task */
   const handleUpdateTask = useCallback(async (id: string, input: UpdateTaskInput) => {
     try {
       setError(null)
@@ -76,26 +74,28 @@ export function useTasks(initialFilters?: TaskFilters) {
       setTasks((prev) => prev.map((task) => (task.id === id ? updatedTask : task)))
       return updatedTask
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to update task'
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to update task'
       setError(errorMessage)
       throw err
     }
   }, [])
 
-  // Delete a task
+  /* Delete a task */
   const handleDeleteTask = useCallback(async (id: string) => {
     try {
       setError(null)
       await deleteTask(id)
       setTasks((prev) => prev.filter((task) => task.id !== id))
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to delete task'
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to delete task'
       setError(errorMessage)
       throw err
     }
   }, [])
 
-  // Toggle task completion
+  /* Toggle task completion */
   const handleToggleComplete = useCallback(async (id: string, completed: boolean) => {
     try {
       setError(null)
@@ -103,43 +103,34 @@ export function useTasks(initialFilters?: TaskFilters) {
       setTasks((prev) => prev.map((task) => (task.id === id ? updatedTask : task)))
       return updatedTask
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to toggle task'
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to toggle task'
       setError(errorMessage)
       throw err
     }
   }, [])
 
-  // Fetch subtasks for a task
-  const fetchSubtasks = useCallback(async (taskId: string): Promise<Subtask[]> => {
+  /* Fetch subtasks for a task (tasks with parent_id = taskId) */
+  const fetchSubtasks = useCallback(async (taskId: string): Promise<Task[]> => {
     try {
       return await getSubtasks(taskId)
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch subtasks'
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to fetch subtasks'
       setError(errorMessage)
       throw err
     }
   }, [])
 
-  // Create a subtask
-  const handleCreateSubtask = useCallback(async (input: CreateSubtaskInput) => {
-    try {
-      setError(null)
-      return await createSubtask(input)
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create subtask'
-      setError(errorMessage)
-      throw err
-    }
-  }, [])
-
-  // Update a subtask
-  const handleUpdateSubtask = useCallback(
-    async (id: string, updates: Partial<Pick<Subtask, 'title' | 'completed'>>) => {
+  /* Create a subtask (task with parent_id) */
+  const handleCreateSubtask = useCallback(
+    async (parentId: string, input: Omit<CreateTaskInput, 'parent_id'>) => {
       try {
         setError(null)
-        return await updateSubtask(id, updates)
+        return await createSubtask(parentId, input)
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to update subtask'
+        const errorMessage =
+          err instanceof Error ? err.message : 'Failed to create subtask'
         setError(errorMessage)
         throw err
       }
@@ -147,29 +138,15 @@ export function useTasks(initialFilters?: TaskFilters) {
     [],
   )
 
-  // Delete a subtask
-  const handleDeleteSubtask = useCallback(async (id: string) => {
-    try {
-      setError(null)
-      await deleteSubtask(id)
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to delete subtask'
-      setError(errorMessage)
-      throw err
-    }
+  /* Fetch tasks for dependency picker (top-level only) */
+  const getTasksForPicker = useCallback(async (): Promise<Task[]> => {
+    return getTasks({ parent_id: null })
   }, [])
 
-  // Toggle subtask completion
-  const handleToggleSubtaskComplete = useCallback(
-    async (id: string, completed: boolean) => {
-      try {
-        setError(null)
-        return await toggleSubtaskComplete(id, completed)
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to toggle subtask'
-        setError(errorMessage)
-        throw err
-      }
+  /* Create a task dependency */
+  const handleAddDependency = useCallback(
+    async (input: { blocker_id: string; blocked_id: string }) => {
+      await createTaskDependency(input)
     },
     [],
   )
@@ -187,8 +164,8 @@ export function useTasks(initialFilters?: TaskFilters) {
     toggleComplete: handleToggleComplete,
     fetchSubtasks,
     createSubtask: handleCreateSubtask,
-    updateSubtask: handleUpdateSubtask,
-    deleteSubtask: handleDeleteSubtask,
-    toggleSubtaskComplete: handleToggleSubtaskComplete,
+    getTasks: getTasksForPicker,
+    getTaskDependencies,
+    onAddDependency: handleAddDependency,
   }
 }

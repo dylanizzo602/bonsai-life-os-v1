@@ -1,8 +1,7 @@
 # Supabase local development configuration
 # Run `supabase start` to start local Supabase instance
-
-[project]
-name = "bonsai-life-os-v1"
+# project_id is used when linking to remote: supabase link --project-ref <ref>
+project_id = "xmfueuzciysragntnyoz"
 
 [api]
 enabled = true

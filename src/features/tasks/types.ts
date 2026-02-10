@@ -1,14 +1,64 @@
-/* Task types: TypeScript definitions for task and subtask entities */
+/* Task types: TypeScript definitions for task entities, checklists, and dependencies */
 
-export type TaskPriority = 'low' | 'medium' | 'high'
+/**
+ * Task priority. Display: none = black stroke/white fill, low = grey, medium = "normal" = blue,
+ * high = yellow, urgent = red. DB may only persist low/medium/high; none/urgent supported in UI.
+ */
+export type TaskPriority = 'none' | 'low' | 'medium' | 'high' | 'urgent'
+
+/**
+ * Task status. UI mapping: active → OPEN (or IN_PROGRESS if extended), completed → COMPLETE.
+ */
 export type TaskStatus = 'active' | 'completed'
 
+/** Attachment stored as JSONB in tasks.attachments */
+export interface TaskAttachment {
+  url: string
+  name?: string
+  type?: string
+}
+
+/** Checklist item within a task checklist */
+export interface TaskChecklistItem {
+  id: string
+  checklist_id: string
+  title: string
+  completed: boolean
+  sort_order: number
+  created_at: string
+}
+
+/** Checklist containing items; belongs to a task */
+export interface TaskChecklist {
+  id: string
+  task_id: string
+  title: string
+  sort_order: number
+  created_at: string
+  items?: TaskChecklistItem[]
+}
+
+/** Task dependency: blocker must be completed before blocked can start */
+export interface TaskDependency {
+  id: string
+  blocker_id: string
+  blocked_id: string
+  created_at: string
+}
+
+/** Main task entity - subtasks are tasks with parent_id set */
 export interface Task {
   id: string
+  user_id: string | null
+  parent_id: string | null
   title: string
   description: string | null
+  start_date: string | null
   due_date: string | null
   priority: TaskPriority
+  tag: string | null
+  time_estimate: number | null
+  attachments: TaskAttachment[]
   category: string | null
   status: TaskStatus
   recurrence_pattern: string | null
@@ -17,42 +67,61 @@ export interface Task {
   updated_at: string
 }
 
-export interface Subtask {
-  id: string
-  task_id: string
-  title: string
-  completed: boolean
-  created_at: string
-}
-
+/** Input for creating a new task (all optional except title) */
 export interface CreateTaskInput {
   title: string
+  user_id?: string | null
+  parent_id?: string | null
   description?: string | null
+  start_date?: string | null
   due_date?: string | null
   priority?: TaskPriority
-  category?: string | null
-  recurrence_pattern?: string | null
+  tag?: string | null
+  time_estimate?: number | null
+  attachments?: TaskAttachment[]
 }
 
+/** Input for updating an existing task (all optional) */
 export interface UpdateTaskInput {
   title?: string
   description?: string | null
+  start_date?: string | null
   due_date?: string | null
   priority?: TaskPriority
-  category?: string | null
+  tag?: string | null
+  time_estimate?: number | null
+  attachments?: TaskAttachment[]
   status?: TaskStatus
+  category?: string | null
   recurrence_pattern?: string | null
 }
 
-export interface CreateSubtaskInput {
+/** Input for creating a checklist on a task */
+export interface CreateTaskChecklistInput {
   task_id: string
   title: string
+  sort_order?: number
+}
+
+/** Input for creating a checklist item */
+export interface CreateChecklistItemInput {
+  checklist_id: string
+  title: string
+  sort_order?: number
+}
+
+/** Input for creating a task dependency (blocker blocks blocked) */
+export interface CreateTaskDependencyInput {
+  blocker_id: string
+  blocked_id: string
 }
 
 export interface TaskFilters {
   status?: TaskStatus | 'all'
   priority?: TaskPriority | 'all'
   category?: string | 'all'
+  tag?: string | 'all'
   search?: string
   dueDateFilter?: 'overdue' | 'today' | 'upcoming' | 'no-date' | 'all'
+  parent_id?: string | null
 }

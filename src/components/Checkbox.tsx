@@ -1,7 +1,7 @@
 /* Checkbox component: Reusable checkbox with label and responsive styling */
 import type { InputHTMLAttributes } from 'react'
 
-interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
+interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> {
   /** Checkbox label text */
   label?: string
   /**

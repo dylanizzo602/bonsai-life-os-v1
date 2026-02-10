@@ -1,7 +1,7 @@
 /* Select component: Reusable dropdown select with responsive styling */
 import type { SelectHTMLAttributes } from 'react'
 
-interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
+interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
   /** Select label (optional) */
   label?: string
   /** Error message to display */

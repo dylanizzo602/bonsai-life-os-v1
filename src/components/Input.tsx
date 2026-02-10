@@ -1,7 +1,7 @@
 /* Input component: Reusable form input with responsive styling */
 import type { InputHTMLAttributes } from 'react'
 
-interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
   /** Input label (optional) */
   label?: string
   /** Error message to display */

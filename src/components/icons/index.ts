@@ -19,5 +19,11 @@ export {
   FlagIcon,
   TagIcon,
   HourglassIcon,
+  ParagraphIcon,
+  ChecklistIcon,
+  BlockedIcon,
+  WarningIcon,
+  UsersIcon,
+  RepeatIcon,
 } from './NavIcons'
 export { BonsaiLogo } from './BonsaiLogo'

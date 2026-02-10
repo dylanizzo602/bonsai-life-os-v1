@@ -1,235 +1,96 @@
-/* TaskList component: Main task management interface with filtering and search */
-import { useState } from 'react'
-import { useTasks } from './hooks/useTasks'
-import { TaskItem } from './TaskItem'
-import { TaskForm } from './TaskForm'
-import { Button } from '../../components/Button'
-import { Input } from '../../components/Input'
-import { Select } from '../../components/Select'
-import { Modal } from '../../components/Modal'
-import type { Task, TaskPriority, TaskStatus } from './types'
+/* TaskList component: Main task management interface with task list and CRUD */
+import { FullTaskItem } from './FullTaskItem'
+import type { Task, TaskFilters } from './types'
+
+export interface TaskListProps {
+  /** Tasks from useTasks */
+  tasks: Task[]
+  /** Loading state */
+  loading: boolean
+  /** Error message */
+  error: string | null
+  /** Current filters */
+  filters: TaskFilters
+  /** Update filters */
+  setFilters: (f: TaskFilters) => void
+  /** Update task */
+  updateTask: (id: string, input: import('./types').UpdateTaskInput) => Promise<Task>
+  /** Delete task */
+  deleteTask: (id: string) => Promise<void>
+  /** Toggle task completion (returns updated task for subtask list state) */
+  toggleComplete: (id: string, completed: boolean) => Promise<Task>
+  /** Fetch subtasks for a task */
+  fetchSubtasks: (taskId: string) => Promise<Task[]>
+  /** Create subtask */
+  createSubtask: (parentId: string, input: { title: string }) => Promise<Task>
+  /** Callback when user clicks to add a new task */
+  onOpenAddModal?: () => void
+  /** Callback when user clicks to edit a task */
+  onOpenEditModal?: (task: Task) => void
+}
 
 /**
- * Main task list component with filtering, search, and CRUD operations
- * Displays tasks in a responsive grid with filter controls
+ * Task list with filtering and task cards.
+ * Receives all data and handlers from parent (TasksPage via useTasks).
  */
-export function TaskList() {
-  const {
-    tasks,
-    loading,
-    error,
-    filters,
-    setFilters,
-    createTask,
-    updateTask,
-    deleteTask,
-    toggleComplete,
-    fetchSubtasks,
-    createSubtask,
-    updateSubtask,
-    deleteSubtask,
-    toggleSubtaskComplete,
-  } = useTasks()
-
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [editingTask, setEditingTask] = useState<Task | undefined>(undefined)
-  const [searchQuery, setSearchQuery] = useState('')
-
-  // Handle search input with debounce effect
-  const handleSearchChange = (value: string) => {
-    setSearchQuery(value)
-    setFilters({ ...filters, search: value || undefined })
-  }
-
-  // Open modal for creating new task
-  const handleCreateNew = () => {
-    setEditingTask(undefined)
-    setIsModalOpen(true)
-  }
-
-  // Open modal for editing existing task
-  const handleEdit = (task: Task) => {
-    setEditingTask(task)
-    setIsModalOpen(true)
-  }
-
-  // Close modal
-  const handleCloseModal = () => {
-    setIsModalOpen(false)
-    setEditingTask(undefined)
-  }
-
-  // Handle form submission (create or update)
-  const handleSubmit = async (data: Parameters<typeof createTask>[0]) => {
-    try {
-      if (editingTask) {
-        await updateTask(editingTask.id, data)
-      } else {
-        await createTask(data)
-      }
-      handleCloseModal()
-    } catch (error) {
-      console.error('Error saving task:', error)
-    }
-  }
-
-  // Wrapper functions to match component prop signatures
-  const handleCreateSubtask = async (taskId: string, title: string) => {
-    return createSubtask({ task_id: taskId, title })
-  }
-
-  // Filter options
-  const statusOptions = [
-    { value: 'all', label: 'All Status' },
-    { value: 'active', label: 'Active' },
-    { value: 'completed', label: 'Completed' },
-  ]
-
-  const priorityOptions = [
-    { value: 'all', label: 'All Priorities' },
-    { value: 'high', label: 'High' },
-    { value: 'medium', label: 'Medium' },
-    { value: 'low', label: 'Low' },
-  ]
-
-  const dueDateOptions = [
-    { value: 'all', label: 'All Dates' },
-    { value: 'overdue', label: 'Overdue' },
-    { value: 'today', label: 'Today' },
-    { value: 'upcoming', label: 'Upcoming' },
-    { value: 'no-date', label: 'No Date' },
-  ]
-
-  // Get unique categories from tasks
-  const categories = Array.from(new Set(tasks.map((t) => t.category).filter(Boolean)))
-  const categoryOptions = [
-    { value: 'all', label: 'All Categories' },
-    ...categories.map((cat) => ({ value: cat!, label: cat! })),
-  ]
-
+export function TaskList({
+  tasks,
+  loading,
+  error,
+  filters,
+  setFilters,
+  onOpenAddModal,
+  onOpenEditModal,
+  /* Rest kept for interface; used when SubtaskList/FullTaskItem need them */
+  updateTask: _updateTask,
+  deleteTask: _deleteTask,
+  toggleComplete: _toggleComplete,
+  fetchSubtasks: _fetchSubtasks,
+  createSubtask: _createSubtask,
+}: TaskListProps) {
   return (
     <div className="space-y-6">
-      {/* Header with create button */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900">Tasks</h1>
-        <Button onClick={handleCreateNew} variant="primary">
-          + New Task
-        </Button>
-      </div>
-
-      {/* Filters and search */}
-      <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Input
-            placeholder="Search tasks..."
-            value={searchQuery}
-            onChange={(e) => handleSearchChange(e.target.value)}
-          />
-          <Select
-            value={filters.status || 'all'}
-            onChange={(e) =>
-              setFilters({
-                ...filters,
-                status: e.target.value === 'all' ? undefined : (e.target.value as TaskStatus),
-              })
-            }
-            options={statusOptions}
-          />
-          <Select
-            value={filters.priority || 'all'}
-            onChange={(e) =>
-              setFilters({
-                ...filters,
-                priority:
-                  e.target.value === 'all' ? undefined : (e.target.value as TaskPriority),
-              })
-            }
-            options={priorityOptions}
-          />
-          <Select
-            value={filters.dueDateFilter || 'all'}
-            onChange={(e) =>
-              setFilters({
-                ...filters,
-                dueDateFilter:
-                  e.target.value === 'all'
-                    ? undefined
-                    : (e.target.value as 'overdue' | 'today' | 'upcoming' | 'no-date'),
-              })
-            }
-            options={dueDateOptions}
-          />
-        </div>
-        {categories.length > 0 && (
-          <Select
-            label="Category"
-            value={filters.category || 'all'}
-            onChange={(e) =>
-              setFilters({
-                ...filters,
-                category: e.target.value === 'all' ? undefined : e.target.value,
-              })
-            }
-            options={categoryOptions}
-          />
-        )}
-      </div>
-
       {/* Error message */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
           {error}
         </div>
       )}
 
       {/* Loading state */}
       {loading && (
-        <div className="text-center py-8 text-gray-500">Loading tasks...</div>
+        <div className="text-center py-8 text-bonsai-slate-500">Loading tasks...</div>
       )}
 
-      {/* Tasks list */}
+      {/* Empty state */}
       {!loading && tasks.length === 0 && (
         <div className="text-center py-12">
-          <p className="text-gray-500 text-lg">No tasks found</p>
-          <p className="text-gray-400 text-sm mt-2">
-            {Object.keys(filters).length > 0
-              ? 'Try adjusting your filters'
-              : 'Create your first task to get started'}
+          <p className="text-bonsai-slate-600 text-lg">No tasks found</p>
+          <p className="text-bonsai-slate-500 text-sm mt-2">
+            Create your first task to get started
           </p>
         </div>
       )}
 
+      {/* Task list: FullTaskItem only on desktop (lg); tablet/mobile task view not built yet */}
       {!loading && tasks.length > 0 && (
-        <div className="space-y-4">
-          {tasks.map((task) => (
-            <TaskItem
-              key={task.id}
-              task={task}
-              onToggleComplete={toggleComplete}
-              onDelete={deleteTask}
-              onEdit={handleEdit}
-              fetchSubtasks={fetchSubtasks}
-              onCreateSubtask={handleCreateSubtask}
-              onUpdateSubtask={updateSubtask}
-              onDeleteSubtask={deleteSubtask}
-              onToggleSubtaskComplete={toggleSubtaskComplete}
-            />
-          ))}
-        </div>
+        <>
+          <div className="hidden lg:block space-y-4">
+            {tasks.map((task) => (
+              <FullTaskItem
+                key={task.id}
+                task={task}
+                onClick={() => onOpenEditModal?.(task)}
+                hasSubtasks={false}
+              />
+            ))}
+          </div>
+          {/* Tablet/mobile: no task component yet */}
+          <div className="lg:hidden rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-4 py-8 text-center text-bonsai-slate-600">
+            Task list is available on desktop view.
+          </div>
+        </>
       )}
-
-      {/* Create/Edit Task Modal */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-        title={editingTask ? 'Edit Task' : 'Create New Task'}
-      >
-        <TaskForm
-          task={editingTask}
-          onSubmit={handleSubmit}
-          onCancel={handleCloseModal}
-        />
-      </Modal>
     </div>
   )
 }
