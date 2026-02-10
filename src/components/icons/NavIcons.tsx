@@ -258,6 +258,26 @@ export function ChevronDownIcon({ className = 'w-5 h-5' }: { className?: string 
   )
 }
 
+/* Chevron up icon: For dropdown open state / collapse indicator */
+export function ChevronUpIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M5 15l7-7 7 7"
+      />
+    </svg>
+  )
+}
+
 /* Plus icon: For add/create actions */
 export function PlusIcon({ className = 'w-5 h-5' }: { className?: string }) {
   return (
@@ -273,6 +293,26 @@ export function PlusIcon({ className = 'w-5 h-5' }: { className?: string }) {
         strokeLinejoin="round"
         strokeWidth={2}
         d="M12 4v16m8-8H4"
+      />
+    </svg>
+  )
+}
+
+/* Bell icon: For reminders and notifications */
+export function BellIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m-6 0H9"
       />
     </svg>
   )
