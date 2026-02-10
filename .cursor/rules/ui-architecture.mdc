@@ -34,6 +34,24 @@ Use Tailwind CSS v4 breakpoints with a mobile-first approach:
 
 Always start with mobile styles, then enhance for larger screens.
 
+### Responsive Components (Tailwind Breakpoints + Optional Size Override)
+
+Make components responsive using Tailwind breakpoints so **one component adapts** to mobile, tablet, and desktop by default. Support an **optional size override prop** when a fixed size is needed (e.g. a small button in a dense toolbar).
+
+- **Default behavior**: Use responsive utility classes (no prefix = mobile, `md:` = tablet, `lg:` = desktop). One component instance scales with viewport.
+- **Optional override**: When a `size` (or equivalent) prop is provided, use fixed size classes for that value only; ignore breakpoints for that aspect.
+
+```tsx
+// ✅ GOOD: Responsive by default, optional size override
+interface ButtonProps {
+  size?: 'sm' | 'md' | 'lg'  // optional; when omitted, use responsive classes
+}
+// Responsive: px-3 py-1.5 text-sm md:px-4 md:py-2 md:text-base lg:px-6 lg:py-3 lg:text-lg
+// When size="sm" is passed: use only px-3 py-1.5 text-sm
+```
+
+- Apply this pattern to any shared component that has size, density, or typography that should scale by viewport (e.g. Button, Input, Select, Checkbox, AddButton, Modal padding/typography).
+
 ## Component Architecture
 
 ### One Component at a Time

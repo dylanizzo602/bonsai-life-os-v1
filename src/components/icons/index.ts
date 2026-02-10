@@ -11,5 +11,7 @@ export {
   CloseIcon,
   ChevronRightIcon,
   ChevronLeftIcon,
+  ChevronDownIcon,
+  PlusIcon,
 } from './NavIcons'
 export { BonsaiLogo } from './BonsaiLogo'

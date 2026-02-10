@@ -128,7 +128,7 @@ Create a new reusable component when:
 - [ ] Component is truly reusable (not feature-specific)
 - [ ] Uses Bonsai color palette tokens
 - [ ] Includes TypeScript props interface
-- [ ] Supports common variants/sizes
+- [ ] **Responsive by default**: Uses Tailwind breakpoints (mobile / `md:` / `lg:`) so one component adapts to mobile, tablet, and desktop; optional size override prop when a fixed size is needed
 - [ ] Includes section comments explaining purpose
 - [ ] Exported from appropriate index file
 - [ ] Follows existing component structure patterns

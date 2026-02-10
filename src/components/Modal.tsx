@@ -44,17 +44,17 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4 md:p-6"
       onClick={onClose}
     >
       <div
         className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modal header */}
+        {/* Modal header: responsive padding and title typography */}
         {title && (
-          <div className="flex items-center justify-between p-4 border-b border-bonsai-slate-200">
-            <h2 className="text-xl font-semibold text-bonsai-brown-700">{title}</h2>
+          <div className="flex items-center justify-between p-4 md:p-5 lg:p-6 border-b border-bonsai-slate-200">
+            <h2 className="text-xl font-semibold text-bonsai-brown-700 md:text-2xl">{title}</h2>
             <button
               onClick={onClose}
               className="text-bonsai-slate-400 hover:text-bonsai-slate-600 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded p-1"
@@ -77,12 +77,12 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
           </div>
         )}
 
-        {/* Modal content */}
-        <div className="flex-1 overflow-y-auto p-4">{children}</div>
+        {/* Modal content: responsive padding */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-5 lg:p-6">{children}</div>
 
-        {/* Modal footer */}
+        {/* Modal footer: responsive padding */}
         {footer && (
-          <div className="border-t border-bonsai-slate-200 p-4 flex justify-end gap-2">
+          <div className="border-t border-bonsai-slate-200 p-4 md:p-5 lg:p-6 flex justify-end gap-2">
             {footer}
           </div>
         )}

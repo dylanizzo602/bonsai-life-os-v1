@@ -32,7 +32,7 @@ const navItems: Array<{
   { id: 'home', icon: HomeIcon, label: 'Home' },
   { id: 'briefings', icon: BriefingsIcon, label: 'Briefing' },
   { id: 'goals', icon: GoalsIcon, label: 'Goals' },
-  { id: 'tasks', icon: TasksIcon, label: 'To Dos' },
+  { id: 'tasks', icon: TasksIcon, label: 'Tasks' },
   { id: 'habits', icon: HabitsIcon, label: 'Habits' },
   { id: 'reflections', icon: ReflectionsIcon, label: 'Reflections' },
 ]
