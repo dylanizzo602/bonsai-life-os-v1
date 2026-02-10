@@ -15,5 +15,9 @@ export {
   ChevronUpIcon,
   PlusIcon,
   BellIcon,
+  CalendarIcon,
+  FlagIcon,
+  TagIcon,
+  HourglassIcon,
 } from './NavIcons'
 export { BonsaiLogo } from './BonsaiLogo'
