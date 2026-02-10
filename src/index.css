@@ -1,6 +1,36 @@
 /* Tailwind CSS v4: base layer, components, and utilities (replaces @tailwind directives) */
 @import "tailwindcss";
 
+/* Bonsai logo palette: sage green, golden brown, muted blue-gray */
+@theme {
+  /* Sage green (hexagonal foliage) – primary accent */
+  --color-bonsai-sage-50: #eef2e8;
+  --color-bonsai-sage-100: #dce4d4;
+  --color-bonsai-sage-200: #b8c9a8;
+  --color-bonsai-sage-300: #8f9f7a;
+  --color-bonsai-sage-400: #6f7d5c;
+  --color-bonsai-sage-500: #5a6649;
+  --color-bonsai-sage-600: #4a533c;
+  --color-bonsai-sage-700: #3d4532;
+  /* Golden brown (trunk/checkmark) – warmth and secondary */
+  --color-bonsai-brown-50: #f8f5f0;
+  --color-bonsai-brown-100: #ebe4d9;
+  --color-bonsai-brown-200: #d4c4ab;
+  --color-bonsai-brown-300: #b59f7a;
+  --color-bonsai-brown-400: #9c7d5a;
+  --color-bonsai-brown-500: #8b6b4a;
+  --color-bonsai-brown-600: #73563d;
+  --color-bonsai-brown-700: #5c4532;
+  /* Muted blue-gray (secondary foliage) – neutrals */
+  --color-bonsai-slate-100: #e8eaed;
+  --color-bonsai-slate-200: #c8cdd4;
+  --color-bonsai-slate-300: #9ca3af;
+  --color-bonsai-slate-400: #6b7582;
+  --color-bonsai-slate-500: #4a5360;
+  --color-bonsai-slate-600: #3d4550;
+  --color-bonsai-slate-700: #2d333b;
+}
+
 /* Base typography and layout defaults; responsive-friendly root */
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;

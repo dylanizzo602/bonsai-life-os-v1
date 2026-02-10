@@ -15,10 +15,10 @@ export function Checkbox({ label, className = '', ...props }: CheckboxProps) {
     <label className="flex items-center cursor-pointer">
       <input
         type="checkbox"
-        className={`w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500 ${className}`}
+        className={`w-4 h-4 text-bonsai-sage-600 border-bonsai-slate-300 rounded focus:ring-2 focus:ring-bonsai-sage-500 ${className}`}
         {...props}
       />
-      {label && <span className="ml-2 text-sm text-gray-700">{label}</span>}
+      {label && <span className="ml-2 text-sm text-bonsai-slate-700">{label}</span>}
     </label>
   )
 }

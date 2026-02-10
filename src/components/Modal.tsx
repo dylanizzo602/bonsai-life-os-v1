@@ -53,11 +53,11 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
       >
         {/* Modal header */}
         {title && (
-          <div className="flex items-center justify-between p-4 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
+          <div className="flex items-center justify-between p-4 border-b border-bonsai-slate-200">
+            <h2 className="text-xl font-semibold text-bonsai-brown-700">{title}</h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded p-1"
+              className="text-bonsai-slate-400 hover:text-bonsai-slate-600 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded p-1"
               aria-label="Close modal"
             >
               <svg
@@ -82,7 +82,7 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
 
         {/* Modal footer */}
         {footer && (
-          <div className="border-t border-gray-200 p-4 flex justify-end gap-2">
+          <div className="border-t border-bonsai-slate-200 p-4 flex justify-end gap-2">
             {footer}
           </div>
         )}

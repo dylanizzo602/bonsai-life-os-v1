@@ -13,14 +13,14 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
  * Includes consistent styling and focus states
  */
 export function Input({ label, error, className = '', ...props }: InputProps) {
-  const inputClasses = `w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-    error ? 'border-red-500' : 'border-gray-300'
+  const inputClasses = `w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent ${
+    error ? 'border-red-500' : 'border-bonsai-slate-300'
   } ${className}`
 
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-bonsai-slate-700 mb-1">
           {label}
         </label>
       )}

@@ -1,0 +1,244 @@
+---
+description: Component reusability guidelines - search existing components before creating new ones, ensure consistency across UI elements
+alwaysApply: true
+---
+
+# Component Reusability Guidelines
+
+## Component Discovery First
+
+**Before creating any new UI component, ALWAYS search for existing components first.**
+
+### Required Search Steps
+
+1. **Search the codebase** for similar components using semantic search:
+   - Search for component names, patterns, or functionality
+   - Check `src/components/` for shared UI components
+   - Check `src/features/[feature]/` for feature-specific components
+   - Look for similar patterns in existing code
+
+2. **Review existing component APIs**:
+   - Check props interfaces and variants
+   - Understand how existing components handle similar use cases
+   - Note styling patterns and design tokens used
+
+3. **Reuse or extend** before creating new:
+   - Use existing component if it fits the need
+   - Extend existing component with new props/variants if close
+   - Only create new component if truly different functionality
+
+### Example Workflow
+
+```tsx
+// ❌ BAD: Creating new button without checking
+export function SaveButton() {
+  return <button className="bg-blue-600 text-white px-4 py-2">Save</button>
+}
+
+// ✅ GOOD: Search first, then reuse existing Button component
+// Step 1: Search for "button" or "Button component"
+// Step 2: Find src/components/Button.tsx
+// Step 3: Use existing component
+import { Button } from '../../components/Button'
+
+export function SaveForm() {
+  return <Button variant="primary">Save</Button>
+}
+```
+
+## Common Reusable Components
+
+### Standard UI Elements (Check First)
+
+When implementing these patterns, **always check** `src/components/` first:
+
+- **Buttons**: Use `Button` component with variants (primary, secondary, danger, ghost)
+- **Inputs**: Use `Input` component for text inputs
+- **Selects**: Use `Select` component for dropdowns
+- **Checkboxes**: Use `Checkbox` component
+- **Modals**: Use `Modal` component for dialogs
+- **Tooltips**: Search for existing tooltip component before creating
+- **Cards/Containers**: Check for existing card or container components
+- **Loading States**: Reuse existing loading/spinner components
+- **Empty States**: Check for existing empty state components
+- **Error Messages**: Use consistent error display patterns
+
+### Component Location Patterns
+
+```
+src/components/          # Shared, reusable UI components
+  ├── Button.tsx         # All button variants
+  ├── Input.tsx          # Form inputs
+  ├── Select.tsx         # Dropdowns
+  ├── Modal.tsx          # Dialogs/modals
+  ├── Tooltip.tsx        # Hover tooltips (if exists)
+  └── Card.tsx           # Card containers (if exists)
+
+src/features/[feature]/  # Feature-specific components
+  └── [Feature]Item.tsx  # Feature-specific UI
+```
+
+## Consistency Requirements
+
+### Visual Consistency
+
+- **Colors**: Use Bonsai palette tokens (`bonsai-sage-*`, `bonsai-brown-*`, `bonsai-slate-*`)
+- **Spacing**: Use Tailwind spacing scale consistently
+- **Typography**: Use consistent font sizes and weights
+- **Borders**: Use consistent border colors and widths
+- **Shadows**: Use consistent shadow utilities
+
+### Behavioral Consistency
+
+- **Hover states**: Use consistent hover effects across similar elements
+- **Focus states**: Use consistent focus rings (e.g., `focus:ring-bonsai-sage-500`)
+- **Transitions**: Use consistent transition durations
+- **Loading states**: Use consistent loading indicators
+
+### Example: Consistent Button Styling
+
+```tsx
+// ✅ GOOD: All buttons use same component with variants
+import { Button } from '../../components/Button'
+
+<Button variant="primary">Save</Button>
+<Button variant="secondary">Cancel</Button>
+<Button variant="danger">Delete</Button>
+
+// ❌ BAD: Inline button styles create inconsistency
+<button className="bg-blue-600 text-white px-4 py-2">Save</button>
+<button className="bg-gray-200 text-gray-900 px-3 py-1.5">Cancel</button>
+```
+
+## Creating New Reusable Components
+
+### When to Create New Components
+
+Create a new reusable component when:
+
+1. **Pattern repeats 3+ times** across the codebase
+2. **No existing component** handles the use case
+3. **Component will be reused** in multiple features
+4. **Component encapsulates** a specific UI pattern (tooltip, card, badge, etc.)
+
+### Component Creation Checklist
+
+- [ ] Searched codebase for similar components
+- [ ] Checked if existing component can be extended
+- [ ] Component is truly reusable (not feature-specific)
+- [ ] Uses Bonsai color palette tokens
+- [ ] Includes TypeScript props interface
+- [ ] Supports common variants/sizes
+- [ ] Includes section comments explaining purpose
+- [ ] Exported from appropriate index file
+- [ ] Follows existing component structure patterns
+
+### New Component Template
+
+```tsx
+/* Component name: Brief description of purpose */
+import type { ComponentProps } from 'react'
+
+interface ComponentNameProps {
+  /** Prop description */
+  propName: string
+  /** Variant style */
+  variant?: 'default' | 'primary' | 'secondary'
+  /** Size */
+  size?: 'sm' | 'md' | 'lg'
+}
+
+/**
+ * Component description explaining what it does and when to use it
+ * Reusable for [use cases]
+ */
+export function ComponentName({ 
+  propName, 
+  variant = 'default',
+  size = 'md',
+  ...props 
+}: ComponentNameProps) {
+  /* Variant classes: Define styles based on variant */
+  const variantClasses = {
+    default: 'bg-bonsai-slate-100 text-bonsai-slate-700',
+    primary: 'bg-bonsai-sage-600 text-white',
+    secondary: 'bg-bonsai-slate-200 text-bonsai-slate-700',
+  }
+
+  /* Render: Component JSX */
+  return (
+    <div 
+      className={`${variantClasses[variant]} ${size === 'sm' ? 'text-sm' : 'text-base'}`}
+      {...props}
+    >
+      {propName}
+    </div>
+  )
+}
+```
+
+## Tooltip and Hover Patterns
+
+### Before Creating Tooltips
+
+1. **Search** for existing tooltip component: `grep -r "tooltip\|Tooltip" src/`
+2. **Check** if hover states are handled inline
+3. **Consider** if tooltip is needed or if label/aria-label suffices
+
+### Consistent Tooltip Implementation
+
+```tsx
+// ✅ GOOD: Reusable Tooltip component (if exists)
+import { Tooltip } from '../../components/Tooltip'
+
+<Tooltip content="Save your changes">
+  <Button>Save</Button>
+</Tooltip>
+
+// ✅ GOOD: Consistent hover pattern if no Tooltip component
+<button 
+  className="hover:bg-bonsai-slate-100 transition-colors"
+  aria-label="Save your changes"
+  title="Save your changes"
+>
+  Save
+</button>
+```
+
+## View/Page Component Patterns
+
+### Consistent Page Structure
+
+All page/section components should follow the same structure:
+
+```tsx
+/* Page name: Section description */
+export function SectionPage() {
+  return (
+    <div className="min-h-full">
+      {/* Section header: Consistent title styling */}
+      <h1 className="text-2xl font-bold text-bonsai-brown-700 mb-6">
+        Section Name
+      </h1>
+      
+      {/* Page content: Main content area */}
+      <div className="w-full h-full min-h-[60vh]">
+        {/* Content here */}
+      </div>
+    </div>
+  )
+}
+```
+
+## Search Commands Reference
+
+When implementing UI elements, use these search patterns:
+
+- **Buttons**: `codebase_search("button component")`
+- **Forms**: `codebase_search("input select form component")`
+- **Modals**: `codebase_search("modal dialog component")`
+- **Tooltips**: `grep -r "tooltip\|Tooltip" src/`
+- **Cards**: `codebase_search("card container component")`
+- **Loading**: `codebase_search("loading spinner component")`
+
+Always search before creating to maintain consistency and reduce duplication.

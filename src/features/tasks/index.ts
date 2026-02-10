@@ -1,7 +1,4 @@
-/* Task feature exports */
+/* Tasks feature exports */
+export { TasksPage } from './TasksPage'
 export { TaskList } from './TaskList'
-export { TaskItem } from './TaskItem'
-export { TaskForm } from './TaskForm'
-export { SubtaskList } from './SubtaskList'
-export { useTasks } from './hooks/useTasks'
-export type * from './types'
+export type { Task, TaskPriority, TaskStatus, CreateTaskInput, UpdateTaskInput } from './types'

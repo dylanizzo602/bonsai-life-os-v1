@@ -1,0 +1,243 @@
+---
+description: UI architecture guidelines for responsive web app development with component-first approach and strict UI/backend separation
+alwaysApply: true
+---
+
+# UI Architecture Guidelines
+
+## Responsive Design Standards
+
+### Breakpoint Definitions
+
+Use Tailwind CSS v4 breakpoints with a mobile-first approach:
+
+- **Mobile**: Default styles (no prefix) - `< 768px`
+- **Tablet**: `md:` prefix - `≥ 768px` and `< 1024px`
+- **Desktop**: `lg:` prefix - `≥ 1024px`
+
+### Responsive Patterns
+
+```tsx
+// ✅ GOOD: Mobile-first with progressive enhancement
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+  {items.map(item => <ItemCard key={item.id} {...item} />)}
+</div>
+
+// ✅ GOOD: Responsive padding/spacing
+<div className="p-4 md:p-6 lg:p-8">
+  <Content />
+</div>
+
+// ❌ BAD: Desktop-first approach
+<div className="grid grid-cols-3 md:grid-cols-2 sm:grid-cols-1">
+```
+
+Always start with mobile styles, then enhance for larger screens.
+
+## Component Architecture
+
+### One Component at a Time
+
+Develop components incrementally:
+1. Create the component file in `src/components/` or `src/features/[feature]/`
+2. Implement basic functionality first
+3. Add props interface with TypeScript
+4. Make it reusable and composable
+5. Add responsive styling
+6. Export from appropriate index file
+
+### Component Structure
+
+```tsx
+// ✅ GOOD: Clear structure with comments
+/* Component name: Brief description of purpose */
+import type { ComponentProps } from 'react'
+
+interface ComponentProps {
+  /** Prop description */
+  propName: string
+}
+
+/**
+ * Component description explaining what it does and when to use it
+ */
+export function Component({ propName, ...props }: ComponentProps) {
+  // Section comment: What this section does
+  const computedValue = useMemo(() => {
+    // Logic here
+  }, [dependencies])
+
+  // Section comment: Render logic
+  return (
+    <div className="responsive-classes">
+      {/* Inline comment for complex logic */}
+    </div>
+  )
+}
+```
+
+### Reusability Principles
+
+- Components should be self-contained and reusable
+- Accept props for customization, not hardcoded values
+- Use composition over configuration when possible
+- Keep components focused on a single responsibility
+
+```tsx
+// ✅ GOOD: Reusable with props
+export function Button({ variant, size, children, ...props }: ButtonProps) {
+  // Implementation
+}
+
+// ❌ BAD: Hardcoded, not reusable
+export function SubmitButton() {
+  return <button className="bg-blue-600">Submit</button>
+}
+```
+
+## UI/Backend Separation
+
+### Strict Layer Separation
+
+**UI Layer** (`src/components/`, `src/features/`):
+- React components and UI logic only
+- Custom hooks for UI state management
+- No direct database/API calls
+
+**Data Access Layer** (`src/lib/supabase/`):
+- All Supabase queries and mutations
+- Data transformation logic
+- Type definitions for API responses
+
+**Hook Layer** (`src/features/[feature]/hooks/`):
+- Bridge between UI and data access
+- State management (loading, error, data)
+- Business logic coordination
+
+### Pattern Example
+
+```tsx
+// ✅ GOOD: UI component uses hook, hook uses data layer
+// src/features/tasks/TaskList.tsx
+import { useTasks } from './hooks/useTasks'
+
+export function TaskList() {
+  const { tasks, createTask } = useTasks() // Hook handles data access
+  // UI logic only
+}
+
+// src/features/tasks/hooks/useTasks.ts
+import { getTasks, createTask } from '../../../lib/supabase/tasks'
+
+export function useTasks() {
+  const [tasks, setTasks] = useState([])
+  // Uses data access layer functions
+  const fetchTasks = async () => {
+    const data = await getTasks() // Data layer function
+    setTasks(data)
+  }
+}
+
+// src/lib/supabase/tasks.ts
+export async function getTasks(): Promise<Task[]> {
+  const { data } = await supabase.from('tasks').select('*')
+  return data
+}
+```
+
+### Anti-Patterns to Avoid
+
+```tsx
+// ❌ BAD: Direct Supabase call in component
+import { supabase } from '../../lib/supabase/client'
+
+export function TaskList() {
+  const [tasks, setTasks] = useState([])
+  
+  useEffect(() => {
+    supabase.from('tasks').select('*').then(({ data }) => {
+      setTasks(data) // Direct database call in UI component
+    })
+  }, [])
+}
+
+// ❌ BAD: Business logic in component
+export function TaskList() {
+  const handleComplete = async (task) => {
+    // Complex business logic mixed with UI
+    if (task.subtasks.length > 0) {
+      // ... complex logic
+    }
+  }
+}
+```
+
+## Minimalist UI Philosophy
+
+### Functionality First
+
+- Focus on making features work before polishing design
+- Use simple, clean interfaces
+- Avoid complex animations or visual effects initially
+- Progressive enhancement: add design polish after functionality is solid
+
+### Design Approach
+
+```tsx
+// ✅ GOOD: Simple, functional styling
+<div className="border rounded-lg p-4">
+  <h2 className="text-lg font-semibold mb-2">{title}</h2>
+  <p className="text-gray-600">{description}</p>
+</div>
+
+// ❌ BAD: Over-engineered design before functionality
+<div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-purple-500 via-pink-500 to-red-500 p-8 shadow-2xl transform transition-all duration-300 hover:scale-105">
+  {/* Complex design before basic functionality works */}
+</div>
+```
+
+### Component Development Priority
+
+1. **Functionality**: Make it work
+2. **Responsiveness**: Make it work on all screen sizes
+3. **Accessibility**: Ensure it's usable
+4. **Design Polish**: Add visual refinement last
+
+## Future-Proofing for Multi-Platform
+
+### Architecture Benefits
+
+The separation of UI and backend enables:
+- **Web App**: Current React web implementation
+- **Mobile App**: Replace `src/components/` and `src/features/` with React Native components
+- **Desktop App**: Use Electron with same React components or native UI
+- **Backend**: `src/lib/` remains unchanged across platforms
+
+### Key Principles
+
+- Never import UI components into data access layer
+- Never import data access functions directly into UI components
+- Always use hooks as the bridge between layers
+- Keep business logic in hooks or data layer, not in components
+
+## Code Comments
+
+Every section of code should have a brief comment explaining what it does:
+
+```tsx
+// ✅ GOOD: Section comments explain purpose
+/* Component initialization: Set up state and effects */
+const [state, setState] = useState(initial)
+
+/* Data fetching: Load data when component mounts */
+useEffect(() => {
+  fetchData()
+}, [])
+
+/* Event handlers: Handle user interactions */
+const handleClick = () => {
+  // Handler logic
+}
+```
+
+This ensures code remains understandable as the project grows.
