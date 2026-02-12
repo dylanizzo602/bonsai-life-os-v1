@@ -1,7 +1,9 @@
 /* Task data access layer: Supabase queries for CRUD on tasks, checklists, and dependencies */
 import { supabase } from './client'
+import { getTagsForTask } from './tags'
 import type {
   Task,
+  Tag,
   TaskChecklist,
   TaskChecklistItem,
   TaskDependency,
@@ -13,18 +15,27 @@ import type {
   TaskFilters,
 } from '../../features/tasks/types'
 
+/** Raw task row with embedded task_tags from Supabase select */
+interface TaskRowWithTags {
+  task_tags?: { tag_id: string; tags: Tag | null }[]
+  [key: string]: unknown
+}
+
 /**
  * Fetch all tasks with optional filters.
  * When parent_id filter is set, returns only subtasks of that parent.
+ * Joins task_tags and tags to populate task.tags.
  */
 export async function getTasks(filters?: TaskFilters): Promise<Task[]> {
   let query = supabase
     .from('tasks')
-    .select('*')
+    .select('*, task_tags(tag_id, tags(*))')
     .order('created_at', { ascending: false })
 
-  /* Filter by parent: null = top-level tasks, or specific parent for subtasks */
-  if (filters?.parent_id !== undefined) {
+  /* Filter by parent: null = top-level tasks, specific parent for subtasks, or skip when includeAllTasks */
+  if (filters?.includeAllTasks) {
+    /* No parent filter: fetch all tasks for dependency linking */
+  } else if (filters?.parent_id !== undefined) {
     if (filters.parent_id === null) {
       query = query.is('parent_id', null)
     } else {
@@ -47,9 +58,7 @@ export async function getTasks(filters?: TaskFilters): Promise<Task[]> {
     query = query.eq('category', filters.category)
   }
 
-  if (filters?.tag && filters.tag !== 'all') {
-    query = query.eq('tag', filters.tag)
-  }
+  /* Tag filter applied after fetch (filter by task.tags including tag name) */
 
   if (filters?.search) {
     query = query.or(
@@ -91,11 +100,25 @@ export async function getTasks(filters?: TaskFilters): Promise<Task[]> {
     throw error
   }
 
-  /* Normalize attachments: ensure array when JSONB returns null */
-  return ((data as Task[]) ?? []).map((t) => ({
-    ...t,
-    attachments: Array.isArray(t.attachments) ? t.attachments : [],
-  }))
+  /* Normalize: extract tags from task_tags, ensure attachments array, apply tag filter */
+  let tasks = ((data as TaskRowWithTags[]) ?? []).map((t) => {
+    const taskTags = t.task_tags ?? []
+    const tags: Tag[] = taskTags
+      .map((tt) => tt.tags)
+      .filter((tag): tag is Tag => tag != null)
+    const { task_tags: _tt, ...rest } = t
+    return {
+      ...rest,
+      tags,
+      attachments: Array.isArray(t.attachments) ? t.attachments : [],
+    } as Task
+  })
+
+  if (filters?.tag && filters.tag !== 'all') {
+    tasks = tasks.filter((t) => t.tags.some((tag) => tag.name === filters.tag))
+  }
+
+  return tasks
 }
 
 /**
@@ -109,7 +132,6 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     start_date: input.start_date ?? null,
     due_date: input.due_date ?? null,
     priority: input.priority ?? 'medium',
-    tag: input.tag ?? null,
     time_estimate: input.time_estimate ?? null,
     attachments: input.attachments ?? [],
     parent_id: input.parent_id ?? null,
@@ -127,11 +149,12 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     throw error
   }
 
-  const task = data as Task
+  const task = data as Record<string, unknown>
   return {
     ...task,
+    tags: [],
     attachments: Array.isArray(task.attachments) ? task.attachments : [],
-  }
+  } as unknown as Task
 }
 
 /**
@@ -145,7 +168,6 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
   if (input.start_date !== undefined) updateData.start_date = input.start_date
   if (input.due_date !== undefined) updateData.due_date = input.due_date
   if (input.priority !== undefined) updateData.priority = input.priority
-  if (input.tag !== undefined) updateData.tag = input.tag
   if (input.time_estimate !== undefined) updateData.time_estimate = input.time_estimate
   if (input.attachments !== undefined) updateData.attachments = input.attachments
   if (input.status !== undefined) updateData.status = input.status
@@ -166,8 +188,11 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
   }
 
   const task = data as Task
+  /* Refetch with tags to return full task */
+  const tags = await getTagsForTask(id)
   return {
     ...task,
+    tags,
     attachments: Array.isArray(task.attachments) ? task.attachments : [],
   }
 }
@@ -206,19 +231,22 @@ export async function toggleTaskComplete(id: string, completed: boolean): Promis
   }
 
   const task = data as Task
+  const tags = await getTagsForTask(id)
   return {
     ...task,
+    tags,
     attachments: Array.isArray(task.attachments) ? task.attachments : [],
   }
 }
 
 /**
- * Fetch subtasks of a task (tasks with parent_id = taskId)
+ * Fetch subtasks of a task (tasks with parent_id = taskId).
+ * Joins task_tags and tags to populate task.tags.
  */
 export async function getSubtasks(taskId: string): Promise<Task[]> {
   const { data, error } = await supabase
     .from('tasks')
-    .select('*')
+    .select('*, task_tags(tag_id, tags(*))')
     .eq('parent_id', taskId)
     .order('created_at', { ascending: true })
 
@@ -227,10 +255,18 @@ export async function getSubtasks(taskId: string): Promise<Task[]> {
     throw error
   }
 
-  return ((data as Task[]) ?? []).map((t) => ({
-    ...t,
-    attachments: Array.isArray(t.attachments) ? t.attachments : [],
-  }))
+  return ((data as TaskRowWithTags[]) ?? []).map((t) => {
+    const taskTags = t.task_tags ?? []
+    const tags: Tag[] = taskTags
+      .map((tt) => tt.tags)
+      .filter((tag): tag is Tag => tag != null)
+    const { task_tags: _tt, ...rest } = t
+    return {
+      ...rest,
+      tags,
+      attachments: Array.isArray(t.attachments) ? t.attachments : [],
+    } as Task
+  })
 }
 
 /**
@@ -372,6 +408,21 @@ export async function createTaskDependency(
   }
 
   return data as TaskDependency
+}
+
+/**
+ * Delete a task dependency by id
+ */
+export async function deleteTaskDependency(dependencyId: string): Promise<void> {
+  const { error } = await supabase
+    .from('task_dependencies')
+    .delete()
+    .eq('id', dependencyId)
+
+  if (error) {
+    console.error('Error deleting task dependency:', error)
+    throw error
+  }
 }
 
 /**

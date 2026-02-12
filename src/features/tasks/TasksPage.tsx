@@ -35,6 +35,7 @@ export function TasksPage() {
     error,
     filters,
     setFilters,
+    refetch,
     createTask,
     updateTask,
     fetchSubtasks,
@@ -44,6 +45,7 @@ export function TasksPage() {
     getTasks,
     getTaskDependencies,
     onAddDependency,
+    onRemoveDependency,
   } = useTasks()
 
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -86,6 +88,7 @@ export function TasksPage() {
         error={error}
         filters={filters}
         setFilters={setFilters}
+        refetch={refetch}
         updateTask={updateTask}
         deleteTask={deleteTask}
         toggleComplete={toggleComplete}
@@ -94,6 +97,7 @@ export function TasksPage() {
         getTasks={getTasks}
         getTaskDependencies={getTaskDependencies}
         onAddDependency={onAddDependency}
+        onRemoveDependency={onRemoveDependency}
         onOpenAddModal={openAdd}
         onOpenEditModal={openEdit}
       />
@@ -114,6 +118,7 @@ export function TasksPage() {
         getTasks={getTasks}
         getTaskDependencies={getTaskDependencies}
         onAddDependency={onAddDependency}
+        onRemoveDependency={onRemoveDependency}
       />
     </div>
   )

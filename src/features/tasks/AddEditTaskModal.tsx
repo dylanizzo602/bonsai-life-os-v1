@@ -6,6 +6,7 @@ import { Button } from '../../components/Button'
 import { Input } from '../../components/Input'
 import { Checkbox } from '../../components/Checkbox'
 import { useTaskChecklists } from './hooks/useTaskChecklists'
+import { useTags } from './hooks/useTags'
 import { SubtaskList } from './SubtaskList'
 import {
   PlusIcon,
@@ -17,15 +18,16 @@ import {
   HourglassIcon,
 } from '../../components/icons'
 import { DatePickerModal } from './modals/DatePickerModal'
-import { PriorityModal } from './modals/PriorityModal'
+import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { TagModal } from './modals/TagModal'
 import { TimeEstimateModal } from './modals/TimeEstimateModal'
-import { TaskDependencyModal } from './modals/TaskDependencyModal'
+import { DependenciesSection } from './DependenciesSection'
 import { AttachmentUploadModal } from './modals/AttachmentUploadModal'
 import { AttachmentPreviewModal } from './modals/AttachmentPreviewModal'
 import { StatusPickerModal } from './modals/StatusPickerModal'
 import type {
   Task,
+  Tag,
   CreateTaskInput,
   UpdateTaskInput,
   CreateTaskDependencyInput,
@@ -138,6 +140,8 @@ export interface AddEditTaskModalProps {
   }>
   /** Create a task dependency */
   onAddDependency?: (input: CreateTaskDependencyInput) => Promise<void>
+  /** Remove a task dependency by id */
+  onRemoveDependency?: (dependencyId: string) => Promise<void>
 }
 
 /**
@@ -160,13 +164,14 @@ export function AddEditTaskModal({
   getTasks,
   getTaskDependencies,
   onAddDependency,
+  onRemoveDependency,
 }: AddEditTaskModalProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [start_date, setStartDate] = useState<string | null>(null)
   const [due_date, setDueDate] = useState<string | null>(null)
   const [priority, setPriority] = useState<TaskPriority>('medium')
-  const [tag, setTag] = useState<string | null>(null)
+  const [tags, setTags] = useState<Tag[]>([])
   const [time_estimate, setTimeEstimate] = useState<number | null>(null)
   const [attachments, setAttachments] = useState<TaskAttachment[]>([])
   const [status, setStatus] = useState<DisplayStatus>('open')
@@ -177,9 +182,12 @@ export function AddEditTaskModal({
   const [tagOpen, setTagOpen] = useState(false)
   const [timeEstimateOpen, setTimeEstimateOpen] = useState(false)
   const [statusPickerOpen, setStatusPickerOpen] = useState(false)
-  /* Status button ref: Used to position the popover */
+  /* Status button ref: Used to position the status popover */
   const statusButtonRef = useRef<HTMLButtonElement>(null)
-  const [dependencyModalOpen, setDependencyModalOpen] = useState(false)
+  /* Priority button ref: Used to position the priority popover */
+  const priorityButtonRef = useRef<HTMLButtonElement>(null)
+  /* Tag button ref: Used to position the tag popover */
+  const tagButtonRef = useRef<HTMLButtonElement>(null)
   const [attachmentModalOpen, setAttachmentModalOpen] = useState(false)
   const [previewAttachment, setPreviewAttachment] = useState<TaskAttachment | null>(null)
   const [newChecklistTitle, setNewChecklistTitle] = useState('')
@@ -188,6 +196,13 @@ export function AddEditTaskModal({
   const isEditMode = Boolean(task?.id)
   const { checklists, loading: checklistsLoading, addChecklist, addItem, toggleItem } =
     useTaskChecklists(task?.id ?? null)
+  const {
+    searchTags,
+    createTag,
+    updateTag,
+    deleteTagFromAllTasks,
+    setTagsForTask,
+  } = useTags(task?.user_id ?? null)
 
   /* Prefill form when editing or reset when opening for add */
   useEffect(() => {
@@ -198,7 +213,7 @@ export function AddEditTaskModal({
       setStartDate(task.start_date ?? null)
       setDueDate(task.due_date ?? null)
       setPriority(task.priority ?? 'medium')
-      setTag(task.tag ?? null)
+      setTags(Array.isArray(task.tags) ? task.tags : [])
       setTimeEstimate(task.time_estimate ?? null)
       setAttachments(Array.isArray(task.attachments) ? task.attachments : [])
       setStatus(getDisplayStatus(task.status))
@@ -208,7 +223,7 @@ export function AddEditTaskModal({
       setStartDate(null)
       setDueDate(null)
       setPriority('medium')
-      setTag(null)
+      setTags([])
       setTimeEstimate(null)
       setAttachments([])
       setStatus('open')
@@ -227,11 +242,11 @@ export function AddEditTaskModal({
           start_date: start_date || null,
           due_date: due_date || null,
           priority,
-          tag: tag?.trim() || null,
           time_estimate,
           attachments: attachments.length ? attachments : undefined,
           status: getTaskStatus(status),
         })
+        await setTagsForTask(task.id, tags.map((t) => t.id))
         onClose()
       } catch {
         // Error handled by parent
@@ -249,25 +264,28 @@ export function AddEditTaskModal({
         start_date: start_date || null,
         due_date: due_date || null,
         priority,
-        tag: tag?.trim() || null,
         time_estimate,
         attachments: attachments.length ? attachments : undefined,
         status: getTaskStatus(status),
       }
       const result = await onCreateTask(input)
-      if (onCreatedTask && result && typeof result === 'object' && 'id' in result) {
-        onCreatedTask(result as Task)
-        /* Modal stays open in edit mode; parent sets task to result */
-      } else {
-        setTitle('')
-        setDescription('')
-        setStartDate(null)
-        setDueDate(null)
-        setPriority('medium')
-        setTag(null)
-        setTimeEstimate(null)
-        setAttachments([])
-        onClose()
+      if (result && typeof result === 'object' && 'id' in result) {
+        const createdTask = result as Task
+        await setTagsForTask(createdTask.id, tags.map((t) => t.id))
+        if (onCreatedTask) {
+          onCreatedTask({ ...createdTask, tags })
+          /* Modal stays open in edit mode; parent sets task to result */
+        } else {
+          setTitle('')
+          setDescription('')
+          setStartDate(null)
+          setDueDate(null)
+          setPriority('medium')
+          setTags([])
+          setTimeEstimate(null)
+          setAttachments([])
+          onClose()
+        }
       }
     } catch {
       // Error handled by parent
@@ -347,6 +365,7 @@ export function AddEditTaskModal({
             : 'Add start/due date'}
         </button>
         <button
+          ref={priorityButtonRef}
           type="button"
           onClick={() => setPriorityOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
@@ -359,12 +378,38 @@ export function AddEditTaskModal({
               : 'Set priority'}
         </button>
         <button
+          ref={tagButtonRef}
           type="button"
           onClick={() => setTagOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
         >
-          <TagIcon className="w-4 h-4 text-bonsai-slate-600" />
-          {tag ? tag : 'Add tags'}
+          <TagIcon className="w-4 h-4 shrink-0 text-bonsai-slate-600" />
+          {tags.length > 0 ? (
+            <span className="flex items-center gap-1">
+              {tags.slice(0, 3).map((t) => (
+                <span
+                  key={t.id}
+                  className={`rounded px-2 py-0.5 text-xs font-medium ${
+                    t.color === 'mint'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : t.color === 'blue'
+                        ? 'bg-blue-100 text-blue-800'
+                        : t.color === 'lavender'
+                          ? 'bg-violet-100 text-violet-800'
+                          : t.color === 'yellow'
+                            ? 'bg-amber-100 text-amber-800'
+                            : t.color === 'periwinkle'
+                              ? 'bg-indigo-100 text-indigo-800'
+                              : 'bg-bonsai-slate-100 text-bonsai-slate-700'
+                  }`}
+                >
+                  {t.name}
+                </span>
+              ))}
+            </span>
+          ) : (
+            'Add tags'
+          )}
         </button>
         <button
           type="button"
@@ -393,17 +438,24 @@ export function AddEditTaskModal({
         triggerRef={statusButtonRef}
         onSelect={setStatus}
       />
-      <PriorityModal
+      <PriorityPickerModal
         isOpen={priorityOpen}
         onClose={() => setPriorityOpen(false)}
         value={priority}
+        triggerRef={priorityButtonRef}
         onSelect={setPriority}
       />
       <TagModal
         isOpen={tagOpen}
         onClose={() => setTagOpen(false)}
-        value={tag}
-        onSave={setTag}
+        value={tags}
+        onSave={setTags}
+        triggerRef={tagButtonRef}
+        taskId={task?.id ?? null}
+        searchTags={searchTags}
+        createTag={createTag}
+        updateTag={updateTag}
+        deleteTagFromAllTasks={deleteTagFromAllTasks}
       />
       <TimeEstimateModal
         isOpen={timeEstimateOpen}
@@ -411,16 +463,6 @@ export function AddEditTaskModal({
         minutes={time_estimate}
         onSave={setTimeEstimate}
       />
-      {task?.id && getTasks && getTaskDependencies && onAddDependency && (
-        <TaskDependencyModal
-          isOpen={dependencyModalOpen}
-          onClose={() => setDependencyModalOpen(false)}
-          currentTaskId={task.id}
-          getTasks={getTasks}
-          getTaskDependencies={getTaskDependencies}
-          onAddDependency={onAddDependency}
-        />
-      )}
       {task?.id && onUpdateTask && (
         <>
           <AttachmentUploadModal
@@ -638,15 +680,19 @@ export function AddEditTaskModal({
 
           <div>
             <p className="text-sm font-medium text-bonsai-slate-700 mb-1">Task Dependencies</p>
-            <button
-              type="button"
-              onClick={() => task?.id && setDependencyModalOpen(true)}
-              disabled={!task?.id}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-bonsai-slate-300 px-3 py-2 text-sm font-medium text-bonsai-slate-600 hover:bg-bonsai-slate-50 hover:border-bonsai-slate-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <PlusIcon className="w-4 h-4" />
-              Link blocking or blocked-by tasks
-            </button>
+            {task?.id && getTasks && getTaskDependencies && onAddDependency ? (
+              <DependenciesSection
+                currentTaskId={task.id}
+                getTasks={getTasks}
+                getTaskDependencies={getTaskDependencies}
+                onAddDependency={onAddDependency}
+                onRemoveDependency={onRemoveDependency}
+              />
+            ) : (
+              <p className="text-sm text-bonsai-slate-500">
+                Create the task first to add dependencies.
+              </p>
+            )}
           </div>
         </div>
       )}

@@ -29,6 +29,8 @@ interface SubtaskListProps {
   }>
   /** Create a task dependency */
   onAddDependency?: (input: import('./types').CreateTaskDependencyInput) => Promise<void>
+  /** Remove a task dependency by id */
+  onRemoveDependency?: (dependencyId: string) => Promise<void>
 }
 
 /**
@@ -45,6 +47,7 @@ export function SubtaskList({
   getTasks,
   getTaskDependencies,
   onAddDependency,
+  onRemoveDependency,
 }: SubtaskListProps) {
   const [subtasks, setSubtasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
@@ -223,6 +226,14 @@ export function SubtaskList({
                     throw error // Re-throw so FullSubtaskItem can handle it
                   }
                 }}
+                onTagsUpdated={async () => {
+                  try {
+                    const updated = await fetchSubtasks(taskId)
+                    setSubtasks(updated)
+                  } catch (err) {
+                    console.error('Error reloading subtasks after tag update:', err)
+                  }
+                }}
               />
             )
           })}
@@ -258,6 +269,7 @@ export function SubtaskList({
           getTasks={getTasks}
           getTaskDependencies={getTaskDependencies}
           onAddDependency={onAddDependency}
+          onRemoveDependency={onRemoveDependency}
         />
       )}
     </div>

@@ -10,6 +10,7 @@ import {
   createSubtask,
   getTaskDependencies,
   createTaskDependency,
+  deleteTaskDependency,
 } from '../../../lib/supabase/tasks'
 import type {
   Task,
@@ -138,9 +139,9 @@ export function useTasks(initialFilters?: TaskFilters) {
     [],
   )
 
-  /* Fetch tasks for dependency picker (top-level only) */
+  /* Fetch tasks for dependency picker (all tasks including subtasks for linking) */
   const getTasksForPicker = useCallback(async (): Promise<Task[]> => {
-    return getTasks({ parent_id: null })
+    return getTasks({ includeAllTasks: true })
   }, [])
 
   /* Create a task dependency */
@@ -150,6 +151,11 @@ export function useTasks(initialFilters?: TaskFilters) {
     },
     [],
   )
+
+  /* Remove a task dependency by id */
+  const handleRemoveDependency = useCallback(async (dependencyId: string) => {
+    await deleteTaskDependency(dependencyId)
+  }, [])
 
   return {
     tasks,
@@ -167,5 +173,6 @@ export function useTasks(initialFilters?: TaskFilters) {
     getTasks: getTasksForPicker,
     getTaskDependencies,
     onAddDependency: handleAddDependency,
+    onRemoveDependency: handleRemoveDependency,
   }
 }

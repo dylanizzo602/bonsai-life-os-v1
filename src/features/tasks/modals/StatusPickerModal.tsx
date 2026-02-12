@@ -15,7 +15,7 @@ export interface StatusPickerModalProps {
   /** Function to call when a status is selected (can be async) */
   onSelect: (status: DisplayStatus) => void | Promise<void>
   /** Reference to the trigger element (status circle button) for positioning */
-  triggerRef: React.RefObject<HTMLElement>
+  triggerRef: React.RefObject<HTMLElement | null>
 }
 
 const OPTIONS: { value: DisplayStatus; label: string }[] = [
@@ -85,7 +85,7 @@ export function StatusPickerModal({ isOpen, onClose, value, onSelect, triggerRef
   const popoverRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState({ top: 0, left: 0 })
 
-  /* Position calculation: Calculate popover position relative to trigger element */
+  /* Position calculation: Calculate popover position relative to trigger element with viewport boundary detection */
   useEffect(() => {
     if (!isOpen || !triggerRef.current || !popoverRef.current) return
 
@@ -93,9 +93,36 @@ export function StatusPickerModal({ isOpen, onClose, value, onSelect, triggerRef
       const triggerRect = triggerRef.current!.getBoundingClientRect()
       const popoverRect = popoverRef.current!.getBoundingClientRect()
       
-      /* Position below the status circle, aligned to its left edge */
-      const top = triggerRect.bottom + 4 // 4px gap below trigger
-      const left = triggerRect.left // Align with left edge of trigger
+      /* Initial position: Below the status circle, aligned to its left edge */
+      let top = triggerRect.bottom + 4 // 4px gap below trigger
+      let left = triggerRect.left // Align with left edge of trigger
+      
+      /* Boundary adjustment: Keep popover within viewport */
+      const padding = 8 // Minimum padding from viewport edges
+      const viewportWidth = window.innerWidth
+      const viewportHeight = window.innerHeight
+      
+      /* Horizontal boundary: Adjust left if popover would overflow right edge */
+      if (left + popoverRect.width > viewportWidth - padding) {
+        /* Shift left to keep popover within viewport */
+        left = viewportWidth - popoverRect.width - padding
+      }
+      
+      /* Ensure popover doesn't go off left edge */
+      if (left < padding) {
+        left = padding
+      }
+      
+      /* Vertical boundary: Adjust top if popover would overflow bottom edge */
+      if (top + popoverRect.height > viewportHeight - padding) {
+        /* Position above trigger instead of below */
+        top = triggerRect.top - popoverRect.height - 4
+      }
+      
+      /* Ensure popover doesn't go off top edge */
+      if (top < padding) {
+        top = padding
+      }
       
       setPosition({ top, left })
     }

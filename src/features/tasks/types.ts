@@ -46,6 +46,18 @@ export interface TaskDependency {
   created_at: string
 }
 
+/** Tag color id - maps to Tailwind classes (mint, blue, lavender, yellow, periwinkle, slate) */
+export type TagColorId = 'slate' | 'mint' | 'blue' | 'lavender' | 'yellow' | 'periwinkle'
+
+/** Tag entity - reusable label with color, linked to tasks via task_tags */
+export interface Tag {
+  id: string
+  name: string
+  color: TagColorId
+  user_id: string | null
+  created_at?: string
+}
+
 /** Main task entity - subtasks are tasks with parent_id set */
 export interface Task {
   id: string
@@ -56,7 +68,7 @@ export interface Task {
   start_date: string | null
   due_date: string | null
   priority: TaskPriority
-  tag: string | null
+  tags: Tag[]
   time_estimate: number | null
   attachments: TaskAttachment[]
   category: string | null
@@ -67,7 +79,7 @@ export interface Task {
   updated_at: string
 }
 
-/** Input for creating a new task (all optional except title) */
+/** Input for creating a new task (all optional except title). Tags are assigned via addTagToTask after create. */
 export interface CreateTaskInput {
   title: string
   user_id?: string | null
@@ -76,20 +88,18 @@ export interface CreateTaskInput {
   start_date?: string | null
   due_date?: string | null
   priority?: TaskPriority
-  tag?: string | null
   time_estimate?: number | null
   attachments?: TaskAttachment[]
   status?: TaskStatus
 }
 
-/** Input for updating an existing task (all optional) */
+/** Input for updating an existing task (all optional). Tags are managed via addTagToTask/removeTagFromTask. */
 export interface UpdateTaskInput {
   title?: string
   description?: string | null
   start_date?: string | null
   due_date?: string | null
   priority?: TaskPriority
-  tag?: string | null
   time_estimate?: number | null
   attachments?: TaskAttachment[]
   status?: TaskStatus
@@ -125,4 +135,6 @@ export interface TaskFilters {
   search?: string
   dueDateFilter?: 'overdue' | 'today' | 'upcoming' | 'no-date' | 'all'
   parent_id?: string | null
+  /** When true, fetch all tasks (including subtasks) for dependency linking */
+  includeAllTasks?: boolean
 }

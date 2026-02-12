@@ -101,9 +101,28 @@ export function TaskItem({
               >
                 {task.priority}
               </span>
-              {task.tag && (
-                <span className="px-2 py-1 text-xs font-medium rounded bg-bonsai-slate-100 text-bonsai-slate-700">
-                  {task.tag}
+              {task.tags && task.tags.length > 0 && (
+                <span className="flex items-center gap-1">
+                  {task.tags.slice(0, 3).map((t) => (
+                    <span
+                      key={t.id}
+                      className={`px-2 py-1 text-xs font-medium rounded ${
+                        t.color === 'mint'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : t.color === 'blue'
+                            ? 'bg-blue-100 text-blue-800'
+                            : t.color === 'lavender'
+                              ? 'bg-violet-100 text-violet-800'
+                              : t.color === 'yellow'
+                                ? 'bg-amber-100 text-amber-800'
+                                : t.color === 'periwinkle'
+                                  ? 'bg-indigo-100 text-indigo-800'
+                                  : 'bg-bonsai-slate-100 text-bonsai-slate-700'
+                      }`}
+                    >
+                      {t.name}
+                    </span>
+                  ))}
                 </span>
               )}
             </div>

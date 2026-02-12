@@ -1,8 +1,9 @@
 /* TaskDependencyModal: Link this task as blocking or blocked-by another task */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Modal } from '../../../components/Modal'
 import { Button } from '../../../components/Button'
+import { Input } from '../../../components/Input'
 import { Select } from '../../../components/Select'
 import type { Task, TaskDependency, CreateTaskDependencyInput } from '../types'
 
@@ -35,6 +36,7 @@ export function TaskDependencyModal({
   const [relation, setRelation] = useState<Relation>('blocked_by')
   const [selectedTaskId, setSelectedTaskId] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   /* Fetch tasks and dependencies when modal opens */
   useEffect(() => {
@@ -50,8 +52,18 @@ export function TaskDependencyModal({
       .finally(() => {
         setLoading(false)
         setSelectedTaskId('')
+        setSearchQuery('')
       })
   }, [isOpen, currentTaskId, getTasks, getTaskDependencies])
+
+  /* Filter task options by search query (case-insensitive title match) */
+  const filteredTaskOptions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return tasks.map((t) => ({ value: t.id, label: t.title }))
+    return tasks
+      .filter((t) => t.title.toLowerCase().includes(q))
+      .map((t) => ({ value: t.id, label: t.title }))
+  }, [tasks, searchQuery])
 
   const handleAdd = async () => {
     if (!selectedTaskId) return
@@ -72,8 +84,6 @@ export function TaskDependencyModal({
       setSubmitting(false)
     }
   }
-
-  const taskOptions = tasks.map((t) => ({ value: t.id, label: t.title }))
 
   return (
     <Modal
@@ -133,10 +143,20 @@ export function TaskDependencyModal({
               <label className="block text-sm font-medium text-bonsai-slate-700 mb-1">
                 {relation === 'blocked_by' ? 'Blocked by task' : 'Blocks task'}
               </label>
+              <Input
+                type="text"
+                placeholder="Search tasks by name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="mb-2"
+              />
               <Select
                 value={selectedTaskId}
                 onChange={(e) => setSelectedTaskId(e.target.value)}
-                options={[{ value: '', label: 'Select a task...' }, ...taskOptions]}
+                options={[
+                  { value: '', label: 'Select a task...' },
+                  ...filteredTaskOptions,
+                ]}
               />
             </div>
             {(blockedBy.length > 0 || blocking.length > 0) && (

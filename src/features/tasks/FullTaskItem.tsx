@@ -12,6 +12,7 @@ import {
   UsersIcon,
   RepeatIcon,
   HourglassIcon,
+  TagIcon,
 } from '../../components/icons'
 import { TaskNameHover } from './TaskNameHover'
 import { DescriptionTooltip } from '../../components/DescriptionTooltip'
@@ -20,6 +21,8 @@ import { StatusPickerModal } from './modals/StatusPickerModal'
 import { TimeEstimateModal } from './modals/TimeEstimateModal'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { DatePickerModal } from './modals/DatePickerModal'
+import { TagModal } from './modals/TagModal'
+import { useTags } from './hooks/useTags'
 import type { Task, TaskPriority, TaskStatus, UpdateTaskInput } from './types'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
@@ -52,6 +55,8 @@ export interface FullTaskItemProps {
   onUpdateStatus?: (taskId: string, status: TaskStatus) => Promise<void>
   /** Function to update task (for time estimate and other fields) */
   onUpdateTask?: (taskId: string, input: UpdateTaskInput) => Promise<void>
+  /** Called after tags are updated (e.g. to refetch task list) */
+  onTagsUpdated?: () => void
 }
 
 /** Map TaskStatus to display status for the status circle */
@@ -172,6 +177,7 @@ export function FullTaskItem({
   blockedByCount = 0,
   onUpdateStatus,
   onUpdateTask,
+  onTagsUpdated,
 }: FullTaskItemProps) {
   const displayStatus = getDisplayStatus(task.status)
   /* Modal state: Track whether status picker modal is open */
@@ -182,6 +188,12 @@ export function FullTaskItem({
   const [isPriorityModalOpen, setIsPriorityModalOpen] = useState(false)
   /* Modal state: Track whether date picker modal is open */
   const [isDatePickerModalOpen, setIsDatePickerModalOpen] = useState(false)
+  /* Modal state: Track whether tag modal is open */
+  const [isTagModalOpen, setIsTagModalOpen] = useState(false)
+  /* Tag button ref: Used to position the tag popover */
+  const tagButtonRef = useRef<HTMLButtonElement>(null)
+  const { searchTags, createTag, updateTag, deleteTagFromAllTasks, setTagsForTask } =
+    useTags(task.user_id ?? null)
   /* Status button ref: Used to position the status popover */
   const statusButtonRef = useRef<HTMLButtonElement>(null)
   /* Priority button ref: Used to position the priority popover */
@@ -248,7 +260,7 @@ export function FullTaskItem({
       resizeObserver.disconnect()
       window.removeEventListener('resize', calculateAvailableWidth)
     }
-  }, [hasSubtasks, checklistSummary, task.tag, isBlocked, isBlocking, isShared, task.description, task.time_estimate, dateDisplay])
+  }, [hasSubtasks, checklistSummary, task.tags, isBlocked, isBlocking, isShared, task.description, task.time_estimate, dateDisplay])
 
   return (
     <div
@@ -370,12 +382,51 @@ export function FullTaskItem({
               </span>
             </span>
           )}
-          {/* Tag */}
-          {task.tag && (
-            <span className="shrink-0 rounded bg-bonsai-slate-100 px-2 py-0.5 text-xs font-medium text-bonsai-slate-700">
-              {task.tag}
-            </span>
-          )}
+          {/* Tags: Clickable to open tag modal - show pills or Add tags */}
+          <button
+            ref={tagButtonRef}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              if (onUpdateTask) {
+                setIsTagModalOpen(true)
+              }
+            }}
+            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-left hover:bg-bonsai-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Manage tags"
+            disabled={!onUpdateTask}
+            title="Add or edit tags"
+          >
+            {task.tags && task.tags.length > 0 ? (
+              <>
+                {task.tags.slice(0, 3).map((t) => (
+                  <span
+                    key={t.id}
+                    className={`rounded px-2 py-0.5 text-xs font-medium ${
+                      t.color === 'mint'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : t.color === 'blue'
+                          ? 'bg-blue-100 text-blue-800'
+                          : t.color === 'lavender'
+                            ? 'bg-violet-100 text-violet-800'
+                            : t.color === 'yellow'
+                              ? 'bg-amber-100 text-amber-800'
+                              : t.color === 'periwinkle'
+                                ? 'bg-indigo-100 text-indigo-800'
+                                : 'bg-bonsai-slate-100 text-bonsai-slate-700'
+                    }`}
+                  >
+                    {t.name}
+                  </span>
+                ))}
+              </>
+            ) : (
+              <span className="flex items-center gap-1 text-bonsai-slate-500">
+                <TagIcon className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="text-xs">Add tags</span>
+              </span>
+            )}
+          </button>
           {/* Shared icon */}
           {isShared && (
             <span className="shrink-0 text-bonsai-slate-500">
@@ -497,6 +548,28 @@ export function FullTaskItem({
               // Keep popover open on error so user can try again
             }
           }}
+        />
+      )}
+      {/* Tag modal: Opens when tag icon/pills are clicked */}
+      {onUpdateTask && (
+        <TagModal
+          isOpen={isTagModalOpen}
+          onClose={() => setIsTagModalOpen(false)}
+          value={task.tags ?? []}
+          onSave={async (tags) => {
+            try {
+              await setTagsForTask(task.id, tags.map((t) => t.id))
+              onTagsUpdated?.()
+            } catch (err) {
+              console.error('Failed to update tags:', err)
+            }
+          }}
+          triggerRef={tagButtonRef}
+          taskId={task.id}
+          searchTags={searchTags}
+          createTag={createTag}
+          updateTag={updateTag}
+          deleteTagFromAllTasks={deleteTagFromAllTasks}
         />
       )}
       {/* Date picker modal: Opens when date display is clicked */}

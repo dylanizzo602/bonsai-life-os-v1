@@ -24,6 +24,8 @@ export interface FullSubtaskItemProps {
   onUpdateStatus?: (taskId: string, status: TaskStatus) => Promise<void>
   /** Function to update subtask (for time estimate and other fields) */
   onUpdateTask?: (taskId: string, input: UpdateTaskInput) => Promise<void>
+  /** Called after tags are updated (e.g. to refetch subtask list) */
+  onTagsUpdated?: () => void
 }
 
 /**
@@ -42,6 +44,7 @@ export function FullSubtaskItem({
   blockedByCount = 0,
   onUpdateStatus,
   onUpdateTask,
+  onTagsUpdated,
 }: FullSubtaskItemProps) {
   return (
     <FullTaskItem
@@ -56,6 +59,7 @@ export function FullSubtaskItem({
       blockedByCount={blockedByCount}
       onUpdateStatus={onUpdateStatus}
       onUpdateTask={onUpdateTask}
+      onTagsUpdated={onTagsUpdated}
     />
   )
 }

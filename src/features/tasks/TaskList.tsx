@@ -16,6 +16,8 @@ export interface TaskListProps {
   filters: TaskFilters
   /** Update filters */
   setFilters: (f: TaskFilters) => void
+  /** Refetch tasks (e.g. after tag updates) */
+  refetch?: () => void
   /** Update task */
   updateTask: (id: string, input: import('./types').UpdateTaskInput) => Promise<Task>
   /** Delete task */
@@ -35,6 +37,8 @@ export interface TaskListProps {
   }>
   /** Create a task dependency */
   onAddDependency?: (input: import('./types').CreateTaskDependencyInput) => Promise<void>
+  /** Remove a task dependency by id */
+  onRemoveDependency?: (dependencyId: string) => Promise<void>
   /** Callback when user clicks to add a new task */
   onOpenAddModal?: () => void
   /** Callback when user clicks to edit a task */
@@ -51,6 +55,7 @@ export function TaskList({
   error,
   filters,
   setFilters,
+  refetch,
   onOpenAddModal,
   onOpenEditModal,
   /* Rest kept for interface; used when SubtaskList/FullTaskItem need them */
@@ -62,6 +67,7 @@ export function TaskList({
   getTasks,
   getTaskDependencies,
   onAddDependency,
+  onRemoveDependency,
 }: TaskListProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
   const [enrichmentLoading, setEnrichmentLoading] = useState(false)
@@ -202,6 +208,7 @@ export function TaskList({
                     blockedByCount={enrichment.blockedByCount}
                     expanded={isExpanded}
                     onToggleExpand={() => toggleExpand(task.id)}
+                    onTagsUpdated={refetch}
                     onUpdateStatus={async (taskId, status) => {
                       try {
                         await updateTask(taskId, { status })
@@ -231,6 +238,7 @@ export function TaskList({
                         getTasks={getTasks}
                         getTaskDependencies={getTaskDependencies}
                         onAddDependency={onAddDependency}
+                        onRemoveDependency={onRemoveDependency}
                       />
                     </div>
                   )}
