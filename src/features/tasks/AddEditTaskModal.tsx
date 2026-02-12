@@ -462,6 +462,7 @@ export function AddEditTaskModal({
         onClose={() => setTimeEstimateOpen(false)}
         minutes={time_estimate}
         onSave={setTimeEstimate}
+        taskId={task?.id ?? null}
       />
       {task?.id && onUpdateTask && (
         <>

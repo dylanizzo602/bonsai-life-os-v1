@@ -198,6 +198,8 @@ export function FullTaskItem({
   const statusButtonRef = useRef<HTMLButtonElement>(null)
   /* Priority button ref: Used to position the priority popover */
   const priorityButtonRef = useRef<HTMLButtonElement>(null)
+  /* Time estimate button ref: Used to position the time estimate popover */
+  const timeEstimateButtonRef = useRef<HTMLButtonElement>(null)
   const dateDisplay = formatDateWithOptionalTime(task.due_date) ?? formatDateWithOptionalTime(task.start_date)
   const isRecurring = Boolean(task.recurrence_pattern)
   /* medium = "normal" for display; ensure priority is valid for flag classes */
@@ -440,6 +442,7 @@ export function FullTaskItem({
       <div ref={rightSectionRef} className="flex shrink-0 items-center gap-2">
         {task.time_estimate != null && task.time_estimate > 0 && (
           <button
+            ref={timeEstimateButtonRef}
             type="button"
             onClick={(e) => {
               e.stopPropagation()
@@ -516,21 +519,18 @@ export function FullTaskItem({
           }}
         />
       )}
-      {/* Time estimate modal: Opens when time estimate icon is clicked */}
+      {/* Time estimate popover: Opens when time estimate icon is clicked */}
       {onUpdateTask && (
         <TimeEstimateModal
           isOpen={isTimeEstimateModalOpen}
           onClose={() => setIsTimeEstimateModalOpen(false)}
           minutes={task.time_estimate}
           onSave={async (minutes) => {
-            try {
-              await onUpdateTask(task.id, { time_estimate: minutes })
-              setIsTimeEstimateModalOpen(false)
-            } catch (error) {
-              console.error('Failed to update time estimate:', error)
-              // Keep modal open on error so user can try again
-            }
+            await onUpdateTask(task.id, { time_estimate: minutes })
           }}
+          taskId={task.id}
+          parentTaskMinutes={task.time_estimate}
+          triggerRef={timeEstimateButtonRef}
         />
       )}
       {/* Priority picker popover: Opens when priority flag is clicked, positioned below the flag */}

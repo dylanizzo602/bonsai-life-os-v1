@@ -7,8 +7,8 @@ interface ModalProps {
   isOpen: boolean
   /** Function to call when modal should close */
   onClose: () => void
-  /** Modal title */
-  title?: string
+  /** Modal title (string or ReactNode for custom content) */
+  title?: string | ReactNode
   /** Modal content */
   children: ReactNode
   /** Optional footer content */
@@ -54,7 +54,11 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
         {/* Modal header: responsive padding and title typography */}
         {title && (
           <div className="flex items-center justify-between p-4 md:p-5 lg:p-6 border-b border-bonsai-slate-200">
-            <h2 className="text-xl font-semibold text-bonsai-brown-700 md:text-2xl">{title}</h2>
+            {typeof title === 'string' ? (
+              <h2 className="text-xl font-semibold text-bonsai-brown-700 md:text-2xl">{title}</h2>
+            ) : (
+              <div className="text-xl font-semibold text-bonsai-brown-700 md:text-2xl">{title}</div>
+            )}
             <button
               onClick={onClose}
               className="text-bonsai-slate-400 hover:text-bonsai-slate-600 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded p-1"
