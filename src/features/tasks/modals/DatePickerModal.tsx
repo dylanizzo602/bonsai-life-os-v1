@@ -9,7 +9,7 @@ export interface DatePickerModalProps {
   onClose: () => void
   startDate: string | null
   dueDate: string | null
-  onSave: (start: string | null, due: string | null) => void
+  onSave: (start: string | null, due: string | null) => void | Promise<void>
 }
 
 /** Parse ISO string to date input value (YYYY-MM-DD) */
@@ -56,11 +56,23 @@ export function DatePickerModal({
     }
   }, [isOpen, startDate, dueDate])
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const startISO = toISO(start)
     const dueISO = due ? toISO(due, dueTime || undefined) : null
-    onSave(startISO, dueISO)
-    onClose()
+    const result = onSave(startISO, dueISO)
+    /* If onSave returns a promise, wait for it before closing */
+    if (result instanceof Promise) {
+      try {
+        await result
+        onClose()
+      } catch (error) {
+        /* Keep modal open on error so user can try again */
+        console.error('Error in onSave callback:', error)
+      }
+    } else {
+      /* Synchronous callback, close immediately */
+      onClose()
+    }
   }
 
   return (

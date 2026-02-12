@@ -55,6 +55,8 @@ export function SubtaskList({
     checklistSummary?: { completed: number; total: number }
     isBlocked: boolean
     isBlocking: boolean
+    blockingCount: number
+    blockedByCount: number
   }>>({})
 
   /* Load subtasks when taskId changes */
@@ -101,12 +103,16 @@ export function SubtaskList({
               checklistSummary: total > 0 ? { completed, total } : undefined,
               isBlocked: deps.blockedBy.length > 0,
               isBlocking: deps.blocking.length > 0,
+              blockingCount: deps.blocking.length,
+              blockedByCount: deps.blockedBy.length,
             }
           } catch (err) {
             console.error(`Error loading enrichment for subtask ${subtask.id}:`, err)
             enrichment[subtask.id] = {
               isBlocked: false,
               isBlocking: false,
+              blockingCount: 0,
+              blockedByCount: 0,
             }
           }
         }),
@@ -188,6 +194,8 @@ export function SubtaskList({
             const enrichment = subtaskEnrichment[subtask.id] ?? {
               isBlocked: false,
               isBlocking: false,
+              blockingCount: 0,
+              blockedByCount: 0,
             }
             return (
               <FullSubtaskItem
@@ -197,6 +205,24 @@ export function SubtaskList({
                 checklistSummary={enrichment.checklistSummary}
                 isBlocked={enrichment.isBlocked}
                 isBlocking={enrichment.isBlocking}
+                blockingCount={enrichment.blockingCount}
+                blockedByCount={enrichment.blockedByCount}
+                onUpdateStatus={async (taskId, status) => {
+                  try {
+                    await onUpdateTask(taskId, { status })
+                  } catch (error) {
+                    console.error('Failed to update subtask status:', error)
+                    throw error // Re-throw so FullTaskItem can handle it
+                  }
+                }}
+                onUpdateTask={async (taskId, input) => {
+                  try {
+                    await onUpdateTask(taskId, input)
+                  } catch (error) {
+                    console.error('Failed to update subtask:', error)
+                    throw error // Re-throw so FullSubtaskItem can handle it
+                  }
+                }}
               />
             )
           })}

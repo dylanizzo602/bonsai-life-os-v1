@@ -1,7 +1,7 @@
 /* FullSubtaskItem component: Desktop full-width subtask row with left/right metadata */
 
 import { FullTaskItem } from './FullTaskItem'
-import type { Task } from './types'
+import type { Task, TaskStatus, UpdateTaskInput } from './types'
 
 export interface FullSubtaskItemProps {
   /** Subtask data to display */
@@ -12,10 +12,18 @@ export interface FullSubtaskItemProps {
   isBlocked?: boolean
   /** Subtask is blocking another (show warning icon) */
   isBlocking?: boolean
+  /** Number of tasks this subtask is blocking (for tooltip) */
+  blockingCount?: number
+  /** Number of tasks blocking this subtask (for tooltip) */
+  blockedByCount?: number
   /** Subtask is shared with another user (show two-person icon) */
   isShared?: boolean
   /** Optional click on the row (e.g. open edit) */
   onClick?: () => void
+  /** Function to update subtask status */
+  onUpdateStatus?: (taskId: string, status: TaskStatus) => Promise<void>
+  /** Function to update subtask (for time estimate and other fields) */
+  onUpdateTask?: (taskId: string, input: UpdateTaskInput) => Promise<void>
 }
 
 /**
@@ -30,6 +38,10 @@ export function FullSubtaskItem({
   isBlocking = false,
   isShared = false,
   onClick,
+  blockingCount = 0,
+  blockedByCount = 0,
+  onUpdateStatus,
+  onUpdateTask,
 }: FullSubtaskItemProps) {
   return (
     <FullTaskItem
@@ -40,6 +52,10 @@ export function FullSubtaskItem({
       isBlocked={isBlocked}
       isBlocking={isBlocking}
       isShared={isShared}
+      blockingCount={blockingCount}
+      blockedByCount={blockedByCount}
+      onUpdateStatus={onUpdateStatus}
+      onUpdateTask={onUpdateTask}
     />
   )
 }

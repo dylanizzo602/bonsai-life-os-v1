@@ -15,7 +15,12 @@ import {
 } from '../../components/icons'
 import { TaskNameHover } from './TaskNameHover'
 import { DescriptionTooltip } from '../../components/DescriptionTooltip'
-import type { Task, TaskPriority, TaskStatus } from './types'
+import { DependencyTooltip } from '../../components/DependencyTooltip'
+import { StatusPickerModal } from './modals/StatusPickerModal'
+import { TimeEstimateModal } from './modals/TimeEstimateModal'
+import { PriorityModal } from './modals/PriorityModal'
+import { DatePickerModal } from './modals/DatePickerModal'
+import type { Task, TaskPriority, TaskStatus, UpdateTaskInput } from './types'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
 type DisplayStatus = 'open' | 'in_progress' | 'complete'
@@ -31,6 +36,10 @@ export interface FullTaskItemProps {
   isBlocked?: boolean
   /** Task is blocking another (show warning icon) */
   isBlocking?: boolean
+  /** Number of tasks this task is blocking (for tooltip) */
+  blockingCount?: number
+  /** Number of tasks blocking this task (for tooltip) */
+  blockedByCount?: number
   /** Task is shared with another user (show two-person icon) */
   isShared?: boolean
   /** Whether subtask section is expanded */
@@ -39,12 +48,22 @@ export interface FullTaskItemProps {
   onToggleExpand?: () => void
   /** Optional click on the row (e.g. open edit) */
   onClick?: () => void
+  /** Function to update task status */
+  onUpdateStatus?: (taskId: string, status: TaskStatus) => Promise<void>
+  /** Function to update task (for time estimate and other fields) */
+  onUpdateTask?: (taskId: string, input: UpdateTaskInput) => Promise<void>
 }
 
 /** Map TaskStatus to display status for the status circle */
 function getDisplayStatus(status: TaskStatus): DisplayStatus {
   if (status === 'completed') return 'complete'
   return 'open'
+}
+
+/** Map DisplayStatus back to TaskStatus for database updates */
+function getTaskStatus(displayStatus: DisplayStatus): TaskStatus {
+  if (displayStatus === 'complete') return 'completed'
+  return 'active'
 }
 
 /**
@@ -149,8 +168,22 @@ export function FullTaskItem({
   expanded = false,
   onToggleExpand,
   onClick,
+  blockingCount = 0,
+  blockedByCount = 0,
+  onUpdateStatus,
+  onUpdateTask,
 }: FullTaskItemProps) {
   const displayStatus = getDisplayStatus(task.status)
+  /* Modal state: Track whether status picker modal is open */
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
+  /* Modal state: Track whether time estimate modal is open */
+  const [isTimeEstimateModalOpen, setIsTimeEstimateModalOpen] = useState(false)
+  /* Modal state: Track whether priority modal is open */
+  const [isPriorityModalOpen, setIsPriorityModalOpen] = useState(false)
+  /* Modal state: Track whether date picker modal is open */
+  const [isDatePickerModalOpen, setIsDatePickerModalOpen] = useState(false)
+  /* Status button ref: Used to position the popover */
+  const statusButtonRef = useRef<HTMLButtonElement>(null)
   const dateDisplay = formatDateWithOptionalTime(task.due_date) ?? formatDateWithOptionalTime(task.start_date)
   const isRecurring = Boolean(task.recurrence_pattern)
   /* medium = "normal" for display; ensure priority is valid for flag classes */
@@ -160,10 +193,11 @@ export function FullTaskItem({
   const containerRef = useRef<HTMLDivElement>(null)
   const rightSectionRef = useRef<HTMLDivElement>(null)
   const leftIconsBeforeRef = useRef<HTMLDivElement>(null)
+  const dependencyIconsRef = useRef<HTMLDivElement>(null)
   const leftIconsAfterRef = useRef<HTMLDivElement>(null)
   const [availableWidth, setAvailableWidth] = useState<number | undefined>(undefined)
 
-  /* Calculate available width: Container width - right section - left icons before - left icons after - gaps */
+  /* Calculate available width: Container width - right section - left icons before - dependency icons - left icons after - gaps */
   useEffect(() => {
     const calculateAvailableWidth = () => {
       if (!containerRef.current || !rightSectionRef.current || !leftIconsBeforeRef.current || !leftIconsAfterRef.current) return
@@ -171,19 +205,21 @@ export function FullTaskItem({
       const containerRect = containerRef.current.getBoundingClientRect()
       const rightRect = rightSectionRef.current.getBoundingClientRect()
       const leftIconsBeforeRect = leftIconsBeforeRef.current.getBoundingClientRect()
+      const dependencyIconsRect = dependencyIconsRef.current?.getBoundingClientRect()
       const leftIconsAfterRect = leftIconsAfterRef.current.getBoundingClientRect()
       
-      /* Calculate: container width - right section - left icons before - left icons after - gaps */
+      /* Calculate: container width - right section - left icons before - dependency icons - left icons after - gaps */
       const containerWidth = containerRect.width
       const rightWidth = rightRect.width
       const leftIconsBeforeWidth = leftIconsBeforeRect.width
+      const dependencyIconsWidth = dependencyIconsRect?.width ?? 0
       const leftIconsAfterWidth = leftIconsAfterRect.width
       const gapBetweenSections = 16 // gap-4 = 16px between left and right sections
       const gapInLeftSection = 8 // gap-2 = 8px between items in left section
       const padding = 32 // px-4 = 16px on each side
       
-      /* Available width = container - right - left icons before - left icons after - gaps - padding */
-      const available = containerWidth - rightWidth - leftIconsBeforeWidth - leftIconsAfterWidth - gapBetweenSections - (gapInLeftSection * 2) - padding
+      /* Available width = container - right - left icons before - dependency icons - left icons after - gaps - padding */
+      const available = containerWidth - rightWidth - leftIconsBeforeWidth - dependencyIconsWidth - leftIconsAfterWidth - gapBetweenSections - (gapInLeftSection * 3) - padding
       
       /* Only set if positive, otherwise let it be undefined to use default behavior */
       setAvailableWidth(available > 0 ? Math.floor(available) : undefined)
@@ -251,17 +287,65 @@ export function FullTaskItem({
               />
             </button>
           )}
-          <TaskStatusIndicator status={displayStatus} />
+          {/* Status circle: Clickable to open status picker popover */}
+          <button
+            ref={statusButtonRef}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              /* Open status picker popover */
+              if (onUpdateStatus) {
+                setIsStatusModalOpen(true)
+              }
+            }}
+            className="shrink-0 flex items-center justify-center rounded hover:bg-bonsai-slate-100 transition-colors p-1"
+            aria-label="Change task status"
+            disabled={!onUpdateStatus}
+          >
+            <TaskStatusIndicator status={displayStatus} />
+          </button>
         </div>
         
-        {/* Task name: Appears after status circle, before other icons */}
-        <TaskNameHover 
-          title={task.title} 
-          status={task.status} 
-          maxWidth={availableWidth}
-        />
+        {/* Task name and dependency icons: Grouped together to keep dependency icons next to name */}
+        <div className="flex min-w-0 items-center gap-1.5">
+          <TaskNameHover 
+            title={task.title} 
+            status={task.status} 
+            maxWidth={availableWidth}
+          />
+          
+          {/* Dependency icons: Blocked and blocking icons appear immediately after task name */}
+          {(isBlocked || isBlocking) && (
+            <div ref={dependencyIconsRef} className="flex shrink-0 items-center gap-1.5">
+              {/* Blocked icon: Shows tooltip with dependency counts on hover */}
+              {isBlocked && (
+                <DependencyTooltip
+                  blockingCount={blockingCount}
+                  blockedByCount={blockedByCount}
+                  position="top"
+                >
+                  <span className="shrink-0 text-bonsai-slate-500">
+                    <BlockedIcon className="w-4 h-4 md:w-5 md:h-5" />
+                  </span>
+                </DependencyTooltip>
+              )}
+              {/* Blocking icon: Shows tooltip with dependency counts on hover */}
+              {isBlocking && (
+                <DependencyTooltip
+                  blockingCount={blockingCount}
+                  blockedByCount={blockedByCount}
+                  position="top"
+                >
+                  <span className="shrink-0 text-amber-500">
+                    <WarningIcon className="w-4 h-4 md:w-5 md:h-5" />
+                  </span>
+                </DependencyTooltip>
+              )}
+            </div>
+          )}
+        </div>
         
-        {/* Left icons after task name: Description, checklist, tag, blocked, blocking, shared */}
+        {/* Left icons after task name: Description, checklist, tag, shared */}
         <div ref={leftIconsAfterRef} className="flex shrink-0 items-center gap-2">
           {/* Description icon: Shows tooltip with description on hover */}
           {task.description?.trim() && (
@@ -290,18 +374,6 @@ export function FullTaskItem({
               {task.tag}
             </span>
           )}
-          {/* Blocked icon */}
-          {isBlocked && (
-            <span className="shrink-0 text-bonsai-slate-500">
-              <BlockedIcon className="w-4 h-4 md:w-5 md:h-5" />
-            </span>
-          )}
-          {/* Blocking icon */}
-          {isBlocking && (
-            <span className="shrink-0 text-amber-500">
-              <WarningIcon className="w-4 h-4 md:w-5 md:h-5" />
-            </span>
-          )}
           {/* Shared icon */}
           {isShared && (
             <span className="shrink-0 text-bonsai-slate-500">
@@ -314,30 +386,135 @@ export function FullTaskItem({
       {/* Right section: time estimate, date/time or repeat icon, priority flag */}
       <div ref={rightSectionRef} className="flex shrink-0 items-center gap-2">
         {task.time_estimate != null && task.time_estimate > 0 && (
-          <span className="flex items-center gap-1 text-sm text-bonsai-slate-600">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              /* Open time estimate modal when icon is clicked */
+              if (onUpdateTask) {
+                setIsTimeEstimateModalOpen(true)
+              }
+            }}
+            className="flex items-center gap-1 text-sm text-bonsai-slate-600 hover:text-bonsai-slate-800 transition-colors"
+            aria-label="Edit time estimate"
+            disabled={!onUpdateTask}
+          >
             <HourglassIcon className="w-4 h-4 md:w-5 md:h-5" aria-hidden />
             {task.time_estimate < 60
               ? `${task.time_estimate}m`
               : `${Math.floor(task.time_estimate / 60)}h${task.time_estimate % 60 ? ` ${task.time_estimate % 60}m` : ''}`}
-          </span>
+          </button>
         )}
         {dateDisplay && (
-          <span className="flex items-center gap-1 text-sm text-bonsai-slate-600">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              /* Open date picker modal when date is clicked */
+              if (onUpdateTask) {
+                setIsDatePickerModalOpen(true)
+              }
+            }}
+            className="flex items-center gap-1 text-sm text-bonsai-slate-600 hover:text-bonsai-slate-800 transition-colors"
+            aria-label="Edit start/due date"
+            disabled={!onUpdateTask}
+          >
             {isRecurring ? (
               <RepeatIcon className="w-4 h-4 md:w-5 md:h-5" aria-hidden />
             ) : (
               <CalendarIcon className="w-4 h-4 md:w-5 md:h-5" aria-hidden />
             )}
             {dateDisplay}
-          </span>
+          </button>
         )}
-        <span
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            /* Open priority modal when flag is clicked */
+            if (onUpdateTask) {
+              setIsPriorityModalOpen(true)
+            }
+          }}
           className={getPriorityFlagClasses(priority)}
-          aria-hidden
+          aria-label="Edit priority"
+          disabled={!onUpdateTask}
         >
           <FlagIcon className="w-4 h-4 md:w-5 md:h-5" />
-        </span>
+        </button>
       </div>
+
+      {/* Status picker popover: Opens when status circle is clicked, positioned below the circle */}
+      {onUpdateStatus && (
+        <StatusPickerModal
+          isOpen={isStatusModalOpen}
+          onClose={() => setIsStatusModalOpen(false)}
+          value={displayStatus}
+          triggerRef={statusButtonRef}
+          onSelect={async (newDisplayStatus) => {
+            try {
+              const newTaskStatus = getTaskStatus(newDisplayStatus)
+              await onUpdateStatus(task.id, newTaskStatus)
+            } catch (error) {
+              console.error('Failed to update task status:', error)
+              // Keep popover open on error so user can try again
+            }
+          }}
+        />
+      )}
+      {/* Time estimate modal: Opens when time estimate icon is clicked */}
+      {onUpdateTask && (
+        <TimeEstimateModal
+          isOpen={isTimeEstimateModalOpen}
+          onClose={() => setIsTimeEstimateModalOpen(false)}
+          minutes={task.time_estimate}
+          onSave={async (minutes) => {
+            try {
+              await onUpdateTask(task.id, { time_estimate: minutes })
+              setIsTimeEstimateModalOpen(false)
+            } catch (error) {
+              console.error('Failed to update time estimate:', error)
+              // Keep modal open on error so user can try again
+            }
+          }}
+        />
+      )}
+      {/* Priority modal: Opens when priority flag is clicked */}
+      {onUpdateTask && (
+        <PriorityModal
+          isOpen={isPriorityModalOpen}
+          onClose={() => setIsPriorityModalOpen(false)}
+          value={priority}
+          onSelect={async (newPriority) => {
+            try {
+              await onUpdateTask(task.id, { priority: newPriority })
+            } catch (error) {
+              console.error('Failed to update priority:', error)
+              throw error // Re-throw so PriorityModal can keep modal open
+            }
+          }}
+        />
+      )}
+      {/* Date picker modal: Opens when date display is clicked */}
+      {onUpdateTask && (
+        <DatePickerModal
+          isOpen={isDatePickerModalOpen}
+          onClose={() => setIsDatePickerModalOpen(false)}
+          startDate={task.start_date}
+          dueDate={task.due_date}
+          onSave={async (start, due) => {
+            try {
+              await onUpdateTask(task.id, {
+                start_date: start,
+                due_date: due,
+              })
+            } catch (error) {
+              console.error('Failed to update dates:', error)
+              throw error // Re-throw so DatePickerModal can keep modal open
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

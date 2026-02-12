@@ -1,6 +1,6 @@
 /* AddEditSubtaskModal: Modal for adding/editing a subtask; full form state and sub-modals (no subtasks) */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Modal } from '../../components/Modal'
 import { Button } from '../../components/Button'
 import { Input } from '../../components/Input'
@@ -22,14 +22,88 @@ import { TimeEstimateModal } from './modals/TimeEstimateModal'
 import { TaskDependencyModal } from './modals/TaskDependencyModal'
 import { AttachmentUploadModal } from './modals/AttachmentUploadModal'
 import { AttachmentPreviewModal } from './modals/AttachmentPreviewModal'
+import { StatusPickerModal } from './modals/StatusPickerModal'
 import type {
   Task,
   CreateTaskInput,
   UpdateTaskInput,
   CreateTaskDependencyInput,
   TaskPriority,
+  TaskStatus,
   TaskAttachment,
 } from './types'
+
+/** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
+type DisplayStatus = 'open' | 'in_progress' | 'complete'
+
+/** Map TaskStatus to display status for the status circle */
+function getDisplayStatus(status: TaskStatus): DisplayStatus {
+  if (status === 'completed') return 'complete'
+  return 'open'
+}
+
+/** Map DisplayStatus back to TaskStatus for database updates */
+function getTaskStatus(displayStatus: DisplayStatus): TaskStatus {
+  if (displayStatus === 'complete') return 'completed'
+  return 'active'
+}
+
+/**
+ * Status circle: OPEN = black dotted stroke no fill, IN PROGRESS = dotted yellow + fill, COMPLETE = solid green + fill.
+ */
+function TaskStatusIndicator({ status }: { status: DisplayStatus }) {
+  const size = 20
+  const r = (size - 4) / 2
+  const cx = size / 2
+  const cy = size / 2
+
+  if (status === 'complete') {
+    return (
+      <svg width={size} height={size} className="shrink-0" aria-hidden>
+        <circle
+          cx={cx}
+          cy={cy}
+          r={r}
+          fill="var(--color-green-500, #22c55e)"
+          stroke="var(--color-green-600, #16a34a)"
+          strokeWidth={2}
+        />
+      </svg>
+    )
+  }
+
+  if (status === 'in_progress') {
+    return (
+      <svg width={size} height={size} className="shrink-0" aria-hidden>
+        <circle
+          cx={cx}
+          cy={cy}
+          r={r}
+          fill="var(--color-yellow-400, #facc15)"
+          stroke="var(--color-yellow-500, #eab308)"
+          strokeWidth={2}
+          strokeDasharray="3 2"
+        />
+      </svg>
+    )
+  }
+
+  /* OPEN: black dotted stroke, no fill */
+  return (
+    <svg width={size} height={size} className="shrink-0" aria-hidden>
+      <circle
+        cx={cx}
+        cy={cy}
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeDasharray="2 2"
+        className="text-bonsai-slate-800"
+      />
+    </svg>
+  )
+}
 
 export interface AddEditSubtaskModalProps {
   /** Whether the modal is open */
@@ -80,12 +154,16 @@ export function AddEditSubtaskModal({
   const [tag, setTag] = useState<string | null>(null)
   const [time_estimate, setTimeEstimate] = useState<number | null>(null)
   const [attachments, setAttachments] = useState<TaskAttachment[]>([])
+  const [status, setStatus] = useState<DisplayStatus>('open')
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [datePickerOpen, setDatePickerOpen] = useState(false)
   const [priorityOpen, setPriorityOpen] = useState(false)
   const [tagOpen, setTagOpen] = useState(false)
   const [timeEstimateOpen, setTimeEstimateOpen] = useState(false)
+  const [statusPickerOpen, setStatusPickerOpen] = useState(false)
+  /* Status button ref: Used to position the popover */
+  const statusButtonRef = useRef<HTMLButtonElement>(null)
   const [dependencyModalOpen, setDependencyModalOpen] = useState(false)
   const [attachmentModalOpen, setAttachmentModalOpen] = useState(false)
   const [previewAttachment, setPreviewAttachment] = useState<TaskAttachment | null>(null)
@@ -108,6 +186,7 @@ export function AddEditSubtaskModal({
       setTag(subtask.tag ?? null)
       setTimeEstimate(subtask.time_estimate ?? null)
       setAttachments(Array.isArray(subtask.attachments) ? subtask.attachments : [])
+      setStatus(getDisplayStatus(subtask.status))
     } else {
       setTitle('')
       setDescription('')
@@ -117,6 +196,7 @@ export function AddEditSubtaskModal({
       setTag(null)
       setTimeEstimate(null)
       setAttachments([])
+      setStatus('open')
     }
   }, [isOpen, subtask])
 
@@ -135,6 +215,7 @@ export function AddEditSubtaskModal({
           tag: tag?.trim() || null,
           time_estimate,
           attachments: attachments.length ? attachments : undefined,
+          status: getTaskStatus(status),
         })
         onClose()
       } catch {
@@ -156,6 +237,7 @@ export function AddEditSubtaskModal({
         tag: tag?.trim() || null,
         time_estimate,
         attachments: attachments.length ? attachments : undefined,
+        status: getTaskStatus(status),
       }
       const result = await onCreateSubtask(input)
       if (onCreatedSubtask && result && typeof result === 'object' && 'id' in result) {
@@ -214,14 +296,27 @@ export function AddEditSubtaskModal({
         </>
       }
     >
-      {/* Main subtask input */}
-      <div className="mb-4">
-        <Input
-          placeholder="What needs to be done?"
-          className="border-bonsai-slate-300"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
+      {/* Main subtask input: Status circle on left, input field on right */}
+      <div className="mb-4 flex items-center gap-3">
+        {/* Status circle: Clickable to open status picker popover, aligned with left edge of date picker button below */}
+        <button
+          ref={statusButtonRef}
+          type="button"
+          onClick={() => setStatusPickerOpen(true)}
+          className="shrink-0 flex items-center justify-center rounded hover:bg-bonsai-slate-100 transition-colors"
+          aria-label="Change subtask status"
+        >
+          <TaskStatusIndicator status={status} />
+        </button>
+        {/* Subtask title input: Takes remaining space */}
+        <div className="flex-1">
+          <Input
+            placeholder="What needs to be done?"
+            className="border-bonsai-slate-300"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </div>
       </div>
 
       {/* Metadata pills: open sub-modals */}
@@ -266,6 +361,13 @@ export function AddEditSubtaskModal({
         </button>
       </div>
 
+      <StatusPickerModal
+        isOpen={statusPickerOpen}
+        onClose={() => setStatusPickerOpen(false)}
+        value={status}
+        triggerRef={statusButtonRef}
+        onSelect={setStatus}
+      />
       <DatePickerModal
         isOpen={datePickerOpen}
         onClose={() => setDatePickerOpen(false)}

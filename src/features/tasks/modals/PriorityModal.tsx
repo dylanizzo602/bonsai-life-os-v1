@@ -7,7 +7,7 @@ export interface PriorityModalProps {
   isOpen: boolean
   onClose: () => void
   value: TaskPriority
-  onSelect: (p: TaskPriority) => void
+  onSelect: (p: TaskPriority) => void | Promise<void>
 }
 
 const OPTIONS: { value: TaskPriority; label: string }[] = [
@@ -19,9 +19,21 @@ const OPTIONS: { value: TaskPriority; label: string }[] = [
 ]
 
 export function PriorityModal({ isOpen, onClose, value, onSelect }: PriorityModalProps) {
-  const handleSelect = (p: TaskPriority) => {
-    onSelect(p)
-    onClose()
+  const handleSelect = async (p: TaskPriority) => {
+    const result = onSelect(p)
+    /* If onSelect returns a promise, wait for it before closing */
+    if (result instanceof Promise) {
+      try {
+        await result
+        onClose()
+      } catch (error) {
+        /* Keep modal open on error so user can try again */
+        console.error('Error in onSelect callback:', error)
+      }
+    } else {
+      /* Synchronous callback, close immediately */
+      onClose()
+    }
   }
 
   return (

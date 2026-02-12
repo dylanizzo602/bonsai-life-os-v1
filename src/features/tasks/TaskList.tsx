@@ -70,6 +70,8 @@ export function TaskList({
     hasSubtasks: boolean
     isBlocked: boolean
     isBlocking: boolean
+    blockingCount: number
+    blockedByCount: number
   }>>({})
 
   /* Fetch enrichment data for all tasks: checklists, subtask counts, dependencies */
@@ -108,6 +110,8 @@ export function TaskList({
               hasSubtasks: subtasks.length > 0,
               isBlocked: deps.blockedBy.length > 0,
               isBlocking: deps.blocking.length > 0,
+              blockingCount: deps.blocking.length,
+              blockedByCount: deps.blockedBy.length,
             }
           } catch (err) {
             console.error(`Error loading enrichment for task ${task.id}:`, err)
@@ -115,6 +119,8 @@ export function TaskList({
               hasSubtasks: false,
               isBlocked: false,
               isBlocking: false,
+              blockingCount: 0,
+              blockedByCount: 0,
             }
           }
         }),
@@ -179,6 +185,8 @@ export function TaskList({
                 hasSubtasks: false,
                 isBlocked: false,
                 isBlocking: false,
+                blockingCount: 0,
+                blockedByCount: 0,
               }
               const isExpanded = expandedTasks.has(task.id)
               return (
@@ -190,8 +198,26 @@ export function TaskList({
                     checklistSummary={enrichment.checklistSummary}
                     isBlocked={enrichment.isBlocked}
                     isBlocking={enrichment.isBlocking}
+                    blockingCount={enrichment.blockingCount}
+                    blockedByCount={enrichment.blockedByCount}
                     expanded={isExpanded}
                     onToggleExpand={() => toggleExpand(task.id)}
+                    onUpdateStatus={async (taskId, status) => {
+                      try {
+                        await updateTask(taskId, { status })
+                      } catch (error) {
+                        console.error('Failed to update task status:', error)
+                        throw error // Re-throw so FullTaskItem can handle it
+                      }
+                    }}
+                    onUpdateTask={async (taskId, input) => {
+                      try {
+                        await updateTask(taskId, input)
+                      } catch (error) {
+                        console.error('Failed to update task:', error)
+                        throw error // Re-throw so FullTaskItem can handle it
+                      }
+                    }}
                   />
                   {isExpanded && enrichment.hasSubtasks && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
                     <div className="ml-8 pl-4 border-l-2 border-bonsai-slate-200">

@@ -79,6 +79,7 @@ export interface CreateTaskInput {
   tag?: string | null
   time_estimate?: number | null
   attachments?: TaskAttachment[]
+  status?: TaskStatus
 }
 
 /** Input for updating an existing task (all optional) */
