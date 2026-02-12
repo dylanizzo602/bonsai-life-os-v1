@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { Input } from '../../components/Input'
 import { Button } from '../../components/Button'
-import { FullSubtaskItem } from './FullSubtaskItem'
+import { CompactTaskItem } from './CompactTaskItem'
 import { AddEditSubtaskModal } from './AddEditSubtaskModal'
 import { getTaskChecklists, getTaskChecklistItems, getTaskDependencies } from '../../lib/supabase/tasks'
 import type { Task, CreateTaskInput } from './types'
@@ -188,11 +188,11 @@ export function SubtaskList({
 
   return (
     <div className="space-y-4">
-      {/* Subtasks list: displayed as FullTaskItem components */}
+      {/* Subtasks list: displayed as CompactTaskItem components (used in modals) */}
       {subtasks.length === 0 ? (
         <p className="text-sm text-bonsai-slate-500 italic">No subtasks yet</p>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-2">
           {subtasks.map((subtask) => {
             const enrichment = subtaskEnrichment[subtask.id] ?? {
               isBlocked: false,
@@ -201,39 +201,12 @@ export function SubtaskList({
               blockedByCount: 0,
             }
             return (
-              <FullSubtaskItem
+              <CompactTaskItem
                 key={subtask.id}
-                subtask={subtask}
+                task={subtask}
                 onClick={() => openEditModal(subtask)}
-                checklistSummary={enrichment.checklistSummary}
                 isBlocked={enrichment.isBlocked}
                 isBlocking={enrichment.isBlocking}
-                blockingCount={enrichment.blockingCount}
-                blockedByCount={enrichment.blockedByCount}
-                onUpdateStatus={async (taskId, status) => {
-                  try {
-                    await onUpdateTask(taskId, { status })
-                  } catch (error) {
-                    console.error('Failed to update subtask status:', error)
-                    throw error // Re-throw so FullTaskItem can handle it
-                  }
-                }}
-                onUpdateTask={async (taskId, input) => {
-                  try {
-                    await onUpdateTask(taskId, input)
-                  } catch (error) {
-                    console.error('Failed to update subtask:', error)
-                    throw error // Re-throw so FullSubtaskItem can handle it
-                  }
-                }}
-                onTagsUpdated={async () => {
-                  try {
-                    const updated = await fetchSubtasks(taskId)
-                    setSubtasks(updated)
-                  } catch (err) {
-                    console.error('Error reloading subtasks after tag update:', err)
-                  }
-                }}
               />
             )
           })}

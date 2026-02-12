@@ -1,6 +1,7 @@
 /* TaskList component: Main task management interface with task list and CRUD */
 import { useState, useEffect } from 'react'
 import { FullTaskItem } from './FullTaskItem'
+import { CompactTaskItem } from './CompactTaskItem'
 import { SubtaskList } from './SubtaskList'
 import { getTaskChecklists, getTaskChecklistItems, getTaskDependencies } from '../../lib/supabase/tasks'
 import type { Task, TaskFilters } from './types'
@@ -182,9 +183,10 @@ export function TaskList({
         </div>
       )}
 
-      {/* Task list: FullTaskItem only on desktop (lg); tablet/mobile task view not built yet */}
+      {/* Task list: visible on all breakpoints (mobile, tablet, desktop). Desktop = full items; mobile = compact items (no hover tooltips). */}
       {!loading && tasks.length > 0 && (
         <>
+          {/* Desktop (lg+): Full task items with expandable subtasks */}
           <div className="hidden lg:block space-y-4">
             {tasks.map((task) => {
               const enrichment = taskEnrichment[task.id] ?? {
@@ -214,7 +216,7 @@ export function TaskList({
                         await updateTask(taskId, { status })
                       } catch (error) {
                         console.error('Failed to update task status:', error)
-                        throw error // Re-throw so FullTaskItem can handle it
+                        throw error
                       }
                     }}
                     onUpdateTask={async (taskId, input) => {
@@ -222,7 +224,7 @@ export function TaskList({
                         await updateTask(taskId, input)
                       } catch (error) {
                         console.error('Failed to update task:', error)
-                        throw error // Re-throw so FullTaskItem can handle it
+                        throw error
                       }
                     }}
                   />
@@ -246,9 +248,87 @@ export function TaskList({
               )
             })}
           </div>
-          {/* Tablet/mobile: no task component yet */}
-          <div className="lg:hidden rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-4 py-8 text-center text-bonsai-slate-600">
-            Task list is available on desktop view.
+          {/* Mobile (< md): compact task items, no hover tooltips; tap opens edit modal */}
+          <div className="md:hidden space-y-2">
+            {tasks.map((task) => {
+              const enrichment = taskEnrichment[task.id] ?? {
+                hasSubtasks: false,
+                isBlocked: false,
+                isBlocking: false,
+                blockingCount: 0,
+                blockedByCount: 0,
+              }
+              return (
+                <CompactTaskItem
+                  key={task.id}
+                  task={task}
+                  onClick={() => onOpenEditModal?.(task)}
+                  isBlocked={enrichment.isBlocked}
+                  isBlocking={enrichment.isBlocking}
+                />
+              )
+            })}
+          </div>
+          {/* Tablet (md to lg): tablet task items, no hover tooltips; tap opens edit modal */}
+          <div className="hidden md:block lg:hidden space-y-2">
+            {tasks.map((task) => {
+              const enrichment = taskEnrichment[task.id] ?? {
+                hasSubtasks: false,
+                isBlocked: false,
+                isBlocking: false,
+                blockingCount: 0,
+                blockedByCount: 0,
+              }
+              const isExpanded = expandedTasks.has(task.id)
+              return (
+                <div key={task.id} className="space-y-2">
+                  <FullTaskItem
+                    tablet={true}
+                    task={task}
+                    onClick={() => onOpenEditModal?.(task)}
+                    hasSubtasks={enrichment.hasSubtasks}
+                    checklistSummary={enrichment.checklistSummary}
+                    isBlocked={enrichment.isBlocked}
+                    isBlocking={enrichment.isBlocking}
+                    blockingCount={enrichment.blockingCount}
+                    blockedByCount={enrichment.blockedByCount}
+                    onTagsUpdated={refetch}
+                    onUpdateStatus={async (taskId, status) => {
+                      try {
+                        await updateTask(taskId, { status })
+                      } catch (error) {
+                        console.error('Failed to update task status:', error)
+                        throw error
+                      }
+                    }}
+                    onUpdateTask={async (taskId, input) => {
+                      try {
+                        await updateTask(taskId, input)
+                      } catch (error) {
+                        console.error('Failed to update task:', error)
+                        throw error
+                      }
+                    }}
+                  />
+                  {isExpanded && enrichment.hasSubtasks && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
+                    <div className="ml-4 pl-3 border-l-2 border-bonsai-slate-200">
+                      <SubtaskList
+                        taskId={task.id}
+                        fetchSubtasks={fetchSubtasks}
+                        onCreateSubtask={(taskId, title) => createSubtask(taskId, { title })}
+                        onUpdateTask={updateTask}
+                        onDeleteTask={deleteTask}
+                        onToggleComplete={toggleComplete}
+                        getTasks={getTasks}
+                        getTaskDependencies={getTaskDependencies}
+                        onAddDependency={onAddDependency}
+                        onRemoveDependency={onRemoveDependency}
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </>
       )}

@@ -1,12 +1,14 @@
-/* CompactTaskItem component: Minimal compact task display with essential information only.
- * Top row: status and task name.
- * Bottom row: tag, dependency, start/due date, and flag.
- * No hover tooltips; safe for compact views and small screens. */
+/* TabletTaskItem component: Reusable tablet task display with consistent icon layout.
+ * Tablet task items never use hover tooltips; icons are display-only for touch and small screens. */
 
 import {
+  ChecklistIcon,
   CalendarIcon,
+  UsersIcon,
   BlockedIcon,
   WarningIcon,
+  ParagraphIcon,
+  HourglassIcon,
   RepeatIcon,
   FlagIcon,
 } from '../../components/icons'
@@ -15,13 +17,21 @@ import type { Task, TaskPriority, TaskStatus } from './types'
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
 type DisplayStatus = 'open' | 'in_progress' | 'complete'
 
-export interface CompactTaskItemProps {
+export interface TabletTaskItemProps {
   /** Task data to display */
   task: Task
+  /** Checklist completed/total when task has checklists */
+  checklistSummary?: { completed: number; total: number }
   /** Task is blocked by another (show blocked icon) */
   isBlocked?: boolean
   /** Task is blocking another (show warning icon) */
   isBlocking?: boolean
+  /** Number of tasks this task is blocking (display only; no tooltips in tablet view) */
+  blockingCount?: number
+  /** Number of tasks blocking this task (display only; no tooltips in tablet view) */
+  blockedByCount?: number
+  /** Task is shared with another user (show shared icon) */
+  isShared?: boolean
   /** Optional click handler for the entire item */
   onClick?: () => void
   /** Optional remove handler (shows × button) */
@@ -108,20 +118,26 @@ function getPriorityFlagClasses(priority: TaskPriority): string {
 }
 
 /**
- * Compact task item component with minimal two-row layout.
+ * Tablet task item component with standardized two-row layout.
+ * No hover tooltips; safe for tablet and mobile breakpoints.
  * Top row: status circle and task name.
- * Bottom row: tag, dependency icons, start/due date, and priority flag.
- * Used for compact views where space is limited.
+ * Bottom row: all icons and metadata in same order as FullTaskItem:
+ * dependency icons, description, checklist, tags, shared, time estimate, date/time, priority.
+ * Used in modals, dependency sections, and task lists on tablet/mobile.
  */
-export function CompactTaskItem({
+export function TabletTaskItem({
   task,
+  checklistSummary,
   isBlocked = false,
   isBlocking = false,
+  blockingCount = 0,
+  blockedByCount = 0,
+  isShared = false,
   onClick,
   onRemove,
   onDependencyClick,
   formatDueDate,
-}: CompactTaskItemProps) {
+}: TabletTaskItemProps) {
   const displayStatus = getDisplayStatus(task.status)
   /* Format date for display: use provided formatter or default */
   const defaultFormatDueDate = (iso: string | null | undefined): string | null => {
@@ -143,11 +159,10 @@ export function CompactTaskItem({
   const dateDisplay = formatDate(task.due_date ?? task.start_date)
   const isRecurring = Boolean(task.recurrence_pattern)
   const priority: TaskPriority = task.priority ?? 'medium'
-  const tagDisplay = task.tags?.[0] ?? null
 
   return (
     <div
-      className="compact-task-item rounded-lg border border-dashed border-amber-200 bg-white px-3 py-2 shadow-sm"
+      className="tablet-task-item rounded-lg border border-dashed border-amber-200 bg-white px-3 py-2 shadow-sm"
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
@@ -187,32 +202,12 @@ export function CompactTaskItem({
           </button>
         )}
       </div>
-      {/* Bottom row: tag, dependency, start/due date, and flag */}
+      {/* Bottom row: all icons and metadata in same order as FullTaskItem */}
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-bonsai-slate-600">
-        {/* Tag: show first tag if available */}
-        {tagDisplay && (
-          <span
-            className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-              tagDisplay.color === 'mint'
-                ? 'bg-emerald-100 text-emerald-800'
-                : tagDisplay.color === 'blue'
-                  ? 'bg-blue-100 text-blue-800'
-                  : tagDisplay.color === 'lavender'
-                    ? 'bg-violet-100 text-violet-800'
-                    : tagDisplay.color === 'yellow'
-                      ? 'bg-amber-100 text-amber-800'
-                      : tagDisplay.color === 'periwinkle'
-                        ? 'bg-indigo-100 text-indigo-800'
-                        : 'bg-bonsai-slate-100 text-bonsai-slate-700'
-            }`}
-          >
-            {tagDisplay.name}
-          </span>
-        )}
-        {/* Dependency icons: blocked and blocking */}
+        {/* Dependency icons: blocked and blocking icons immediately after task name */}
         {(isBlocked || isBlocking) && (
           <div className="flex shrink-0 items-center gap-1.5">
-            {/* Blocked icon */}
+            {/* Blocked icon: No tooltip in tablet view */}
             {isBlocked && (
               <button
                 type="button"
@@ -226,7 +221,7 @@ export function CompactTaskItem({
                 <BlockedIcon className="w-3.5 h-3.5" />
               </button>
             )}
-            {/* Blocking icon */}
+            {/* Blocking icon: No tooltip in tablet view */}
             {isBlocking && (
               <button
                 type="button"
@@ -242,7 +237,62 @@ export function CompactTaskItem({
             )}
           </div>
         )}
-        {/* Start/due date */}
+        {/* Description icon: No tooltip in tablet view */}
+        {task.description?.trim() && (
+          <span className="shrink-0 text-bonsai-slate-500">
+            <ParagraphIcon className="w-3.5 h-3.5" />
+          </span>
+        )}
+        {/* Checklist indicator */}
+        {checklistSummary && checklistSummary.total > 0 && (
+          <span className="flex shrink-0 items-center gap-0.5 text-bonsai-slate-600">
+            <ChecklistIcon className="w-3.5 h-3.5" />
+            <span>
+              {checklistSummary.completed}/{checklistSummary.total}
+            </span>
+          </span>
+        )}
+        {/* Tags: Show up to 3 tags like FullTaskItem */}
+        {task.tags && task.tags.length > 0 && (
+          <div className="flex shrink-0 items-center gap-1">
+            {task.tags.slice(0, 3).map((t) => (
+              <span
+                key={t.id}
+                className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                  t.color === 'mint'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : t.color === 'blue'
+                      ? 'bg-blue-100 text-blue-800'
+                      : t.color === 'lavender'
+                        ? 'bg-violet-100 text-violet-800'
+                        : t.color === 'yellow'
+                          ? 'bg-amber-100 text-amber-800'
+                          : t.color === 'periwinkle'
+                            ? 'bg-indigo-100 text-indigo-800'
+                            : 'bg-bonsai-slate-100 text-bonsai-slate-700'
+                }`}
+              >
+                {t.name}
+              </span>
+            ))}
+          </div>
+        )}
+        {/* Shared icon */}
+        {isShared && (
+          <span className="shrink-0 text-bonsai-slate-500">
+            <UsersIcon className="w-3.5 h-3.5" />
+          </span>
+        )}
+        {/* Time estimate */}
+        {task.time_estimate != null && task.time_estimate > 0 && (
+          <span className="flex items-center gap-1 text-bonsai-slate-600">
+            <HourglassIcon className="w-3.5 h-3.5" aria-hidden />
+            {task.time_estimate < 60
+              ? `${task.time_estimate}m`
+              : `${Math.floor(task.time_estimate / 60)}h${task.time_estimate % 60 ? ` ${task.time_estimate % 60}m` : ''}`}
+          </span>
+        )}
+        {/* Date/time or repeat icon */}
         {dateDisplay && (
           <span className="flex items-center gap-1 text-bonsai-slate-600">
             {isRecurring ? (

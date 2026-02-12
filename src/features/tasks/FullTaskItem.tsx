@@ -21,7 +21,7 @@ import { TimeEstimateModal } from './modals/TimeEstimateModal'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { DatePickerModal } from './modals/DatePickerModal'
 import { TagModal } from './modals/TagModal'
-import { CompactTaskItem } from './CompactTaskItem'
+import { TabletTaskItem } from './TabletTaskItem'
 import { useTags } from './hooks/useTags'
 import type { Task, TaskPriority, TaskStatus, UpdateTaskInput } from './types'
 
@@ -57,8 +57,8 @@ export interface FullTaskItemProps {
   onUpdateTask?: (taskId: string, input: UpdateTaskInput) => Promise<void>
   /** Called after tags are updated (e.g. to refetch task list) */
   onTagsUpdated?: () => void
-  /** Whether this is displayed as a compact task item (e.g. in modals) */
-  compact?: boolean
+  /** Whether this is displayed as a tablet task item (e.g. in modals, tablet/mobile views) */
+  tablet?: boolean
 }
 
 /** Map TaskStatus to display status for the status circle */
@@ -180,7 +180,7 @@ export function FullTaskItem({
   onUpdateStatus,
   onUpdateTask,
   onTagsUpdated,
-  compact = false,
+  tablet = false,
 }: FullTaskItemProps) {
   const displayStatus = getDisplayStatus(task.status)
   /* Modal state: Track whether status picker modal is open */
@@ -267,14 +267,17 @@ export function FullTaskItem({
     }
   }, [hasSubtasks, checklistSummary, task.tags, isBlocked, isBlocking, isShared, task.description, task.time_estimate, dateDisplay])
 
-  /* Compact mode: use CompactTaskItem component for consistent icon layout */
-  if (compact) {
+  /* Tablet mode: use TabletTaskItem component for consistent icon layout */
+  if (tablet) {
     return (
-      <CompactTaskItem
+      <TabletTaskItem
         task={task}
         checklistSummary={checklistSummary}
         isBlocked={isBlocked}
         isBlocking={isBlocking}
+        blockingCount={blockingCount}
+        blockedByCount={blockedByCount}
+        isShared={isShared}
         onClick={onClick}
         formatDueDate={formatDateWithOptionalTime}
       />

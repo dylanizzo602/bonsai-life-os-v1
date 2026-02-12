@@ -38,24 +38,6 @@ function formatDueDate(iso: string | null | undefined): string | null {
   })
 }
 
-/* Fetch checklist summary for a task (for compact task items) */
-async function getChecklistSummary(taskId: string): Promise<{ completed: number; total: number } | undefined> {
-  try {
-    const { getTaskChecklists, getTaskChecklistItems } = await import('../../lib/supabase/tasks')
-    const checklists = await getTaskChecklists(taskId)
-    let completed = 0
-    let total = 0
-    for (const c of checklists) {
-      const items = await getTaskChecklistItems(c.id)
-      total += items.length
-      completed += items.filter((i) => i.completed).length
-    }
-    return total > 0 ? { completed, total } : undefined
-  } catch (err) {
-    console.error(`Error fetching checklist summary for task ${taskId}:`, err)
-    return undefined
-  }
-}
 
 /**
  * Dependencies section for add/edit task and subtask modals.
@@ -72,7 +54,6 @@ export function DependenciesSection({
   const [blocking, setBlocking] = useState<TaskDependency[]>([])
   const [blockedBy, setBlockedBy] = useState<TaskDependency[]>([])
   const [taskMap, setTaskMap] = useState<Record<string, Task>>({})
-  const [checklistSummaries, setChecklistSummaries] = useState<Record<string, { completed: number; total: number }>>({})
   const [loading, setLoading] = useState(false)
   const [dependencyModalOpen, setDependencyModalOpen] = useState(false)
   /* Search query for "blocked by" input - opens modal on focus/click */
@@ -94,21 +75,6 @@ export function DependenciesSection({
         map[t.id] = t
       })
       setTaskMap(map)
-      /* Fetch checklist summaries for all dependency tasks */
-      const summaries: Record<string, { completed: number; total: number }> = {}
-      const allDependencyTaskIds = [
-        ...deps.blocking.map((d) => d.blocked_id),
-        ...deps.blockedBy.map((d) => d.blocker_id),
-      ]
-      await Promise.all(
-        allDependencyTaskIds.map(async (taskId) => {
-          const summary = await getChecklistSummary(taskId)
-          if (summary) {
-            summaries[taskId] = summary
-          }
-        }),
-      )
-      setChecklistSummaries(summaries)
     } catch (err) {
       console.error('Error fetching dependencies:', err)
     } finally {
@@ -169,7 +135,6 @@ export function DependenciesSection({
                 <CompactTaskItem
                   key={dep.id}
                   task={task}
-                  checklistSummary={checklistSummaries[task.id]}
                   isBlocked={true}
                   onRemove={
                     onRemoveDependency
@@ -213,7 +178,6 @@ export function DependenciesSection({
                 <CompactTaskItem
                   key={dep.id}
                   task={task}
-                  checklistSummary={checklistSummaries[task.id]}
                   isBlocking={true}
                   onRemove={
                     onRemoveDependency

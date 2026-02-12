@@ -60,7 +60,7 @@ export function FullSubtaskItem({
       onUpdateStatus={onUpdateStatus}
       onUpdateTask={onUpdateTask}
       onTagsUpdated={onTagsUpdated}
-      compact={true}
+      tablet={true}
     />
   )
 }
