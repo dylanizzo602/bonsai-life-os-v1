@@ -14,6 +14,7 @@ import {
   HourglassIcon,
 } from '../../components/icons'
 import { TaskNameHover } from './TaskNameHover'
+import { DescriptionTooltip } from '../../components/DescriptionTooltip'
 import type { Task, TaskPriority, TaskStatus } from './types'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
@@ -244,7 +245,6 @@ export function FullTaskItem({
               className="shrink-0 flex items-center justify-center w-6 h-6 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-800 transition-colors"
               aria-expanded={expanded}
               aria-label={expanded ? 'Collapse subtasks' : 'Expand subtasks'}
-              title={expanded ? 'Collapse subtasks' : 'Expand subtasks'}
             >
               <ChevronDownIcon
                 className={`w-5 h-5 transition-transform ${expanded ? 'rotate-180' : ''}`}
@@ -263,15 +263,21 @@ export function FullTaskItem({
         
         {/* Left icons after task name: Description, checklist, tag, blocked, blocking, shared */}
         <div ref={leftIconsAfterRef} className="flex shrink-0 items-center gap-2">
-          {/* Description icon */}
+          {/* Description icon: Shows tooltip with description on hover */}
           {task.description?.trim() && (
-            <span className="shrink-0 text-bonsai-slate-500" title="Has description">
-              <ParagraphIcon className="w-4 h-4 md:w-5 md:h-5" />
-            </span>
+            <DescriptionTooltip 
+              description={task.description} 
+              attachmentCount={task.attachments?.length ?? 0}
+              position="top"
+            >
+              <span className="shrink-0 text-bonsai-slate-500">
+                <ParagraphIcon className="w-4 h-4 md:w-5 md:h-5" />
+              </span>
+            </DescriptionTooltip>
           )}
           {/* Checklist indicator */}
           {checklistSummary && checklistSummary.total > 0 && (
-            <span className="flex shrink-0 items-center gap-0.5 text-bonsai-slate-600" title="Checklist">
+            <span className="flex shrink-0 items-center gap-0.5 text-bonsai-slate-600">
               <ChecklistIcon className="w-4 h-4 md:w-5 md:h-5" />
               <span className="text-xs md:text-sm">
                 {checklistSummary.completed}/{checklistSummary.total}
@@ -286,19 +292,19 @@ export function FullTaskItem({
           )}
           {/* Blocked icon */}
           {isBlocked && (
-            <span className="shrink-0 text-bonsai-slate-500" title="Blocked by another task">
+            <span className="shrink-0 text-bonsai-slate-500">
               <BlockedIcon className="w-4 h-4 md:w-5 md:h-5" />
             </span>
           )}
           {/* Blocking icon */}
           {isBlocking && (
-            <span className="shrink-0 text-amber-500" title="Blocking another task">
+            <span className="shrink-0 text-amber-500">
               <WarningIcon className="w-4 h-4 md:w-5 md:h-5" />
             </span>
           )}
           {/* Shared icon */}
           {isShared && (
-            <span className="shrink-0 text-bonsai-slate-500" title="Shared with others">
+            <span className="shrink-0 text-bonsai-slate-500">
               <UsersIcon className="w-4 h-4 md:w-5 md:h-5" />
             </span>
           )}
@@ -308,7 +314,7 @@ export function FullTaskItem({
       {/* Right section: time estimate, date/time or repeat icon, priority flag */}
       <div ref={rightSectionRef} className="flex shrink-0 items-center gap-2">
         {task.time_estimate != null && task.time_estimate > 0 && (
-          <span className="flex items-center gap-1 text-sm text-bonsai-slate-600" title="Time estimate">
+          <span className="flex items-center gap-1 text-sm text-bonsai-slate-600">
             <HourglassIcon className="w-4 h-4 md:w-5 md:h-5" aria-hidden />
             {task.time_estimate < 60
               ? `${task.time_estimate}m`
@@ -327,7 +333,6 @@ export function FullTaskItem({
         )}
         <span
           className={getPriorityFlagClasses(priority)}
-          title={`Priority: ${priority}`}
           aria-hidden
         >
           <FlagIcon className="w-4 h-4 md:w-5 md:h-5" />
