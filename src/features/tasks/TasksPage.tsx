@@ -91,6 +91,9 @@ export function TasksPage() {
         toggleComplete={toggleComplete}
         fetchSubtasks={fetchSubtasks}
         createSubtask={createSubtask}
+        getTasks={getTasks}
+        getTaskDependencies={getTaskDependencies}
+        onAddDependency={onAddDependency}
         onOpenAddModal={openAdd}
         onOpenEditModal={openEdit}
       />

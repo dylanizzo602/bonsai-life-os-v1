@@ -1,4 +1,4 @@
-/* AddEditTaskModal: Modal for adding/editing a task; full form state and sub-modals */
+/* AddEditSubtaskModal: Modal for adding/editing a subtask; full form state and sub-modals (no subtasks) */
 
 import { useState, useEffect } from 'react'
 import { Modal } from '../../components/Modal'
@@ -6,7 +6,6 @@ import { Button } from '../../components/Button'
 import { Input } from '../../components/Input'
 import { Checkbox } from '../../components/Checkbox'
 import { useTaskChecklists } from './hooks/useTaskChecklists'
-import { SubtaskList } from './SubtaskList'
 import {
   PlusIcon,
   ChevronRightIcon,
@@ -32,29 +31,19 @@ import type {
   TaskAttachment,
 } from './types'
 
-export interface AddEditTaskModalProps {
+export interface AddEditSubtaskModalProps {
   /** Whether the modal is open */
   isOpen: boolean
   /** Called when the modal should close */
   onClose: () => void
-  /** Called when user submits Add Task; receives form data. May return the created task. */
-  onCreateTask?: (input: CreateTaskInput) => Promise<unknown>
+  /** Called when user submits Add Subtask; receives form data. May return the created task. */
+  onCreateSubtask?: (input: CreateTaskInput) => Promise<unknown>
   /** If provided, after create this is called with the created task and the modal stays open in edit mode */
-  onCreatedTask?: (task: Task) => void
-  /** Existing task when editing; when set, modal is in edit mode */
-  task?: Task | null
+  onCreatedSubtask?: (task: Task) => void
+  /** Existing subtask when editing; when set, modal is in edit mode */
+  subtask?: Task | null
   /** Called when user saves edits */
   onUpdateTask?: (id: string, input: UpdateTaskInput) => Promise<Task>
-  /** Fetch subtasks (for SubtaskList when editing) */
-  fetchSubtasks?: (taskId: string) => Promise<Task[]>
-  /** Create subtask */
-  createSubtask?: (parentId: string, input: { title: string }) => Promise<Task>
-  /** Update task (for subtask edits) */
-  updateTask?: (id: string, input: UpdateTaskInput) => Promise<Task>
-  /** Delete task (for subtasks) */
-  deleteTask?: (id: string) => Promise<void>
-  /** Toggle task completion (for subtasks) */
-  toggleComplete?: (id: string, completed: boolean) => Promise<Task>
   /** Fetch all tasks (for dependency modal) */
   getTasks?: () => Promise<Task[]>
   /** Fetch task dependencies */
@@ -67,26 +56,22 @@ export interface AddEditTaskModalProps {
 }
 
 /**
- * Add/Edit Task modal.
+ * Add/Edit Subtask modal.
  * Full form state (title, description, dates, priority, tag, time estimate, attachments).
- * Pills open sub-modals to set each field. Submit creates or updates task.
+ * Pills open sub-modals to set each field. Submit creates or updates subtask.
+ * Subtasks cannot have subtasks themselves.
  */
-export function AddEditTaskModal({
+export function AddEditSubtaskModal({
   isOpen,
   onClose,
-  onCreateTask,
-  onCreatedTask,
-  task = null,
+  onCreateSubtask,
+  onCreatedSubtask,
+  subtask = null,
   onUpdateTask,
-  fetchSubtasks,
-  createSubtask,
-  updateTask,
-  deleteTask,
-  toggleComplete,
   getTasks,
   getTaskDependencies,
   onAddDependency,
-}: AddEditTaskModalProps) {
+}: AddEditSubtaskModalProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [start_date, setStartDate] = useState<string | null>(null)
@@ -107,22 +92,22 @@ export function AddEditTaskModal({
   const [newChecklistTitle, setNewChecklistTitle] = useState('')
   const [newItemTitles, setNewItemTitles] = useState<Record<string, string>>({})
 
-  const isEditMode = Boolean(task?.id)
+  const isEditMode = Boolean(subtask?.id)
   const { checklists, loading: checklistsLoading, addChecklist, addItem, toggleItem } =
-    useTaskChecklists(task?.id ?? null)
+    useTaskChecklists(subtask?.id ?? null)
 
   /* Prefill form when editing or reset when opening for add */
   useEffect(() => {
     if (!isOpen) return
-    if (task) {
-      setTitle(task.title)
-      setDescription(task.description ?? '')
-      setStartDate(task.start_date ?? null)
-      setDueDate(task.due_date ?? null)
-      setPriority(task.priority ?? 'medium')
-      setTag(task.tag ?? null)
-      setTimeEstimate(task.time_estimate ?? null)
-      setAttachments(Array.isArray(task.attachments) ? task.attachments : [])
+    if (subtask) {
+      setTitle(subtask.title)
+      setDescription(subtask.description ?? '')
+      setStartDate(subtask.start_date ?? null)
+      setDueDate(subtask.due_date ?? null)
+      setPriority(subtask.priority ?? 'medium')
+      setTag(subtask.tag ?? null)
+      setTimeEstimate(subtask.time_estimate ?? null)
+      setAttachments(Array.isArray(subtask.attachments) ? subtask.attachments : [])
     } else {
       setTitle('')
       setDescription('')
@@ -133,15 +118,15 @@ export function AddEditTaskModal({
       setTimeEstimate(null)
       setAttachments([])
     }
-  }, [isOpen, task])
+  }, [isOpen, subtask])
 
-  /* Submit: create or update task with all form fields */
+  /* Submit: create or update subtask with all form fields */
   const handleSubmit = async () => {
     if (!title.trim()) return
-    if (isEditMode && task && onUpdateTask) {
+    if (isEditMode && subtask && onUpdateTask) {
       setSubmitting(true)
       try {
-        await onUpdateTask(task.id, {
+        await onUpdateTask(subtask.id, {
           title: title.trim(),
           description: description.trim() || null,
           start_date: start_date || null,
@@ -159,7 +144,7 @@ export function AddEditTaskModal({
       }
       return
     }
-    if (!onCreateTask) return
+    if (!onCreateSubtask) return
     setSubmitting(true)
     try {
       const input: CreateTaskInput = {
@@ -172,10 +157,10 @@ export function AddEditTaskModal({
         time_estimate,
         attachments: attachments.length ? attachments : undefined,
       }
-      const result = await onCreateTask(input)
-      if (onCreatedTask && result && typeof result === 'object' && 'id' in result) {
-        onCreatedTask(result as Task)
-        /* Modal stays open in edit mode; parent sets task to result */
+      const result = await onCreateSubtask(input)
+      if (onCreatedSubtask && result && typeof result === 'object' && 'id' in result) {
+        onCreatedSubtask(result as Task)
+        /* Modal stays open in edit mode; parent sets subtask to result */
       } else {
         setTitle('')
         setDescription('')
@@ -207,7 +192,7 @@ export function AddEditTaskModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={isEditMode ? 'Edit Task' : 'Add Task'}
+      title={isEditMode ? 'Edit Subtask' : 'Add Subtask'}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -224,12 +209,12 @@ export function AddEditTaskModal({
                 : 'Adding...'
               : isEditMode
                 ? 'Save'
-                : 'Add Task'}
+                : 'Add Subtask'}
           </Button>
         </>
       }
     >
-      {/* Main task input */}
+      {/* Main subtask input */}
       <div className="mb-4">
         <Input
           placeholder="What needs to be done?"
@@ -309,26 +294,26 @@ export function AddEditTaskModal({
         minutes={time_estimate}
         onSave={setTimeEstimate}
       />
-      {task?.id && getTasks && getTaskDependencies && onAddDependency && (
+      {subtask?.id && getTasks && getTaskDependencies && onAddDependency && (
         <TaskDependencyModal
           isOpen={dependencyModalOpen}
           onClose={() => setDependencyModalOpen(false)}
-          currentTaskId={task.id}
+          currentTaskId={subtask.id}
           getTasks={getTasks}
           getTaskDependencies={getTaskDependencies}
           onAddDependency={onAddDependency}
         />
       )}
-      {task?.id && onUpdateTask && (
+      {subtask?.id && onUpdateTask && (
         <>
           <AttachmentUploadModal
             isOpen={attachmentModalOpen}
             onClose={() => setAttachmentModalOpen(false)}
-            taskId={task.id}
+            taskId={subtask.id}
             existingAttachments={attachments}
             onUploadComplete={(list) => {
               setAttachments(list)
-              onUpdateTask(task.id, { attachments: list })
+              onUpdateTask(subtask.id, { attachments: list })
             }}
           />
           <AttachmentPreviewModal
@@ -352,7 +337,7 @@ export function AddEditTaskModal({
         )}
         <span className="font-medium">Advanced options</span>
         <span className="text-bonsai-slate-500 font-normal">
-          (description, goals, attachments, breakdown)
+          (description, attachments, breakdown)
         </span>
       </button>
 
@@ -371,8 +356,8 @@ export function AddEditTaskModal({
 
           <div>
             <p className="text-sm font-medium text-bonsai-slate-700 mb-2">Attachments</p>
-            {!task?.id ? (
-              <p className="text-sm text-bonsai-slate-500">Save the task first to add attachments.</p>
+            {!subtask?.id ? (
+              <p className="text-sm text-bonsai-slate-500">Save the subtask first to add attachments.</p>
             ) : (
               <div className="space-y-2">
                 {/* Existing attachments: displayed as clickable items */}
@@ -423,8 +408,8 @@ export function AddEditTaskModal({
 
           <div>
             <p className="text-sm font-medium text-bonsai-slate-700 mb-1">Checklists</p>
-            {!task?.id ? (
-              <p className="text-sm text-bonsai-slate-500">Create the task first to add checklists.</p>
+            {!subtask?.id ? (
+              <p className="text-sm text-bonsai-slate-500">Create the subtask first to add checklists.</p>
             ) : (
               <>
                 <div className="flex gap-2 mb-3">
@@ -514,32 +499,11 @@ export function AddEditTaskModal({
           </div>
 
           <div>
-            <p className="text-sm font-medium text-bonsai-slate-700 mb-1">Subtasks</p>
-            {!task?.id ? (
-              <p className="text-sm text-bonsai-slate-500">Create the task first to add subtasks.</p>
-            ) : fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete ? (
-              <SubtaskList
-                taskId={task.id}
-                fetchSubtasks={fetchSubtasks}
-                onCreateSubtask={(taskId, title) => createSubtask(taskId, { title })}
-                onUpdateTask={updateTask}
-                onDeleteTask={deleteTask}
-                onToggleComplete={toggleComplete}
-                getTasks={getTasks}
-                getTaskDependencies={getTaskDependencies}
-                onAddDependency={onAddDependency}
-              />
-            ) : (
-              <p className="text-sm text-bonsai-slate-500">Subtask actions not provided.</p>
-            )}
-          </div>
-
-          <div>
             <p className="text-sm font-medium text-bonsai-slate-700 mb-1">Task Dependencies</p>
             <button
               type="button"
-              onClick={() => task?.id && setDependencyModalOpen(true)}
-              disabled={!task?.id}
+              onClick={() => subtask?.id && setDependencyModalOpen(true)}
+              disabled={!subtask?.id}
               className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-bonsai-slate-300 px-3 py-2 text-sm font-medium text-bonsai-slate-600 hover:bg-bonsai-slate-50 hover:border-bonsai-slate-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <PlusIcon className="w-4 h-4" />

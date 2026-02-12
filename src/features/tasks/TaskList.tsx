@@ -1,5 +1,8 @@
 /* TaskList component: Main task management interface with task list and CRUD */
+import { useState, useEffect } from 'react'
 import { FullTaskItem } from './FullTaskItem'
+import { SubtaskList } from './SubtaskList'
+import { getTaskChecklists, getTaskChecklistItems, getTaskDependencies } from '../../lib/supabase/tasks'
 import type { Task, TaskFilters } from './types'
 
 export interface TaskListProps {
@@ -23,6 +26,15 @@ export interface TaskListProps {
   fetchSubtasks: (taskId: string) => Promise<Task[]>
   /** Create subtask */
   createSubtask: (parentId: string, input: { title: string }) => Promise<Task>
+  /** Fetch all tasks (for dependency modal) */
+  getTasks?: () => Promise<Task[]>
+  /** Fetch task dependencies */
+  getTaskDependencies?: (taskId: string) => Promise<{
+    blocking: import('./types').TaskDependency[]
+    blockedBy: import('./types').TaskDependency[]
+  }>
+  /** Create a task dependency */
+  onAddDependency?: (input: import('./types').CreateTaskDependencyInput) => Promise<void>
   /** Callback when user clicks to add a new task */
   onOpenAddModal?: () => void
   /** Callback when user clicks to edit a task */
@@ -42,12 +54,98 @@ export function TaskList({
   onOpenAddModal,
   onOpenEditModal,
   /* Rest kept for interface; used when SubtaskList/FullTaskItem need them */
-  updateTask: _updateTask,
-  deleteTask: _deleteTask,
-  toggleComplete: _toggleComplete,
-  fetchSubtasks: _fetchSubtasks,
-  createSubtask: _createSubtask,
+  updateTask,
+  deleteTask,
+  toggleComplete,
+  fetchSubtasks,
+  createSubtask,
+  getTasks,
+  getTaskDependencies,
+  onAddDependency,
 }: TaskListProps) {
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
+  const [enrichmentLoading, setEnrichmentLoading] = useState(false)
+  const [taskEnrichment, setTaskEnrichment] = useState<Record<string, {
+    checklistSummary?: { completed: number; total: number }
+    hasSubtasks: boolean
+    isBlocked: boolean
+    isBlocking: boolean
+  }>>({})
+
+  /* Fetch enrichment data for all tasks: checklists, subtask counts, dependencies */
+  const loadEnrichment = async () => {
+    if (!fetchSubtasks) return
+    setEnrichmentLoading(true)
+    const enrichment: typeof taskEnrichment = {}
+    try {
+      await Promise.all(
+        tasks.map(async (task) => {
+          try {
+            const [checklists, subtasksResult, deps] = await Promise.all([
+              getTaskChecklists(task.id).catch((err) => {
+                console.error(`Error fetching checklists for task ${task.id}:`, err)
+                return []
+              }),
+              fetchSubtasks(task.id).catch((err) => {
+                console.error(`Error fetching subtasks for task ${task.id}:`, err)
+                return []
+              }),
+              getTaskDependencies(task.id).catch((err) => {
+                console.error(`Error fetching dependencies for task ${task.id}:`, err)
+                return { blocking: [], blockedBy: [] }
+              }),
+            ])
+            const subtasks = Array.isArray(subtasksResult) ? subtasksResult : []
+            let completed = 0
+            let total = 0
+            for (const c of checklists) {
+              const items = await getTaskChecklistItems(c.id).catch(() => [])
+              total += items.length
+              completed += items.filter((i) => i.completed).length
+            }
+            enrichment[task.id] = {
+              checklistSummary: total > 0 ? { completed, total } : undefined,
+              hasSubtasks: subtasks.length > 0,
+              isBlocked: deps.blockedBy.length > 0,
+              isBlocking: deps.blocking.length > 0,
+            }
+          } catch (err) {
+            console.error(`Error loading enrichment for task ${task.id}:`, err)
+            enrichment[task.id] = {
+              hasSubtasks: false,
+              isBlocked: false,
+              isBlocking: false,
+            }
+          }
+        }),
+      )
+      setTaskEnrichment(enrichment)
+    } finally {
+      setEnrichmentLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (tasks.length > 0 && fetchSubtasks) {
+      loadEnrichment()
+    } else {
+      setTaskEnrichment({})
+      setEnrichmentLoading(false)
+    }
+  }, [tasks, fetchSubtasks])
+
+  const toggleExpand = (taskId: string) => {
+    setExpandedTasks((prev) => {
+      const next = new Set(prev)
+      if (next.has(taskId)) {
+        next.delete(taskId)
+      } else {
+        next.add(taskId)
+      }
+      return next
+    })
+  }
+
   return (
     <div className="space-y-6">
       {/* Error message */}
@@ -76,14 +174,43 @@ export function TaskList({
       {!loading && tasks.length > 0 && (
         <>
           <div className="hidden lg:block space-y-4">
-            {tasks.map((task) => (
-              <FullTaskItem
-                key={task.id}
-                task={task}
-                onClick={() => onOpenEditModal?.(task)}
-                hasSubtasks={false}
-              />
-            ))}
+            {tasks.map((task) => {
+              const enrichment = taskEnrichment[task.id] ?? {
+                hasSubtasks: false,
+                isBlocked: false,
+                isBlocking: false,
+              }
+              const isExpanded = expandedTasks.has(task.id)
+              return (
+                <div key={task.id} className="space-y-2">
+                  <FullTaskItem
+                    task={task}
+                    onClick={() => onOpenEditModal?.(task)}
+                    hasSubtasks={enrichment.hasSubtasks}
+                    checklistSummary={enrichment.checklistSummary}
+                    isBlocked={enrichment.isBlocked}
+                    isBlocking={enrichment.isBlocking}
+                    expanded={isExpanded}
+                    onToggleExpand={() => toggleExpand(task.id)}
+                  />
+                  {isExpanded && enrichment.hasSubtasks && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
+                    <div className="ml-8 pl-4 border-l-2 border-bonsai-slate-200">
+                      <SubtaskList
+                        taskId={task.id}
+                        fetchSubtasks={fetchSubtasks}
+                        onCreateSubtask={(taskId, title) => createSubtask(taskId, { title })}
+                        onUpdateTask={updateTask}
+                        onDeleteTask={deleteTask}
+                        onToggleComplete={toggleComplete}
+                        getTasks={getTasks}
+                        getTaskDependencies={getTaskDependencies}
+                        onAddDependency={onAddDependency}
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
           {/* Tablet/mobile: no task component yet */}
           <div className="lg:hidden rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-4 py-8 text-center text-bonsai-slate-600">

@@ -25,6 +25,11 @@ export async function uploadTaskAttachment(
 
   if (uploadError) {
     console.error('Error uploading attachment:', uploadError)
+    if (uploadError.message?.includes('Bucket not found') || uploadError.message?.includes('not found')) {
+      throw new Error(
+        `Storage bucket "${BUCKET}" not found. Create it in Supabase Dashboard → Storage → New bucket (name: ${BUCKET}, public: true).`,
+      )
+    }
     throw uploadError
   }
 

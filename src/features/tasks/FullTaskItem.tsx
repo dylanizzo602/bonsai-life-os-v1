@@ -10,6 +10,7 @@ import {
   WarningIcon,
   UsersIcon,
   RepeatIcon,
+  HourglassIcon,
 } from '../../components/icons'
 import type { Task, TaskPriority, TaskStatus } from './types'
 
@@ -176,7 +177,7 @@ export function FullTaskItem({
     >
       {/* Left section: chevron, status, title, description icon, checklist, tag, blocked, blocking, shared */}
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {/* Chevron: only when task has subtasks; click toggles expand */}
+        {/* Chevron: show when task has subtasks; positioned to the left of status circle */}
         {hasSubtasks && (
           <button
             type="button"
@@ -184,9 +185,10 @@ export function FullTaskItem({
               e.stopPropagation()
               onToggleExpand?.()
             }}
-            className="shrink-0 rounded p-0.5 text-bonsai-slate-600 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-800"
+            className="shrink-0 flex items-center justify-center w-6 h-6 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-800 transition-colors"
             aria-expanded={expanded}
             aria-label={expanded ? 'Collapse subtasks' : 'Expand subtasks'}
+            title={expanded ? 'Collapse subtasks' : 'Expand subtasks'}
           >
             <ChevronDownIcon
               className={`w-5 h-5 transition-transform ${expanded ? 'rotate-180' : ''}`}
@@ -240,8 +242,16 @@ export function FullTaskItem({
         )}
       </div>
 
-      {/* Right section: priority flag, date/time or repeat icon */}
+      {/* Right section: time estimate, date/time or repeat icon, priority flag */}
       <div className="flex shrink-0 items-center gap-2">
+        {task.time_estimate != null && task.time_estimate > 0 && (
+          <span className="flex items-center gap-1 text-sm text-bonsai-slate-600" title="Time estimate">
+            <HourglassIcon className="w-4 h-4 md:w-5 md:h-5" aria-hidden />
+            {task.time_estimate < 60
+              ? `${task.time_estimate}m`
+              : `${Math.floor(task.time_estimate / 60)}h${task.time_estimate % 60 ? ` ${task.time_estimate % 60}m` : ''}`}
+          </span>
+        )}
         {dateDisplay && (
           <span className="flex items-center gap-1 text-sm text-bonsai-slate-600">
             {isRecurring ? (
