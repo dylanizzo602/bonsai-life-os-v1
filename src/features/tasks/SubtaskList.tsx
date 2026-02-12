@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { Input } from '../../components/Input'
 import { Button } from '../../components/Button'
-import { FullTaskItem } from './FullTaskItem'
+import { FullSubtaskItem } from './FullSubtaskItem'
 import { AddEditSubtaskModal } from './AddEditSubtaskModal'
 import { getTaskChecklists, getTaskChecklistItems, getTaskDependencies } from '../../lib/supabase/tasks'
 import type { Task, CreateTaskInput } from './types'
@@ -190,11 +190,10 @@ export function SubtaskList({
               isBlocking: false,
             }
             return (
-              <FullTaskItem
+              <FullSubtaskItem
                 key={subtask.id}
-                task={subtask}
+                subtask={subtask}
                 onClick={() => openEditModal(subtask)}
-                hasSubtasks={false}
                 checklistSummary={enrichment.checklistSummary}
                 isBlocked={enrichment.isBlocked}
                 isBlocking={enrichment.isBlocking}

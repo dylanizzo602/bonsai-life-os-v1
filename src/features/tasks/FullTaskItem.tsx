@@ -1,5 +1,6 @@
 /* FullTaskItem component: Desktop full-width task row with left/right metadata */
 
+import { useRef, useEffect, useState } from 'react'
 import {
   ChevronDownIcon,
   CalendarIcon,
@@ -12,6 +13,7 @@ import {
   RepeatIcon,
   HourglassIcon,
 } from '../../components/icons'
+import { TaskNameHover } from './TaskNameHover'
 import type { Task, TaskPriority, TaskStatus } from './types'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
@@ -130,11 +132,6 @@ function getPriorityFlagClasses(priority: TaskPriority): string {
   return map[priority] ?? map.none
 }
 
-/** Truncate title to 70 visible characters with ellipsis */
-function truncateTitle(title: string, maxLength: number = 70): string {
-  if (title.length <= maxLength) return title
-  return title.slice(0, maxLength) + '...'
-}
 
 /**
  * Full task item for desktop task section: single full-width row with left-aligned
@@ -158,8 +155,65 @@ export function FullTaskItem({
   /* medium = "normal" for display; ensure priority is valid for flag classes */
   const priority: TaskPriority = task.priority ?? 'medium'
 
+  /* Refs: Measure container, right section, and left icons to calculate available width for task name */
+  const containerRef = useRef<HTMLDivElement>(null)
+  const rightSectionRef = useRef<HTMLDivElement>(null)
+  const leftIconsBeforeRef = useRef<HTMLDivElement>(null)
+  const leftIconsAfterRef = useRef<HTMLDivElement>(null)
+  const [availableWidth, setAvailableWidth] = useState<number | undefined>(undefined)
+
+  /* Calculate available width: Container width - right section - left icons before - left icons after - gaps */
+  useEffect(() => {
+    const calculateAvailableWidth = () => {
+      if (!containerRef.current || !rightSectionRef.current || !leftIconsBeforeRef.current || !leftIconsAfterRef.current) return
+
+      const containerRect = containerRef.current.getBoundingClientRect()
+      const rightRect = rightSectionRef.current.getBoundingClientRect()
+      const leftIconsBeforeRect = leftIconsBeforeRef.current.getBoundingClientRect()
+      const leftIconsAfterRect = leftIconsAfterRef.current.getBoundingClientRect()
+      
+      /* Calculate: container width - right section - left icons before - left icons after - gaps */
+      const containerWidth = containerRect.width
+      const rightWidth = rightRect.width
+      const leftIconsBeforeWidth = leftIconsBeforeRect.width
+      const leftIconsAfterWidth = leftIconsAfterRect.width
+      const gapBetweenSections = 16 // gap-4 = 16px between left and right sections
+      const gapInLeftSection = 8 // gap-2 = 8px between items in left section
+      const padding = 32 // px-4 = 16px on each side
+      
+      /* Available width = container - right - left icons before - left icons after - gaps - padding */
+      const available = containerWidth - rightWidth - leftIconsBeforeWidth - leftIconsAfterWidth - gapBetweenSections - (gapInLeftSection * 2) - padding
+      
+      /* Only set if positive, otherwise let it be undefined to use default behavior */
+      setAvailableWidth(available > 0 ? Math.floor(available) : undefined)
+    }
+
+    /* Initial calculation with a small delay to ensure DOM is ready */
+    const timeoutId = setTimeout(calculateAvailableWidth, 0)
+
+    /* Use ResizeObserver to recalculate when sizes change */
+    const resizeObserver = new ResizeObserver(() => {
+      calculateAvailableWidth()
+    })
+
+    if (containerRef.current) resizeObserver.observe(containerRef.current)
+    if (rightSectionRef.current) resizeObserver.observe(rightSectionRef.current)
+    if (leftIconsBeforeRef.current) resizeObserver.observe(leftIconsBeforeRef.current)
+    if (leftIconsAfterRef.current) resizeObserver.observe(leftIconsAfterRef.current)
+
+    /* Also listen to window resize */
+    window.addEventListener('resize', calculateAvailableWidth)
+
+    return () => {
+      clearTimeout(timeoutId)
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', calculateAvailableWidth)
+    }
+  }, [hasSubtasks, checklistSummary, task.tag, isBlocked, isBlocking, isShared, task.description, task.time_estimate, dateDisplay])
+
   return (
     <div
+      ref={containerRef}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
@@ -175,75 +229,84 @@ export function FullTaskItem({
       }
       className="flex items-center justify-between gap-4 rounded-lg border border-bonsai-slate-200 bg-white px-4 py-3 transition-colors hover:bg-bonsai-slate-50"
     >
-      {/* Left section: chevron, status, title, description icon, checklist, tag, blocked, blocking, shared */}
+      {/* Left section: chevron, status, task name, then other icons (description, checklist, tag, blocked, blocking, shared) */}
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {/* Chevron: show when task has subtasks; positioned to the left of status circle */}
-        {hasSubtasks && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onToggleExpand?.()
-            }}
-            className="shrink-0 flex items-center justify-center w-6 h-6 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-800 transition-colors"
-            aria-expanded={expanded}
-            aria-label={expanded ? 'Collapse subtasks' : 'Expand subtasks'}
-            title={expanded ? 'Collapse subtasks' : 'Expand subtasks'}
-          >
-            <ChevronDownIcon
-              className={`w-5 h-5 transition-transform ${expanded ? 'rotate-180' : ''}`}
-            />
-          </button>
-        )}
-        <TaskStatusIndicator status={displayStatus} />
-        <span
-          className={`min-w-0 truncate text-left text-sm font-medium md:text-base ${
-            task.status === 'completed'
-              ? 'text-bonsai-slate-500 line-through'
-              : 'text-bonsai-brown-700'
-          }`}
-          style={{ maxWidth: '70ch' }}
-          title={task.title}
-        >
-          {truncateTitle(task.title, 70)}
-        </span>
-        {task.description?.trim() && (
-          <span className="shrink-0 text-bonsai-slate-500" title="Has description">
-            <ParagraphIcon className="w-4 h-4 md:w-5 md:h-5" />
-          </span>
-        )}
-        {checklistSummary && checklistSummary.total > 0 && (
-          <span className="flex shrink-0 items-center gap-0.5 text-bonsai-slate-600" title="Checklist">
-            <ChecklistIcon className="w-4 h-4 md:w-5 md:h-5" />
-            <span className="text-xs md:text-sm">
-              {checklistSummary.completed}/{checklistSummary.total}
+        {/* Left icons before task name: Chevron and status circle */}
+        <div ref={leftIconsBeforeRef} className="flex shrink-0 items-center gap-2">
+          {/* Chevron: show when task has subtasks */}
+          {hasSubtasks && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleExpand?.()
+              }}
+              className="shrink-0 flex items-center justify-center w-6 h-6 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-800 transition-colors"
+              aria-expanded={expanded}
+              aria-label={expanded ? 'Collapse subtasks' : 'Expand subtasks'}
+              title={expanded ? 'Collapse subtasks' : 'Expand subtasks'}
+            >
+              <ChevronDownIcon
+                className={`w-5 h-5 transition-transform ${expanded ? 'rotate-180' : ''}`}
+              />
+            </button>
+          )}
+          <TaskStatusIndicator status={displayStatus} />
+        </div>
+        
+        {/* Task name: Appears after status circle, before other icons */}
+        <TaskNameHover 
+          title={task.title} 
+          status={task.status} 
+          maxWidth={availableWidth}
+        />
+        
+        {/* Left icons after task name: Description, checklist, tag, blocked, blocking, shared */}
+        <div ref={leftIconsAfterRef} className="flex shrink-0 items-center gap-2">
+          {/* Description icon */}
+          {task.description?.trim() && (
+            <span className="shrink-0 text-bonsai-slate-500" title="Has description">
+              <ParagraphIcon className="w-4 h-4 md:w-5 md:h-5" />
             </span>
-          </span>
-        )}
-        {task.tag && (
-          <span className="shrink-0 rounded bg-bonsai-slate-100 px-2 py-0.5 text-xs font-medium text-bonsai-slate-700">
-            {task.tag}
-          </span>
-        )}
-        {isBlocked && (
-          <span className="shrink-0 text-bonsai-slate-500" title="Blocked by another task">
-            <BlockedIcon className="w-4 h-4 md:w-5 md:h-5" />
-          </span>
-        )}
-        {isBlocking && (
-          <span className="shrink-0 text-amber-500" title="Blocking another task">
-            <WarningIcon className="w-4 h-4 md:w-5 md:h-5" />
-          </span>
-        )}
-        {isShared && (
-          <span className="shrink-0 text-bonsai-slate-500" title="Shared with others">
-            <UsersIcon className="w-4 h-4 md:w-5 md:h-5" />
-          </span>
-        )}
+          )}
+          {/* Checklist indicator */}
+          {checklistSummary && checklistSummary.total > 0 && (
+            <span className="flex shrink-0 items-center gap-0.5 text-bonsai-slate-600" title="Checklist">
+              <ChecklistIcon className="w-4 h-4 md:w-5 md:h-5" />
+              <span className="text-xs md:text-sm">
+                {checklistSummary.completed}/{checklistSummary.total}
+              </span>
+            </span>
+          )}
+          {/* Tag */}
+          {task.tag && (
+            <span className="shrink-0 rounded bg-bonsai-slate-100 px-2 py-0.5 text-xs font-medium text-bonsai-slate-700">
+              {task.tag}
+            </span>
+          )}
+          {/* Blocked icon */}
+          {isBlocked && (
+            <span className="shrink-0 text-bonsai-slate-500" title="Blocked by another task">
+              <BlockedIcon className="w-4 h-4 md:w-5 md:h-5" />
+            </span>
+          )}
+          {/* Blocking icon */}
+          {isBlocking && (
+            <span className="shrink-0 text-amber-500" title="Blocking another task">
+              <WarningIcon className="w-4 h-4 md:w-5 md:h-5" />
+            </span>
+          )}
+          {/* Shared icon */}
+          {isShared && (
+            <span className="shrink-0 text-bonsai-slate-500" title="Shared with others">
+              <UsersIcon className="w-4 h-4 md:w-5 md:h-5" />
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Right section: time estimate, date/time or repeat icon, priority flag */}
-      <div className="flex shrink-0 items-center gap-2">
+      <div ref={rightSectionRef} className="flex shrink-0 items-center gap-2">
         {task.time_estimate != null && task.time_estimate > 0 && (
           <span className="flex items-center gap-1 text-sm text-bonsai-slate-600" title="Time estimate">
             <HourglassIcon className="w-4 h-4 md:w-5 md:h-5" aria-hidden />
