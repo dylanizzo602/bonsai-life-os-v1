@@ -217,16 +217,26 @@ export function TimeEstimateModal({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isOpen, onClose, triggerRef])
 
-  /* Close modal on ESC key press */
+  /* Close modal on ESC key press and prevent space/Enter from bubbling to parent */
   useEffect(() => {
     if (!isOpen) return
-    const handleEscape = (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose()
       }
+      /* Prevent space and Enter from bubbling to parent (e.g., FullTaskItem onClick) */
+      if ((e.key === ' ' || e.key === 'Enter') && popoverRef.current?.contains(e.target as Node)) {
+        e.stopPropagation()
+        /* Allow space to work normally in input fields */
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+          return
+        }
+        /* Prevent default for space/Enter on other elements */
+        e.preventDefault()
+      }
     }
-    document.addEventListener('keydown', handleEscape)
-    return () => document.removeEventListener('keydown', handleEscape)
+    document.addEventListener('keydown', handleKeyDown, true) // Use capture phase to catch early
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
   }, [isOpen, onClose])
 
   /* Calculate subtask total: Sum all subtask time estimates */
@@ -284,6 +294,18 @@ export function TimeEstimateModal({
           maxWidth: `min(384px, calc(100vw - 16px))`,
         }}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          /* Prevent space and Enter from bubbling to parent (e.g., FullTaskItem onClick) */
+          if (e.key === ' ' || e.key === 'Enter') {
+            /* Allow space/Enter to work normally in input fields */
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLButtonElement) {
+              return
+            }
+            /* Stop propagation for other elements */
+            e.stopPropagation()
+            e.preventDefault()
+          }
+        }}
       >
         <div className="space-y-4">
           {/* Header: Title with help button */}

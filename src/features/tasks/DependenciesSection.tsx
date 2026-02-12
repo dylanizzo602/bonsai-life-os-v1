@@ -4,13 +4,10 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   BlockedIcon,
   WarningIcon,
-  CalendarIcon,
-  TagIcon,
-  ChecklistIcon,
-  UsersIcon,
   PlusIcon,
 } from '../../components/icons'
 import { TaskDependencyModal } from './modals/TaskDependencyModal'
+import { CompactTaskItem } from './CompactTaskItem'
 import type { Task, TaskDependency, CreateTaskDependencyInput } from './types'
 
 export interface DependenciesSectionProps {
@@ -41,6 +38,25 @@ function formatDueDate(iso: string | null | undefined): string | null {
   })
 }
 
+/* Fetch checklist summary for a task (for compact task items) */
+async function getChecklistSummary(taskId: string): Promise<{ completed: number; total: number } | undefined> {
+  try {
+    const { getTaskChecklists, getTaskChecklistItems } = await import('../../lib/supabase/tasks')
+    const checklists = await getTaskChecklists(taskId)
+    let completed = 0
+    let total = 0
+    for (const c of checklists) {
+      const items = await getTaskChecklistItems(c.id)
+      total += items.length
+      completed += items.filter((i) => i.completed).length
+    }
+    return total > 0 ? { completed, total } : undefined
+  } catch (err) {
+    console.error(`Error fetching checklist summary for task ${taskId}:`, err)
+    return undefined
+  }
+}
+
 /**
  * Dependencies section for add/edit task and subtask modals.
  * Shows "This task is blocked by" with search/link and cards; "This task is blocking." with link action.
@@ -56,6 +72,7 @@ export function DependenciesSection({
   const [blocking, setBlocking] = useState<TaskDependency[]>([])
   const [blockedBy, setBlockedBy] = useState<TaskDependency[]>([])
   const [taskMap, setTaskMap] = useState<Record<string, Task>>({})
+  const [checklistSummaries, setChecklistSummaries] = useState<Record<string, { completed: number; total: number }>>({})
   const [loading, setLoading] = useState(false)
   const [dependencyModalOpen, setDependencyModalOpen] = useState(false)
   /* Search query for "blocked by" input - opens modal on focus/click */
@@ -77,6 +94,21 @@ export function DependenciesSection({
         map[t.id] = t
       })
       setTaskMap(map)
+      /* Fetch checklist summaries for all dependency tasks */
+      const summaries: Record<string, { completed: number; total: number }> = {}
+      const allDependencyTaskIds = [
+        ...deps.blocking.map((d) => d.blocked_id),
+        ...deps.blockedBy.map((d) => d.blocker_id),
+      ]
+      await Promise.all(
+        allDependencyTaskIds.map(async (taskId) => {
+          const summary = await getChecklistSummary(taskId)
+          if (summary) {
+            summaries[taskId] = summary
+          }
+        }),
+      )
+      setChecklistSummaries(summaries)
     } catch (err) {
       console.error('Error fetching dependencies:', err)
     } finally {
@@ -133,63 +165,23 @@ export function DependenciesSection({
             blockedBy.map((dep) => {
               const task = getBlockerTask(dep)
               if (!task) return null
-              const tagDisplay =
-                task.tags?.[0]?.name ?? null
-              const dueDisplay = formatDueDate(task.due_date ?? task.start_date)
               return (
-                <div
+                <CompactTaskItem
                   key={dep.id}
-                  className="rounded-lg border border-dashed border-amber-200 bg-white px-3 py-2 shadow-sm"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-bonsai-slate-800 truncate">
-                      {task.title}
-                    </span>
-                    {onRemoveDependency && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
+                  task={task}
+                  checklistSummary={checklistSummaries[task.id]}
+                  isBlocked={true}
+                  onRemove={
+                    onRemoveDependency
+                      ? () => {
                           onRemoveDependency(dep.id)
                           fetchDependencies()
-                        }}
-                        className="shrink-0 text-bonsai-slate-400 hover:text-bonsai-slate-600 rounded p-0.5"
-                        aria-label="Remove dependency"
-                      >
-                        <span className="text-sm">×</span>
-                      </button>
-                    )}
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-bonsai-slate-600">
-                    <span className="inline-flex items-center gap-1">
-                      <ChecklistIcon className="w-3.5 h-3.5" />
-                      —
-                    </span>
-                    {tagDisplay && (
-                      <span className="inline-flex items-center gap-1 rounded bg-bonsai-slate-200 px-1.5 py-0.5">
-                        <TagIcon className="w-3.5 h-3.5" />
-                        {tagDisplay}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setDependencyModalOpen(true)}
-                      className="inline-flex items-center rounded p-0.5 hover:bg-bonsai-slate-100 text-bonsai-slate-600"
-                      aria-label="Manage dependencies"
-                    >
-                      <BlockedIcon className="w-4 h-4" />
-                    </button>
-                    <span className="inline-flex items-center gap-1">
-                      <UsersIcon className="w-3.5 h-3.5" />
-                    </span>
-                    {dueDisplay && (
-                      <span className="inline-flex items-center gap-1">
-                        <CalendarIcon className="w-3.5 h-3.5" />
-                        {dueDisplay}
-                      </span>
-                    )}
-                  </div>
-                </div>
+                        }
+                      : undefined
+                  }
+                  onDependencyClick={() => setDependencyModalOpen(true)}
+                  formatDueDate={formatDueDate}
+                />
               )
             })}
         </div>
@@ -217,63 +209,23 @@ export function DependenciesSection({
             blocking.map((dep) => {
               const task = getBlockedTask(dep)
               if (!task) return null
-              const tagDisplay =
-                task.tags?.[0]?.name ?? null
-              const dueDisplay = formatDueDate(task.due_date ?? task.start_date)
               return (
-                <div
+                <CompactTaskItem
                   key={dep.id}
-                  className="rounded-lg border border-dashed border-bonsai-slate-200 bg-white px-3 py-2 shadow-sm"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-bonsai-slate-800 truncate">
-                      {task.title}
-                    </span>
-                    {onRemoveDependency && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
+                  task={task}
+                  checklistSummary={checklistSummaries[task.id]}
+                  isBlocking={true}
+                  onRemove={
+                    onRemoveDependency
+                      ? () => {
                           onRemoveDependency(dep.id)
                           fetchDependencies()
-                        }}
-                        className="shrink-0 text-bonsai-slate-400 hover:text-bonsai-slate-600 rounded p-0.5"
-                        aria-label="Remove dependency"
-                      >
-                        <span className="text-sm">×</span>
-                      </button>
-                    )}
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-bonsai-slate-600">
-                    <span className="inline-flex items-center gap-1">
-                      <ChecklistIcon className="w-3.5 h-3.5" />
-                      —
-                    </span>
-                    {tagDisplay && (
-                      <span className="inline-flex items-center gap-1 rounded bg-bonsai-slate-200 px-1.5 py-0.5">
-                        <TagIcon className="w-3.5 h-3.5" />
-                        {tagDisplay}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setDependencyModalOpen(true)}
-                      className="inline-flex items-center rounded p-0.5 hover:bg-bonsai-slate-100 text-bonsai-slate-600"
-                      aria-label="Manage dependencies"
-                    >
-                      <WarningIcon className="w-4 h-4" />
-                    </button>
-                    <span className="inline-flex items-center gap-1">
-                      <UsersIcon className="w-3.5 h-3.5" />
-                    </span>
-                    {dueDisplay && (
-                      <span className="inline-flex items-center gap-1">
-                        <CalendarIcon className="w-3.5 h-3.5" />
-                        {dueDisplay}
-                      </span>
-                    )}
-                  </div>
-                </div>
+                        }
+                      : undefined
+                  }
+                  onDependencyClick={() => setDependencyModalOpen(true)}
+                  formatDueDate={formatDueDate}
+                />
               )
             })}
         </div>

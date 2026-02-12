@@ -12,7 +12,6 @@ import {
   UsersIcon,
   RepeatIcon,
   HourglassIcon,
-  TagIcon,
 } from '../../components/icons'
 import { TaskNameHover } from './TaskNameHover'
 import { DescriptionTooltip } from '../../components/DescriptionTooltip'
@@ -22,6 +21,7 @@ import { TimeEstimateModal } from './modals/TimeEstimateModal'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { DatePickerModal } from './modals/DatePickerModal'
 import { TagModal } from './modals/TagModal'
+import { CompactTaskItem } from './CompactTaskItem'
 import { useTags } from './hooks/useTags'
 import type { Task, TaskPriority, TaskStatus, UpdateTaskInput } from './types'
 
@@ -57,6 +57,8 @@ export interface FullTaskItemProps {
   onUpdateTask?: (taskId: string, input: UpdateTaskInput) => Promise<void>
   /** Called after tags are updated (e.g. to refetch task list) */
   onTagsUpdated?: () => void
+  /** Whether this is displayed as a compact task item (e.g. in modals) */
+  compact?: boolean
 }
 
 /** Map TaskStatus to display status for the status circle */
@@ -178,6 +180,7 @@ export function FullTaskItem({
   onUpdateStatus,
   onUpdateTask,
   onTagsUpdated,
+  compact = false,
 }: FullTaskItemProps) {
   const displayStatus = getDisplayStatus(task.status)
   /* Modal state: Track whether status picker modal is open */
@@ -263,6 +266,20 @@ export function FullTaskItem({
       window.removeEventListener('resize', calculateAvailableWidth)
     }
   }, [hasSubtasks, checklistSummary, task.tags, isBlocked, isBlocking, isShared, task.description, task.time_estimate, dateDisplay])
+
+  /* Compact mode: use CompactTaskItem component for consistent icon layout */
+  if (compact) {
+    return (
+      <CompactTaskItem
+        task={task}
+        checklistSummary={checklistSummary}
+        isBlocked={isBlocked}
+        isBlocking={isBlocking}
+        onClick={onClick}
+        formatDueDate={formatDateWithOptionalTime}
+      />
+    )
+  }
 
   return (
     <div
@@ -384,51 +401,44 @@ export function FullTaskItem({
               </span>
             </span>
           )}
-          {/* Tags: Clickable to open tag modal - show pills or Add tags */}
-          <button
-            ref={tagButtonRef}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              if (onUpdateTask) {
-                setIsTagModalOpen(true)
-              }
-            }}
-            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-left hover:bg-bonsai-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Manage tags"
-            disabled={!onUpdateTask}
-            title="Add or edit tags"
-          >
-            {task.tags && task.tags.length > 0 ? (
-              <>
-                {task.tags.slice(0, 3).map((t) => (
-                  <span
-                    key={t.id}
-                    className={`rounded px-2 py-0.5 text-xs font-medium ${
-                      t.color === 'mint'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : t.color === 'blue'
-                          ? 'bg-blue-100 text-blue-800'
-                          : t.color === 'lavender'
-                            ? 'bg-violet-100 text-violet-800'
-                            : t.color === 'yellow'
-                              ? 'bg-amber-100 text-amber-800'
-                              : t.color === 'periwinkle'
-                                ? 'bg-indigo-100 text-indigo-800'
-                                : 'bg-bonsai-slate-100 text-bonsai-slate-700'
-                    }`}
-                  >
-                    {t.name}
-                  </span>
-                ))}
-              </>
-            ) : (
-              <span className="flex items-center gap-1 text-bonsai-slate-500">
-                <TagIcon className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="text-xs">Add tags</span>
-              </span>
-            )}
-          </button>
+          {/* Tags: Clickable pills to open tag modal - only show when task has tags */}
+          {task.tags && task.tags.length > 0 && (
+            <button
+              ref={tagButtonRef}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                if (onUpdateTask) {
+                  setIsTagModalOpen(true)
+                }
+              }}
+              className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-left hover:bg-bonsai-slate-100 transition-colors"
+              aria-label="Manage tags"
+              disabled={!onUpdateTask}
+              title="Add or edit tags"
+            >
+              {task.tags.slice(0, 3).map((t) => (
+                <span
+                  key={t.id}
+                  className={`rounded px-2 py-0.5 text-xs font-medium ${
+                    t.color === 'mint'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : t.color === 'blue'
+                        ? 'bg-blue-100 text-blue-800'
+                        : t.color === 'lavender'
+                          ? 'bg-violet-100 text-violet-800'
+                          : t.color === 'yellow'
+                            ? 'bg-amber-100 text-amber-800'
+                            : t.color === 'periwinkle'
+                              ? 'bg-indigo-100 text-indigo-800'
+                              : 'bg-bonsai-slate-100 text-bonsai-slate-700'
+                  }`}
+                >
+                  {t.name}
+                </span>
+              ))}
+            </button>
+          )}
           {/* Shared icon */}
           {isShared && (
             <span className="shrink-0 text-bonsai-slate-500">
