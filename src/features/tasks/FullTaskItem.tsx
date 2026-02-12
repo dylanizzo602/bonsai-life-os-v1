@@ -18,7 +18,7 @@ import { DescriptionTooltip } from '../../components/DescriptionTooltip'
 import { DependencyTooltip } from '../../components/DependencyTooltip'
 import { StatusPickerModal } from './modals/StatusPickerModal'
 import { TimeEstimateModal } from './modals/TimeEstimateModal'
-import { PriorityModal } from './modals/PriorityModal'
+import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { DatePickerModal } from './modals/DatePickerModal'
 import type { Task, TaskPriority, TaskStatus, UpdateTaskInput } from './types'
 
@@ -178,12 +178,14 @@ export function FullTaskItem({
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
   /* Modal state: Track whether time estimate modal is open */
   const [isTimeEstimateModalOpen, setIsTimeEstimateModalOpen] = useState(false)
-  /* Modal state: Track whether priority modal is open */
+  /* Modal state: Track whether priority picker modal is open */
   const [isPriorityModalOpen, setIsPriorityModalOpen] = useState(false)
   /* Modal state: Track whether date picker modal is open */
   const [isDatePickerModalOpen, setIsDatePickerModalOpen] = useState(false)
-  /* Status button ref: Used to position the popover */
+  /* Status button ref: Used to position the status popover */
   const statusButtonRef = useRef<HTMLButtonElement>(null)
+  /* Priority button ref: Used to position the priority popover */
+  const priorityButtonRef = useRef<HTMLButtonElement>(null)
   const dateDisplay = formatDateWithOptionalTime(task.due_date) ?? formatDateWithOptionalTime(task.start_date)
   const isRecurring = Boolean(task.recurrence_pattern)
   /* medium = "normal" for display; ensure priority is valid for flag classes */
@@ -428,10 +430,11 @@ export function FullTaskItem({
           </button>
         )}
         <button
+          ref={priorityButtonRef}
           type="button"
           onClick={(e) => {
             e.stopPropagation()
-            /* Open priority modal when flag is clicked */
+            /* Open priority picker when flag is clicked */
             if (onUpdateTask) {
               setIsPriorityModalOpen(true)
             }
@@ -479,18 +482,19 @@ export function FullTaskItem({
           }}
         />
       )}
-      {/* Priority modal: Opens when priority flag is clicked */}
+      {/* Priority picker popover: Opens when priority flag is clicked, positioned below the flag */}
       {onUpdateTask && (
-        <PriorityModal
+        <PriorityPickerModal
           isOpen={isPriorityModalOpen}
           onClose={() => setIsPriorityModalOpen(false)}
           value={priority}
+          triggerRef={priorityButtonRef}
           onSelect={async (newPriority) => {
             try {
               await onUpdateTask(task.id, { priority: newPriority })
             } catch (error) {
               console.error('Failed to update priority:', error)
-              throw error // Re-throw so PriorityModal can keep modal open
+              // Keep popover open on error so user can try again
             }
           }}
         />
