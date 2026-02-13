@@ -117,6 +117,9 @@ export function TaskDependenciesPopover({
       }}
       role="dialog"
       aria-label="Task dependencies"
+      /* Stop propagation so clicks inside (e.g. search input) do not bubble to the task row and open the edit modal */
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       {/* Popover header: Title */}
       <div className="border-b border-bonsai-slate-200 px-4 py-3">

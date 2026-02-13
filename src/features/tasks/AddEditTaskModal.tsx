@@ -279,18 +279,17 @@ export function AddEditTaskModal({
         await setTagsForTask(createdTask.id, tags.map((t) => t.id))
         if (onCreatedTask) {
           onCreatedTask({ ...createdTask, tags })
-          /* Modal stays open in edit mode; parent sets task to result */
-        } else {
-          setTitle('')
-          setDescription('')
-          setStartDate(null)
-          setDueDate(null)
-          setPriority('medium')
-          setTags([])
-          setTimeEstimate(null)
-          setAttachments([])
-          onClose()
         }
+        /* Always close modal and reset form after creating a task */
+        setTitle('')
+        setDescription('')
+        setStartDate(null)
+        setDueDate(null)
+        setPriority('medium')
+        setTags([])
+        setTimeEstimate(null)
+        setAttachments([])
+        onClose()
       }
     } catch {
       // Error handled by parent

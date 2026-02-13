@@ -1,4 +1,5 @@
 /* Input component: Reusable form input with responsive styling */
+import { forwardRef } from 'react'
 import type { InputHTMLAttributes } from 'react'
 
 interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
@@ -17,7 +18,8 @@ interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'>
  * Reusable input component with label and error support.
  * Responsive by default (Tailwind breakpoints); optional size override when fixed size is needed.
  */
-export function Input({ label, error, size, className = '', ...props }: InputProps) {
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ label, error, size, className = '', ...props }, ref) => {
   /* Base input styles: full width, border, focus ring */
   const baseInputClasses =
     'w-full border rounded-lg focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent'
@@ -51,8 +53,11 @@ export function Input({ label, error, size, className = '', ...props }: InputPro
           {label}
         </label>
       )}
-      <input className={inputClasses} {...props} />
+      <input ref={ref} className={inputClasses} {...props} />
       {error && <p className="mt-1 text-secondary text-red-600">{error}</p>}
     </div>
   )
-}
+  },
+)
+
+Input.displayName = 'Input'
