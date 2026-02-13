@@ -1,15 +1,16 @@
 /* TaskList component: Main task management interface with task list and CRUD */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { FullTaskItem } from './FullTaskItem'
 import { CompactTaskItem } from './CompactTaskItem'
 import { SubtaskList } from './SubtaskList'
+import { ReminderItem } from '../reminders/ReminderItem'
 import {
   getTaskChecklists,
   getTaskChecklistItems,
-  getTaskDependencies,
   toggleChecklistItemComplete,
 } from '../../lib/supabase/tasks'
 import type { Task, TaskFilters } from './types'
+import type { Reminder } from '../reminders/types'
 
 export interface TaskListProps {
   /** Tasks from useTasks */
@@ -49,6 +50,16 @@ export interface TaskListProps {
   onOpenAddModal?: () => void
   /** Callback when user clicks to edit a task */
   onOpenEditModal?: (task: Task) => void
+  /** Reminders to display alongside tasks */
+  reminders?: Reminder[]
+  /** Reminders loading state */
+  remindersLoading?: boolean
+  /** Reminders error message */
+  remindersError?: string | null
+  /** Toggle reminder completion */
+  onToggleReminderComplete?: (id: string, completed: boolean) => void
+  /** Open edit modal for a reminder */
+  onEditReminder?: (reminder: Reminder) => void
 }
 
 /**
@@ -59,10 +70,10 @@ export function TaskList({
   tasks,
   loading,
   error,
-  filters,
-  setFilters,
+  filters: _filters,
+  setFilters: _setFilters,
   refetch,
-  onOpenAddModal,
+  onOpenAddModal: _onOpenAddModal,
   onOpenEditModal,
   /* Rest kept for interface; used when SubtaskList/FullTaskItem need them */
   updateTask,
@@ -74,9 +85,16 @@ export function TaskList({
   getTaskDependencies,
   onAddDependency,
   onRemoveDependency,
+  reminders = [],
+  remindersLoading = false,
+  remindersError = null,
+  onToggleReminderComplete,
+  onEditReminder,
 }: TaskListProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
-  const [enrichmentLoading, setEnrichmentLoading] = useState(false)
+  /** Task id that just expanded for adding a subtask (used to focus add-subtask input) */
+  const [justExpandedForSubtask, setJustExpandedForSubtask] = useState<string | null>(null)
+  const [_enrichmentLoading, setEnrichmentLoading] = useState(false)
   const [taskEnrichment, setTaskEnrichment] = useState<Record<string, {
     checklistSummary?: { completed: number; total: number }
     hasSubtasks: boolean
@@ -108,7 +126,7 @@ export function TaskList({
                 console.error(`Error fetching subtasks for task ${task.id}:`, err)
                 return []
               }),
-              getTaskDependencies(task.id).catch((err) => {
+              (getTaskDependencies?.(task.id) ?? Promise.resolve({ blocking: [], blockedBy: [] })).catch((err) => {
                 console.error(`Error fetching dependencies for task ${task.id}:`, err)
                 return { blocking: [], blockedBy: [] }
               }),
@@ -154,7 +172,7 @@ export function TaskList({
   }
 
   useEffect(() => {
-    if (tasks.length > 0 && fetchSubtasks) {
+    if (tasks.length > 0) {
       loadEnrichment()
     } else {
       setTaskEnrichment({})
@@ -174,36 +192,85 @@ export function TaskList({
     })
   }
 
+  /* Combine tasks and reminders into a single sorted list: sort by created_at (newest first) */
+  const combinedItems = useMemo(() => {
+    const items: Array<{ type: 'task' | 'reminder'; id: string; created_at: string; task?: Task; reminder?: Reminder }> = []
+    
+    /* Add tasks */
+    tasks.forEach((task) => {
+      items.push({
+        type: 'task',
+        id: task.id,
+        created_at: task.created_at,
+        task,
+      })
+    })
+    
+    /* Add reminders */
+    reminders.forEach((reminder) => {
+      items.push({
+        type: 'reminder',
+        id: reminder.id,
+        created_at: reminder.created_at || new Date().toISOString(),
+        reminder,
+      })
+    })
+    
+    /* Sort by created_at descending (newest first) */
+    return items.sort((a, b) => {
+      const aTime = new Date(a.created_at).getTime()
+      const bTime = new Date(b.created_at).getTime()
+      return bTime - aTime
+    })
+  }, [tasks, reminders])
+
   return (
     <div className="space-y-6">
-      {/* Error message */}
+      {/* Error messages */}
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
           {error}
         </div>
       )}
+      {remindersError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          {remindersError}
+        </div>
+      )}
 
       {/* Loading state */}
-      {loading && (
-        <div className="text-center py-8 text-bonsai-slate-500">Loading tasks...</div>
+      {(loading || remindersLoading) && (
+        <div className="text-center py-8 text-bonsai-slate-500">Loading...</div>
       )}
 
       {/* Empty state */}
-      {!loading && tasks.length === 0 && (
+      {!loading && !remindersLoading && tasks.length === 0 && reminders.length === 0 && (
         <div className="text-center py-12">
-          <p className="text-bonsai-slate-600 text-lg">No tasks found</p>
+          <p className="text-bonsai-slate-600 text-lg">No tasks or reminders found</p>
           <p className="text-bonsai-slate-500 text-sm mt-2">
-            Create your first task to get started
+            Create your first task or reminder to get started
           </p>
         </div>
       )}
 
-      {/* Task list: visible on all breakpoints (mobile, tablet, desktop). Desktop = full items; mobile = compact items (no hover tooltips). */}
-      {!loading && tasks.length > 0 && (
+      {/* Combined list: Tasks and reminders together, visible on all breakpoints */}
+      {!loading && !remindersLoading && combinedItems.length > 0 && (
         <>
-          {/* Desktop (lg+): Full task items with expandable subtasks */}
+          {/* Desktop (lg+): Full task items with expandable subtasks, reminders as ReminderItem */}
           <div className="hidden lg:block space-y-4">
-            {tasks.map((task) => {
+            {combinedItems.map((item) => {
+              if (item.type === 'reminder' && item.reminder) {
+                return (
+                  <ReminderItem
+                    key={item.id}
+                    reminder={item.reminder}
+                    onToggleComplete={onToggleReminderComplete || (() => {})}
+                    onEdit={onEditReminder || (() => {})}
+                  />
+                )
+              }
+              if (item.type === 'task' && item.task) {
+                const task = item.task
               const enrichment = taskEnrichment[task.id] ?? {
                 hasSubtasks: false,
                 incompleteSubtaskCount: 0,
@@ -230,6 +297,7 @@ export function TaskList({
                     blockedByCount={enrichment.blockedByCount}
                     expanded={isExpanded}
                     onToggleExpand={() => toggleExpand(task.id)}
+                    onExpandForSubtask={() => setJustExpandedForSubtask(task.id)}
                     onTagsUpdated={refetch}
                     onUpdateStatus={async (taskId, status) => {
                       try {
@@ -274,7 +342,7 @@ export function TaskList({
                     onRemoveDependency={onRemoveDependency}
                     onDependenciesChanged={loadEnrichment}
                   />
-                  {isExpanded && enrichment.hasSubtasks && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
+                  {isExpanded && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
                     <div className="ml-8 pl-4 border-l-2 border-bonsai-slate-200">
                       <SubtaskList
                         taskId={task.id}
@@ -287,16 +355,32 @@ export function TaskList({
                         getTaskDependencies={getTaskDependencies}
                         onAddDependency={onAddDependency}
                         onRemoveDependency={onRemoveDependency}
+                        focusAddInput={justExpandedForSubtask === task.id}
+                        onFocusAddInputConsumed={() => setJustExpandedForSubtask(null)}
                       />
                     </div>
                   )}
                 </div>
               )
+              }
+              return null
             })}
           </div>
-          {/* Mobile (< md): compact task items with collapsible subtasks; tap opens edit modal */}
+          {/* Mobile (< md): compact task items with collapsible subtasks; reminders as ReminderItem; tap opens edit modal */}
           <div className="md:hidden space-y-2">
-            {tasks.map((task) => {
+            {combinedItems.map((item) => {
+              if (item.type === 'reminder' && item.reminder) {
+                return (
+                  <ReminderItem
+                    key={item.id}
+                    reminder={item.reminder}
+                    onToggleComplete={onToggleReminderComplete || (() => {})}
+                    onEdit={onEditReminder || (() => {})}
+                  />
+                )
+              }
+              if (item.type === 'task' && item.task) {
+                const task = item.task
               const enrichment = taskEnrichment[task.id] ?? {
                 hasSubtasks: false,
                 incompleteSubtaskCount: 0,
@@ -318,7 +402,7 @@ export function TaskList({
                     isBlocked={enrichment.isBlocked}
                     isBlocking={enrichment.isBlocking}
                   />
-                  {isExpanded && enrichment.hasSubtasks && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
+                  {isExpanded && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
                     <div className="ml-4 pl-3 border-l-2 border-bonsai-slate-200">
                       <SubtaskList
                         taskId={task.id}
@@ -336,11 +420,25 @@ export function TaskList({
                   )}
                 </div>
               )
+              }
+              return null
             })}
           </div>
-          {/* Tablet (md to lg): tablet task items, no hover tooltips; tap opens edit modal */}
+          {/* Tablet (md to lg): tablet task items, reminders as ReminderItem; no hover tooltips; tap opens edit modal */}
           <div className="hidden md:block lg:hidden space-y-2">
-            {tasks.map((task) => {
+            {combinedItems.map((item) => {
+              if (item.type === 'reminder' && item.reminder) {
+                return (
+                  <ReminderItem
+                    key={item.id}
+                    reminder={item.reminder}
+                    onToggleComplete={onToggleReminderComplete || (() => {})}
+                    onEdit={onEditReminder || (() => {})}
+                  />
+                )
+              }
+              if (item.type === 'task' && item.task) {
+                const task = item.task
               const enrichment = taskEnrichment[task.id] ?? {
                 hasSubtasks: false,
                 incompleteSubtaskCount: 0,
@@ -410,7 +508,7 @@ export function TaskList({
                     onRemoveDependency={onRemoveDependency}
                     onDependenciesChanged={loadEnrichment}
                   />
-                  {isExpanded && enrichment.hasSubtasks && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
+                  {isExpanded && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
                     <div className="ml-4 pl-3 border-l-2 border-bonsai-slate-200">
                       <SubtaskList
                         taskId={task.id}
@@ -428,6 +526,8 @@ export function TaskList({
                   )}
                 </div>
               )
+              }
+              return null
             })}
           </div>
         </>

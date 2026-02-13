@@ -443,7 +443,17 @@ export function AddEditTaskModal({
         onClose={() => setStatusPickerOpen(false)}
         value={status}
         triggerRef={statusButtonRef}
-        onSelect={setStatus}
+        onSelect={async (newStatus) => {
+          setStatus(newStatus)
+          /* In edit mode, persist status immediately so the change is saved without requiring Save */
+          if (isEditMode && task?.id && onUpdateTask) {
+            try {
+              await onUpdateTask(task.id, { status: getTaskStatus(newStatus) })
+            } catch {
+              // Error handled by parent; keep local state so user can try Save or pick again
+            }
+          }
+        }}
       />
       <PriorityPickerModal
         isOpen={priorityOpen}

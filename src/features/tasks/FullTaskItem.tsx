@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState } from 'react'
 import {
   ChevronDownIcon,
+  ChevronRightIcon,
   CalendarIcon,
   FlagIcon,
   ParagraphIcon,
@@ -58,6 +59,8 @@ export interface FullTaskItemProps {
   expanded?: boolean
   /** Toggle expand/collapse when chevron is clicked */
   onToggleExpand?: () => void
+  /** Called when user expands to add a subtask (e.g. focus add-subtask input) */
+  onExpandForSubtask?: () => void
   /** Optional click on the row (e.g. open edit) */
   onClick?: () => void
   /** Function to update task status */
@@ -176,8 +179,8 @@ function formatDateForTooltip(isoString: string | null): string | null {
 }
 
 /** Format due_date or start_date as "Jan 22 at 3:00pm" or "Jan 22" when no time. Date-only (YYYY-MM-DD) parsed as local to avoid timezone shift. */
-function formatDateWithOptionalTime(isoString: string | null): string | null {
-  if (!isoString) return null
+function formatDateWithOptionalTime(isoString: string | null | undefined): string | null {
+  if (isoString == null || isoString === '') return null
   const isDateOnly = !isoString.includes('T')
   const d = isDateOnly
     ? (() => {
@@ -241,6 +244,7 @@ export function FullTaskItem({
   isShared = false,
   expanded = false,
   onToggleExpand,
+  onExpandForSubtask,
   onClick,
   blockingCount = 0,
   blockedByCount = 0,
@@ -367,12 +371,18 @@ export function FullTaskItem({
     )
   }
 
+  /* Row click: Open edit modal unless the click was on the subtask expand button */
+  const handleRowClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('[data-subtask-expand]')) return
+    onClick?.()
+  }
+
   return (
     <div
       ref={containerRef}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
-      onClick={onClick}
+      onClick={handleRowClick}
       onKeyDown={
         onClick
           ? (e) => {
@@ -383,33 +393,46 @@ export function FullTaskItem({
             }
           : undefined
       }
-      className="flex items-center justify-between gap-4 rounded-lg border border-bonsai-slate-200 bg-white px-4 py-3 transition-colors hover:bg-bonsai-slate-50"
+      className="group flex items-center justify-between gap-4 rounded-lg border border-bonsai-slate-200 bg-white px-4 py-3 transition-colors hover:bg-bonsai-slate-50"
     >
-      {/* Left section: chevron, status, task name, then other icons (description, checklist, tag, blocked, blocking, shared) */}
+      {/* Left section: subtask arrow (desktop hover) or chevron, status, task name, then other icons */}
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {/* Left icons before task name: Chevron and status circle */}
+        {/* Left icons before task name: Subtask arrow (desktop hover) and status circle */}
         <div ref={leftIconsBeforeRef} className="flex shrink-0 items-center gap-2">
-          {/* Chevron: show when task has subtasks; tooltip on hover shows expand/collapse */}
-          {hasSubtasks && (
+          {/* Subtask arrow: Tooltip = Expand/Collapse when task has subtasks, "Create subtask" when it doesn't; click expands and may focus add-subtask input */}
+          {onToggleExpand && (
             <Tooltip
-              content={expanded ? 'Collapse subtasks' : 'Expand subtasks'}
+              content={
+                hasSubtasks
+                  ? (expanded ? 'Collapse subtasks' : 'Expand subtasks')
+                  : 'Create subtask'
+              }
               position="top"
               size="sm"
             >
-              <span className="shrink-0 inline-flex">
+              <span
+                className={`shrink-0 inline-flex ${!hasSubtasks && !expanded ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}
+              >
                 <button
                   type="button"
+                  data-subtask-expand
                   onClick={(e) => {
                     e.stopPropagation()
-                    onToggleExpand?.()
+                    e.preventDefault()
+                    const wasExpanded = expanded
+                    onToggleExpand()
+                    /* When task has no subtasks, expanding reveals add-subtask line; focus it so user can type immediately */
+                    if (!wasExpanded && !hasSubtasks) onExpandForSubtask?.()
                   }}
-                  className="shrink-0 flex items-center justify-center w-6 h-6 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-800 transition-colors"
+                  className="shrink-0 flex items-center justify-center w-6 h-6 rounded-full text-bonsai-slate-600 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-800 transition-colors"
                   aria-expanded={expanded}
-                  aria-label={expanded ? 'Collapse subtasks' : 'Expand subtasks'}
+                  aria-label={expanded ? 'Collapse subtasks' : 'Create subtask'}
                 >
-                  <ChevronDownIcon
-                    className={`w-5 h-5 transition-transform ${expanded ? 'rotate-180' : ''}`}
-                  />
+                  {expanded ? (
+                    <ChevronDownIcon className="w-4 h-4 rotate-0" />
+                  ) : (
+                    <ChevronRightIcon className="w-4 h-4" />
+                  )}
                 </button>
               </span>
             </Tooltip>

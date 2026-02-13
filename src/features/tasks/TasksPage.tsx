@@ -1,4 +1,4 @@
-/* Tasks page: Section header, Add/Edit Task modal, and task list placeholder */
+/* Tasks page: Section header, reminders list, task list, Add/Edit Task modal, Add/Edit Reminder modal */
 
 import { useState } from 'react'
 import { AddButton } from '../../components/AddButton'
@@ -6,16 +6,20 @@ import { BellIcon } from '../../components/icons'
 import { AddEditTaskModal } from './AddEditTaskModal'
 import { TaskList } from './TaskList'
 import { useTasks } from './hooks/useTasks'
+import { AddEditReminderModal } from '../reminders'
+import { useReminders } from '../reminders/hooks/useReminders'
 import type { Task } from './types'
+import type { Reminder } from '../reminders/types'
 
 /**
- * Dropdown content for Add new task: single "Add new reminder" option with bell icon.
+ * Dropdown content for Add new task: "Add new reminder" option; click opens reminder modal.
  */
-function AddTaskDropdownContent() {
+function AddTaskDropdownContent({ onAddReminder }: { onAddReminder: () => void }) {
   return (
     <button
       type="button"
-      className="flex flex-nowrap items-center justify-end gap-2 rounded px-2 py-1 text-body font-medium text-bonsai-brown-700 hover:bg-bonsai-slate-100 whitespace-nowrap"
+      onClick={onAddReminder}
+      className="flex flex-nowrap items-center justify-end gap-2 rounded px-2 py-1 text-body font-medium text-bonsai-brown-700 hover:bg-bonsai-slate-100 whitespace-nowrap w-full"
     >
       <BellIcon className="w-4 h-4 shrink-0 md:w-5 md:h-5 text-bonsai-brown-700" />
       Add new reminder
@@ -48,8 +52,35 @@ export function TasksPage() {
     onRemoveDependency,
   } = useTasks()
 
+  const {
+    reminders,
+    loading: remindersLoading,
+    error: remindersError,
+    refetch: refetchReminders,
+    createReminder: createReminderBase,
+    updateReminder: updateReminderBase,
+    toggleComplete: toggleReminderComplete,
+  } = useReminders()
+
+  /* Wrapper to refetch reminders after create/update to ensure list stays in sync */
+  const createReminder = async (input: import('../reminders/types').CreateReminderInput) => {
+    const result = await createReminderBase(input)
+    /* Refetch to ensure we have the latest data from database */
+    await refetchReminders()
+    return result
+  }
+
+  const updateReminder = async (id: string, input: import('../reminders/types').UpdateReminderInput) => {
+    const result = await updateReminderBase(id, input)
+    /* Refetch to ensure we have the latest data from database */
+    await refetchReminders()
+    return result
+  }
+
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editTask, setEditTask] = useState<Task | null>(null)
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false)
+  const [editReminder, setEditReminder] = useState<Reminder | null>(null)
 
   const openAdd = () => {
     setEditTask(null)
@@ -66,6 +97,21 @@ export function TasksPage() {
     setEditTask(null)
   }
 
+  const openAddReminder = () => {
+    setEditReminder(null)
+    setIsReminderModalOpen(true)
+  }
+
+  const openEditReminder = (reminder: Reminder) => {
+    setEditReminder(reminder)
+    setIsReminderModalOpen(true)
+  }
+
+  const closeReminderModal = () => {
+    setIsReminderModalOpen(false)
+    setEditReminder(null)
+  }
+
   return (
     <div className="min-h-full">
       {/* Section header: Title on left, add button on right */}
@@ -74,14 +120,14 @@ export function TasksPage() {
         <AddButton
           className="self-end sm:self-auto"
           aria-label="Add new task"
-          dropdownContent={<AddTaskDropdownContent />}
+          dropdownContent={<AddTaskDropdownContent onAddReminder={openAddReminder} />}
           onClick={openAdd}
         >
           Add new task
         </AddButton>
       </div>
 
-      {/* Task list: FullTaskItem on desktop; click opens edit modal */}
+      {/* Task list: Includes both tasks and reminders in the same list */}
       <TaskList
         tasks={tasks}
         loading={loading}
@@ -100,6 +146,11 @@ export function TasksPage() {
         onRemoveDependency={onRemoveDependency}
         onOpenAddModal={openAdd}
         onOpenEditModal={openEdit}
+        reminders={reminders}
+        remindersLoading={remindersLoading}
+        remindersError={remindersError}
+        onToggleReminderComplete={toggleReminderComplete}
+        onEditReminder={openEditReminder}
       />
 
       {/* Add/Edit Task modal: full form, sub-modals, checklists, subtasks, dependencies */}
@@ -119,6 +170,15 @@ export function TasksPage() {
         getTaskDependencies={getTaskDependencies}
         onAddDependency={onAddDependency}
         onRemoveDependency={onRemoveDependency}
+      />
+
+      {/* Add/Edit reminder modal: opened from "Add new reminder" in dropdown or by clicking a reminder */}
+      <AddEditReminderModal
+        isOpen={isReminderModalOpen}
+        onClose={closeReminderModal}
+        onCreateReminder={createReminder}
+        onUpdateReminder={updateReminder}
+        reminder={editReminder}
       />
     </div>
   )

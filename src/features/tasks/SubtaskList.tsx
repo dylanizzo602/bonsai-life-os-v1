@@ -1,11 +1,11 @@
 /* SubtaskList component: Displays and manages subtasks (tasks with parent_id) */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Input } from '../../components/Input'
 import { Button } from '../../components/Button'
 import { CompactTaskItem } from './CompactTaskItem'
 import { AddEditSubtaskModal } from './AddEditSubtaskModal'
-import { getTaskChecklists, getTaskChecklistItems, getTaskDependencies } from '../../lib/supabase/tasks'
-import type { Task, CreateTaskInput } from './types'
+import { getTaskChecklists, getTaskChecklistItems, getTaskDependencies as fetchTaskDependencies } from '../../lib/supabase/tasks'
+import type { Task } from './types'
 
 interface SubtaskListProps {
   /** Parent task ID */
@@ -31,6 +31,10 @@ interface SubtaskListProps {
   onAddDependency?: (input: import('./types').CreateTaskDependencyInput) => Promise<void>
   /** Remove a task dependency by id */
   onRemoveDependency?: (dependencyId: string) => Promise<void>
+  /** When true, focus the "Add a subtask" input (e.g. after expanding from task row) */
+  focusAddInput?: boolean
+  /** Called after focus has been applied so parent can clear focusAddInput */
+  onFocusAddInputConsumed?: () => void
 }
 
 /**
@@ -42,18 +46,22 @@ export function SubtaskList({
   fetchSubtasks,
   onCreateSubtask,
   onUpdateTask,
-  onDeleteTask,
-  onToggleComplete,
+  onDeleteTask: _onDeleteTask,
+  onToggleComplete: _onToggleComplete,
   getTasks,
   getTaskDependencies,
   onAddDependency,
   onRemoveDependency,
+  focusAddInput = false,
+  onFocusAddInputConsumed,
 }: SubtaskListProps) {
   const [subtasks, setSubtasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editingSubtask, setEditingSubtask] = useState<Task | null>(null)
+  /* Ref for "Add a subtask" input so parent can request focus when expanding */
+  const addInputRef = useRef<HTMLInputElement>(null)
   const [subtaskEnrichment, setSubtaskEnrichment] = useState<Record<string, {
     checklistSummary?: { completed: number; total: number }
     isBlocked: boolean
@@ -93,7 +101,7 @@ export function SubtaskList({
               console.error(`Error fetching checklists for subtask ${subtask.id}:`, err)
               return []
             }),
-            getTaskDependencies(subtask.id).catch((err) => {
+            fetchTaskDependencies(subtask.id).catch((err) => {
               console.error(`Error fetching dependencies for subtask ${subtask.id}:`, err)
               return { blocking: [], blockedBy: [] }
             }),
@@ -130,6 +138,18 @@ export function SubtaskList({
   useEffect(() => {
     loadEnrichment()
   }, [loadEnrichment])
+
+  /* Focus add-subtask input when parent requests it; wait until loading is done so the input is in the DOM */
+  useEffect(() => {
+    if (!focusAddInput || loading) return
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        addInputRef.current?.focus()
+        onFocusAddInputConsumed?.()
+      })
+    })
+    return () => cancelAnimationFrame(id)
+  }, [focusAddInput, loading, onFocusAddInputConsumed])
 
   /* Create subtask: opens modal for full editing */
   const handleCreate = async () => {
@@ -171,19 +191,6 @@ export function SubtaskList({
     }
   }
 
-  /* Handle subtask deletion */
-  const handleDelete = async (id: string) => {
-    try {
-      await onDeleteTask(id)
-      setSubtasks((prev) => prev.filter((s) => s.id !== id))
-      /* Reload enrichment after deletion */
-      const updated = await fetchSubtasks(taskId)
-      setSubtasks(updated)
-    } catch (err) {
-      console.error('Error deleting subtask:', err)
-    }
-  }
-
   if (loading) {
     return <div className="text-sm text-bonsai-slate-500">Loading subtasks...</div>
   }
@@ -217,6 +224,7 @@ export function SubtaskList({
       {/* Add subtask input: shown under the last subtask */}
       <div className="flex gap-2">
         <Input
+          ref={addInputRef}
           placeholder="Add a subtask..."
           value={newSubtaskTitle}
           onChange={(e) => setNewSubtaskTitle(e.target.value)}

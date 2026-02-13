@@ -170,7 +170,11 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
   if (input.priority !== undefined) updateData.priority = input.priority
   if (input.time_estimate !== undefined) updateData.time_estimate = input.time_estimate
   if (input.attachments !== undefined) updateData.attachments = input.attachments
-  if (input.status !== undefined) updateData.status = input.status
+  if (input.status !== undefined) {
+    updateData.status = input.status
+    /* Keep completed_at in sync with status so list and details stay consistent */
+    updateData.completed_at = input.status === 'completed' ? new Date().toISOString() : null
+  }
   if (input.category !== undefined) updateData.category = input.category
   if (input.recurrence_pattern !== undefined)
     updateData.recurrence_pattern = input.recurrence_pattern
