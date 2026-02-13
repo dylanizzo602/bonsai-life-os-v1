@@ -12,6 +12,7 @@ import {
   ChevronDownIcon,
   HourglassIcon,
 } from '../../components/icons'
+import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { isOverdue } from './utils/date'
 import type { Task, TaskPriority, TaskStatus } from './types'
 
@@ -33,6 +34,14 @@ export interface CompactTaskItemProps {
   isBlocking?: boolean
   /** Optional click handler for the entire item */
   onClick?: () => void
+  /** Optional right-click context menu (e.g. show task options popover) */
+  onContextMenu?: (e: React.MouseEvent) => void
+  /** When set, show inline text input to edit task title (Rename from context menu) */
+  inlineEditTitle?: {
+    value: string
+    onSave: (newTitle: string) => void | Promise<void>
+    onCancel: () => void
+  }
   /** Optional remove handler (shows × button) */
   onRemove?: () => void
   /** Optional handler for dependency icon click */
@@ -130,6 +139,8 @@ export function CompactTaskItem({
   isBlocked = false,
   isBlocking = false,
   onClick,
+  onContextMenu,
+  inlineEditTitle,
   onRemove,
   onDependencyClick,
   formatDueDate,
@@ -172,6 +183,7 @@ export function CompactTaskItem({
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
+      onContextMenu={onContextMenu}
       onKeyDown={
         onClick
           ? (e) => {
@@ -206,10 +218,19 @@ export function CompactTaskItem({
         <div className="shrink-0">
           <TaskStatusIndicator status={displayStatus} />
         </div>
-        {/* Task name */}
-        <span className="text-sm font-medium text-bonsai-slate-800 truncate flex-1">
-          {task.title}
-        </span>
+        {/* Task name: or inline edit input when renaming */}
+        {inlineEditTitle ? (
+          <InlineTitleInput
+            value={inlineEditTitle.value}
+            onSave={inlineEditTitle.onSave}
+            onCancel={inlineEditTitle.onCancel}
+            className="min-w-0 flex-1 text-sm font-medium text-bonsai-slate-800 border border-bonsai-sage-400 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500"
+          />
+        ) : (
+          <span className="text-sm font-medium text-bonsai-slate-800 truncate flex-1">
+            {task.title}
+          </span>
+        )}
         {/* Remove button */}
         {onRemove && (
           <button

@@ -59,6 +59,7 @@ export function TasksPage() {
     refetch: refetchReminders,
     createReminder: createReminderBase,
     updateReminder: updateReminderBase,
+    deleteReminder: deleteReminderBase,
     toggleComplete: toggleReminderComplete,
   } = useReminders()
 
@@ -75,6 +76,12 @@ export function TasksPage() {
     /* Refetch to ensure we have the latest data from database */
     await refetchReminders()
     return result
+  }
+
+  /* Wrapper to refetch reminders after delete so list stays in sync */
+  const deleteReminder = async (id: string) => {
+    await deleteReminderBase(id)
+    await refetchReminders()
   }
 
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -146,11 +153,15 @@ export function TasksPage() {
         onRemoveDependency={onRemoveDependency}
         onOpenAddModal={openAdd}
         onOpenEditModal={openEdit}
+        onCreateTask={createTask}
         reminders={reminders}
         remindersLoading={remindersLoading}
         remindersError={remindersError}
         onToggleReminderComplete={toggleReminderComplete}
         onEditReminder={openEditReminder}
+        onUpdateReminder={updateReminder}
+        onCreateReminder={createReminder}
+        onDeleteReminder={deleteReminder}
       />
 
       {/* Add/Edit Task modal: full form, sub-modals, checklists, subtasks, dependencies */}

@@ -4,6 +4,8 @@ import { FullTaskItem } from './FullTaskItem'
 import { CompactTaskItem } from './CompactTaskItem'
 import { SubtaskList } from './SubtaskList'
 import { ReminderItem } from '../reminders/ReminderItem'
+import { TaskContextPopover } from './modals/TaskContextPopover'
+import { ReminderContextPopover } from '../reminders/ReminderContextPopover'
 import {
   getTaskChecklists,
   getTaskChecklistItems,
@@ -50,6 +52,10 @@ export interface TaskListProps {
   onOpenAddModal?: () => void
   /** Callback when user clicks to edit a task */
   onOpenEditModal?: (task: Task) => void
+  /** Create a new task (e.g. for Duplicate from context menu) */
+  onCreateTask?: (input: import('./types').CreateTaskInput) => Promise<Task>
+  /** Optional: Archive a task (context menu); access to archived items can be added later */
+  onArchiveTask?: (task: Task) => void | Promise<void>
   /** Reminders to display alongside tasks */
   reminders?: Reminder[]
   /** Reminders loading state */
@@ -60,6 +66,12 @@ export interface TaskListProps {
   onToggleReminderComplete?: (id: string, completed: boolean) => void
   /** Open edit modal for a reminder */
   onEditReminder?: (reminder: Reminder) => void
+  /** Update a reminder (e.g. for inline rename) */
+  onUpdateReminder?: (id: string, input: import('../reminders/types').UpdateReminderInput) => Promise<Reminder>
+  /** Create a new reminder (e.g. for Duplicate from context menu) */
+  onCreateReminder?: (input: import('../reminders/types').CreateReminderInput) => Promise<Reminder>
+  /** Delete a reminder */
+  onDeleteReminder?: (id: string) => Promise<void>
 }
 
 /**
@@ -75,6 +87,8 @@ export function TaskList({
   refetch,
   onOpenAddModal: _onOpenAddModal,
   onOpenEditModal,
+  onCreateTask,
+  onArchiveTask,
   /* Rest kept for interface; used when SubtaskList/FullTaskItem need them */
   updateTask,
   deleteTask,
@@ -90,8 +104,18 @@ export function TaskList({
   remindersError = null,
   onToggleReminderComplete,
   onEditReminder,
+  onUpdateReminder,
+  onCreateReminder,
+  onDeleteReminder,
 }: TaskListProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
+  /* Context menu state: which task or reminder is open and at what position */
+  const [contextTask, setContextTask] = useState<Task | null>(null)
+  const [contextReminder, setContextReminder] = useState<Reminder | null>(null)
+  const [contextPosition, setContextPosition] = useState({ x: 0, y: 0 })
+  /* Inline rename state: task or reminder id being edited in place (Rename from context menu) */
+  const [editingNameTaskId, setEditingNameTaskId] = useState<string | null>(null)
+  const [editingNameReminderId, setEditingNameReminderId] = useState<string | null>(null)
   /** Task id that just expanded for adding a subtask (used to focus add-subtask input) */
   const [justExpandedForSubtask, setJustExpandedForSubtask] = useState<string | null>(null)
   const [_enrichmentLoading, setEnrichmentLoading] = useState(false)
@@ -260,12 +284,30 @@ export function TaskList({
           <div className="hidden lg:block space-y-4">
             {combinedItems.map((item) => {
               if (item.type === 'reminder' && item.reminder) {
+                const reminder = item.reminder
                 return (
                   <ReminderItem
                     key={item.id}
-                    reminder={item.reminder}
+                    reminder={reminder}
                     onToggleComplete={onToggleReminderComplete || (() => {})}
                     onEdit={onEditReminder || (() => {})}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setContextReminder(reminder)
+                      setContextPosition({ x: e.clientX, y: e.clientY })
+                    }}
+                    inlineEditName={
+                      editingNameReminderId === reminder.id && onUpdateReminder
+                        ? {
+                            value: reminder.name,
+                            onSave: async (newName) => {
+                              await onUpdateReminder(reminder.id, { name: newName })
+                              setEditingNameReminderId(null)
+                            },
+                            onCancel: () => setEditingNameReminderId(null),
+                          }
+                        : undefined
+                    }
                   />
                 )
               }
@@ -286,7 +328,25 @@ export function TaskList({
                 <div key={task.id} className="space-y-2">
                   <FullTaskItem
                     task={task}
-                    onClick={() => onOpenEditModal?.(task)}
+                    onClick={() => editingNameTaskId !== task.id && onOpenEditModal?.(task)}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setContextTask(task)
+                      setContextPosition({ x: e.clientX, y: e.clientY })
+                    }}
+                    inlineEditTitle={
+                      editingNameTaskId === task.id
+                        ? {
+                            value: task.title,
+                            onSave: async (newTitle) => {
+                              await updateTask(task.id, { title: newTitle })
+                              setEditingNameTaskId(null)
+                              refetch?.()
+                            },
+                            onCancel: () => setEditingNameTaskId(null),
+                          }
+                        : undefined
+                    }
                     hasSubtasks={enrichment.hasSubtasks}
                     incompleteSubtaskCount={enrichment.incompleteSubtaskCount}
                     checklistSummary={enrichment.checklistSummary}
@@ -370,12 +430,30 @@ export function TaskList({
           <div className="md:hidden space-y-2">
             {combinedItems.map((item) => {
               if (item.type === 'reminder' && item.reminder) {
+                const reminder = item.reminder
                 return (
                   <ReminderItem
                     key={item.id}
-                    reminder={item.reminder}
+                    reminder={reminder}
                     onToggleComplete={onToggleReminderComplete || (() => {})}
                     onEdit={onEditReminder || (() => {})}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setContextReminder(reminder)
+                      setContextPosition({ x: e.clientX, y: e.clientY })
+                    }}
+                    inlineEditName={
+                      editingNameReminderId === reminder.id && onUpdateReminder
+                        ? {
+                            value: reminder.name,
+                            onSave: async (newName) => {
+                              await onUpdateReminder(reminder.id, { name: newName })
+                              setEditingNameReminderId(null)
+                            },
+                            onCancel: () => setEditingNameReminderId(null),
+                          }
+                        : undefined
+                    }
                   />
                 )
               }
@@ -398,7 +476,25 @@ export function TaskList({
                     hasSubtasks={enrichment.hasSubtasks}
                     expanded={isExpanded}
                     onToggleExpand={() => toggleExpand(task.id)}
-                    onClick={() => onOpenEditModal?.(task)}
+                    onClick={() => editingNameTaskId !== task.id && onOpenEditModal?.(task)}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setContextTask(task)
+                      setContextPosition({ x: e.clientX, y: e.clientY })
+                    }}
+                    inlineEditTitle={
+                      editingNameTaskId === task.id
+                        ? {
+                            value: task.title,
+                            onSave: async (newTitle) => {
+                              await updateTask(task.id, { title: newTitle })
+                              setEditingNameTaskId(null)
+                              refetch?.()
+                            },
+                            onCancel: () => setEditingNameTaskId(null),
+                          }
+                        : undefined
+                    }
                     isBlocked={enrichment.isBlocked}
                     isBlocking={enrichment.isBlocking}
                   />
@@ -428,12 +524,30 @@ export function TaskList({
           <div className="hidden md:block lg:hidden space-y-2">
             {combinedItems.map((item) => {
               if (item.type === 'reminder' && item.reminder) {
+                const reminder = item.reminder
                 return (
                   <ReminderItem
                     key={item.id}
-                    reminder={item.reminder}
+                    reminder={reminder}
                     onToggleComplete={onToggleReminderComplete || (() => {})}
                     onEdit={onEditReminder || (() => {})}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setContextReminder(reminder)
+                      setContextPosition({ x: e.clientX, y: e.clientY })
+                    }}
+                    inlineEditName={
+                      editingNameReminderId === reminder.id && onUpdateReminder
+                        ? {
+                            value: reminder.name,
+                            onSave: async (newName) => {
+                              await onUpdateReminder(reminder.id, { name: newName })
+                              setEditingNameReminderId(null)
+                            },
+                            onCancel: () => setEditingNameReminderId(null),
+                          }
+                        : undefined
+                    }
                   />
                 )
               }
@@ -455,7 +569,25 @@ export function TaskList({
                   <FullTaskItem
                     tablet={true}
                     task={task}
-                    onClick={() => onOpenEditModal?.(task)}
+                    onClick={() => editingNameTaskId !== task.id && onOpenEditModal?.(task)}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setContextTask(task)
+                      setContextPosition({ x: e.clientX, y: e.clientY })
+                    }}
+                    inlineEditTitle={
+                      editingNameTaskId === task.id
+                        ? {
+                            value: task.title,
+                            onSave: async (newTitle) => {
+                              await updateTask(task.id, { title: newTitle })
+                              setEditingNameTaskId(null)
+                              refetch?.()
+                            },
+                            onCancel: () => setEditingNameTaskId(null),
+                          }
+                        : undefined
+                    }
                     hasSubtasks={enrichment.hasSubtasks}
                     incompleteSubtaskCount={enrichment.incompleteSubtaskCount}
                     checklistSummary={enrichment.checklistSummary}
@@ -531,6 +663,64 @@ export function TaskList({
             })}
           </div>
         </>
+      )}
+
+      {/* Task context popover: Right-click on a task shows Rename, Duplicate, Archive, Delete */}
+      {contextTask && (
+        <TaskContextPopover
+          isOpen={true}
+          onClose={() => setContextTask(null)}
+          x={contextPosition.x}
+          y={contextPosition.y}
+          task={contextTask}
+          onRename={(t) => {
+            setContextTask(null)
+            setEditingNameTaskId(t.id)
+          }}
+          onDuplicate={async (t) => {
+            if (!onCreateTask) return
+            await onCreateTask({
+              title: `${t.title} (copy)`,
+              description: t.description ?? undefined,
+              start_date: t.start_date ?? undefined,
+              due_date: t.due_date ?? undefined,
+              priority: t.priority,
+              time_estimate: t.time_estimate ?? undefined,
+              status: 'active',
+            })
+            refetch?.()
+          }}
+          onArchive={onArchiveTask}
+          onDelete={async (t) => {
+            await deleteTask(t.id)
+            setContextTask(null)
+            refetch?.()
+          }}
+        />
+      )}
+
+      {/* Reminder context popover: Right-click on a reminder shows Rename, Duplicate, Delete */}
+      {contextReminder && (
+        <ReminderContextPopover
+          isOpen={true}
+          onClose={() => setContextReminder(null)}
+          x={contextPosition.x}
+          y={contextPosition.y}
+          reminder={contextReminder}
+          onRename={(r) => {
+            setContextReminder(null)
+            setEditingNameReminderId(r.id)
+          }}
+          onDuplicate={async (r) => {
+            if (onCreateReminder) await onCreateReminder({ name: `${r.name} (copy)`, remind_at: r.remind_at ?? undefined })
+          }}
+          onDelete={async (r) => {
+            if (onDeleteReminder) {
+              await onDeleteReminder(r.id)
+              setContextReminder(null)
+            }
+          }}
+        />
       )}
     </div>
   )

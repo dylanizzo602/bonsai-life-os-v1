@@ -15,6 +15,7 @@ import {
   HourglassIcon,
 } from '../../components/icons'
 import { Tooltip } from '../../components/Tooltip'
+import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { TaskNameHover } from './TaskNameHover'
 import { DescriptionTooltip } from '../../components/DescriptionTooltip'
 import { DependencyTooltip } from '../../components/DependencyTooltip'
@@ -63,6 +64,14 @@ export interface FullTaskItemProps {
   onExpandForSubtask?: () => void
   /** Optional click on the row (e.g. open edit) */
   onClick?: () => void
+  /** Optional right-click context menu (e.g. show task options popover) */
+  onContextMenu?: (e: React.MouseEvent) => void
+  /** When set, show inline text input to edit task title (Rename from context menu); save on Enter/blur, cancel on Escape */
+  inlineEditTitle?: {
+    value: string
+    onSave: (newTitle: string) => void | Promise<void>
+    onCancel: () => void
+  }
   /** Function to update task status */
   onUpdateStatus?: (taskId: string, status: TaskStatus) => Promise<void>
   /** Complete task and mark all subtasks and checklist items complete (for unresolved-items modal) */
@@ -246,6 +255,8 @@ export function FullTaskItem({
   onToggleExpand,
   onExpandForSubtask,
   onClick,
+  onContextMenu,
+  inlineEditTitle,
   blockingCount = 0,
   blockedByCount = 0,
   onUpdateStatus,
@@ -366,6 +377,8 @@ export function FullTaskItem({
         blockedByCount={blockedByCount}
         isShared={isShared}
         onClick={onClick}
+        onContextMenu={onContextMenu}
+        inlineEditTitle={inlineEditTitle}
         formatDueDate={formatDateWithOptionalTime}
       />
     )
@@ -383,6 +396,7 @@ export function FullTaskItem({
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       onClick={handleRowClick}
+      onContextMenu={onContextMenu}
       onKeyDown={
         onClick
           ? (e) => {
@@ -460,13 +474,22 @@ export function FullTaskItem({
           </Tooltip>
         </div>
         
-        {/* Task name and dependency icons: Grouped together to keep dependency icons next to name */}
+        {/* Task name and dependency icons: Grouped together to keep dependency icons next to name; or inline edit input when renaming */}
         <div className="flex min-w-0 items-center gap-1.5">
-          <TaskNameHover 
-            title={task.title} 
-            status={task.status} 
-            maxWidth={availableWidth}
-          />
+          {inlineEditTitle ? (
+            <InlineTitleInput
+              value={inlineEditTitle.value}
+              onSave={inlineEditTitle.onSave}
+              onCancel={inlineEditTitle.onCancel}
+              className="min-w-0 flex-1 text-body text-bonsai-slate-800 border border-bonsai-sage-400 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500"
+            />
+          ) : (
+            <TaskNameHover 
+              title={task.title} 
+              status={task.status} 
+              maxWidth={availableWidth}
+            />
+          )}
           
           {/* Dependency icons: Clickable to open Task Dependencies popover */}
           {(isBlocked || isBlocking) && (

@@ -1,6 +1,7 @@
 /* ReminderItem: Single row with checkbox, name, and remind date; click opens edit */
 
 import { Checkbox } from '../../components/Checkbox'
+import { InlineTitleInput } from '../../components/InlineTitleInput'
 import type { Reminder } from './types'
 
 /** Format remind_at for list display */
@@ -22,12 +23,20 @@ export interface ReminderItemProps {
   onToggleComplete: (id: string, completed: boolean) => void
   /** Open edit modal when row is clicked */
   onEdit: (reminder: Reminder) => void
+  /** Optional right-click context menu (e.g. show reminder options popover) */
+  onContextMenu?: (e: React.MouseEvent) => void
+  /** When set, show inline text input to edit reminder name (Rename from context menu) */
+  inlineEditName?: {
+    value: string
+    onSave: (newName: string) => void | Promise<void>
+    onCancel: () => void
+  }
 }
 
 /**
  * Single reminder row: checkbox, name, remind date. Clicking row opens edit modal.
  */
-export function ReminderItem({ reminder, onToggleComplete, onEdit }: ReminderItemProps) {
+export function ReminderItem({ reminder, onToggleComplete, onEdit, onContextMenu, inlineEditName }: ReminderItemProps) {
   const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     e.stopPropagation()
     onToggleComplete(reminder.id, e.target.checked)
@@ -37,9 +46,10 @@ export function ReminderItem({ reminder, onToggleComplete, onEdit }: ReminderIte
     <div
       role="button"
       tabIndex={0}
-      onClick={() => onEdit(reminder)}
+      onClick={() => !inlineEditName && onEdit(reminder)}
+      onContextMenu={onContextMenu}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (!inlineEditName && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault()
           onEdit(reminder)
         }
@@ -55,13 +65,22 @@ export function ReminderItem({ reminder, onToggleComplete, onEdit }: ReminderIte
           aria-label={reminder.completed ? 'Mark incomplete' : 'Mark complete'}
         />
       </div>
-      {/* Reminder name: takes remaining space */}
-      <div className="flex-1 min-w-0">
-        <span
-          className={`text-body text-bonsai-brown-700 ${reminder.completed ? 'line-through text-bonsai-slate-500' : ''}`}
-        >
-          {reminder.name}
-        </span>
+      {/* Reminder name: takes remaining space; or inline edit input when renaming */}
+      <div className="flex-1 min-w-0" onClick={(e) => inlineEditName && e.stopPropagation()}>
+        {inlineEditName ? (
+          <InlineTitleInput
+            value={inlineEditName.value}
+            onSave={inlineEditName.onSave}
+            onCancel={inlineEditName.onCancel}
+            className="w-full text-body text-bonsai-brown-700 border border-bonsai-sage-400 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500"
+          />
+        ) : (
+          <span
+            className={`text-body text-bonsai-brown-700 ${reminder.completed ? 'line-through text-bonsai-slate-500' : ''}`}
+          >
+            {reminder.name}
+          </span>
+        )}
       </div>
       {/* Remind date: aligned to the right of the item box */}
       <span className="text-secondary text-bonsai-slate-500 shrink-0 ml-2">
