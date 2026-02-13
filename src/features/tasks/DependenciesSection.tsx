@@ -24,12 +24,24 @@ export interface DependenciesSectionProps {
   onAddDependency: (input: CreateTaskDependencyInput) => Promise<void>
   /** Remove a dependency by id (optional) */
   onRemoveDependency?: (dependencyId: string) => Promise<void>
+  /** Called when dependencies change (e.g. to refetch parent list enrichment) */
+  onDependenciesChanged?: () => void
 }
 
-/* Format date for display (e.g. Jan 22 at 12pm) */
+/* Format date for display (e.g. Jan 22 or Jan 22 at 12pm). Date-only (YYYY-MM-DD) parsed as local. */
 function formatDueDate(iso: string | null | undefined): string | null {
   if (!iso) return null
-  const d = new Date(iso)
+  const isDateOnly = !iso.includes('T')
+  const d = isDateOnly
+    ? (() => {
+        const [y, m, day] = iso.split('-').map(Number)
+        return new Date(y, (m ?? 1) - 1, day ?? 1)
+      })()
+    : new Date(iso)
+  if (isNaN(d.getTime())) return null
+  if (isDateOnly) {
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
   return d.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -50,6 +62,7 @@ export function DependenciesSection({
   getTaskDependencies,
   onAddDependency,
   onRemoveDependency,
+  onDependenciesChanged,
 }: DependenciesSectionProps) {
   const [blocking, setBlocking] = useState<TaskDependency[]>([])
   const [blockedBy, setBlockedBy] = useState<TaskDependency[]>([])
@@ -138,9 +151,10 @@ export function DependenciesSection({
                   isBlocked={true}
                   onRemove={
                     onRemoveDependency
-                      ? () => {
-                          onRemoveDependency(dep.id)
-                          fetchDependencies()
+                      ? async () => {
+                          await onRemoveDependency(dep.id)
+                          await fetchDependencies()
+                          onDependenciesChanged?.()
                         }
                       : undefined
                   }
@@ -181,9 +195,10 @@ export function DependenciesSection({
                   isBlocking={true}
                   onRemove={
                     onRemoveDependency
-                      ? () => {
-                          onRemoveDependency(dep.id)
-                          fetchDependencies()
+                      ? async () => {
+                          await onRemoveDependency(dep.id)
+                          await fetchDependencies()
+                          onDependenciesChanged?.()
                         }
                       : undefined
                   }
@@ -205,6 +220,7 @@ export function DependenciesSection({
         onAddDependency={async (input) => {
           await onAddDependency(input)
           await handleDependencyAdded()
+          onDependenciesChanged?.()
         }}
       />
     </div>

@@ -1,7 +1,6 @@
-/* DatePickerModal: Start/due date and optional time picker with quick options and calendar */
+/* DatePickerModal: Popover for start/due date and optional time (quick options + calendar), positioned at trigger */
 
-import { useState, useEffect, useMemo } from 'react'
-import { Modal } from '../../../components/Modal'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Button } from '../../../components/Button'
 
 export interface DatePickerModalProps {
@@ -10,6 +9,8 @@ export interface DatePickerModalProps {
   startDate: string | null
   dueDate: string | null
   onSave: (start: string | null, due: string | null) => void | Promise<void>
+  /** Reference to the trigger element (e.g. date button) for popover positioning */
+  triggerRef: React.RefObject<HTMLElement | null>
 }
 
 /** Parse ISO string to date input value (YYYY-MM-DD) */
@@ -220,7 +221,11 @@ export function DatePickerModal({
   startDate,
   dueDate,
   onSave,
+  triggerRef,
 }: DatePickerModalProps) {
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = useState({ top: 0, left: 0 })
+
   /* Date/time state: YYYY-MM-DD and optional HH:mm for start and due */
   const [start, setStart] = useState('')
   const [due, setDue] = useState('')
@@ -234,7 +239,60 @@ export function DatePickerModal({
   /* Which field (start or due) receives quick pick and calendar clicks */
   const [focusedField, setFocusedField] = useState<'start' | 'due'>('due')
 
-  /* Sync state when modal opens or props change */
+  /* Position popover below trigger with viewport boundary detection */
+  useEffect(() => {
+    if (!isOpen || !triggerRef.current || !popoverRef.current) return
+    const updatePosition = () => {
+      if (!triggerRef.current || !popoverRef.current) return
+      const triggerRect = triggerRef.current.getBoundingClientRect()
+      const popoverRect = popoverRef.current.getBoundingClientRect()
+      const padding = 8
+      const viewportWidth = window.innerWidth
+      const viewportHeight = window.innerHeight
+      let top = triggerRect.bottom + 4
+      let left = triggerRect.left
+      if (left + popoverRect.width > viewportWidth - padding) left = viewportWidth - popoverRect.width - padding
+      if (left < padding) left = padding
+      if (top + popoverRect.height > viewportHeight - padding) top = triggerRect.top - popoverRect.height - 4
+      if (top < padding) top = padding
+      setPosition({ top, left })
+    }
+    const t = setTimeout(updatePosition, 0)
+    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener('resize', updatePosition)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener('resize', updatePosition)
+    }
+  }, [isOpen, triggerRef])
+
+  /* Close on click outside */
+  useEffect(() => {
+    if (!isOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        popoverRef.current && !popoverRef.current.contains(e.target as Node) &&
+        triggerRef.current && !triggerRef.current.contains(e.target as Node)
+      ) {
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isOpen, onClose, triggerRef])
+
+  /* Close on ESC */
+  useEffect(() => {
+    if (!isOpen) return
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [isOpen, onClose])
+
+  /* Sync state when popover opens or props change */
   useEffect(() => {
     if (isOpen) {
       setStart(toDateInputValue(startDate))
@@ -326,153 +384,137 @@ export function DatePickerModal({
     return 'text-bonsai-slate-700 hover:bg-bonsai-slate-100'
   }
 
-  /* Inline field row: one row with date display + time (or Add time) + clear */
-  const inlineFieldBase = 'rounded-lg border px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-bonsai-sage-500 focus-within:border-bonsai-sage-500'
-  const timeInputClass = 'w-[6.5rem] rounded border-0 bg-transparent py-0 text-sm text-bonsai-slate-700 focus:outline-none focus:ring-0'
+  /* All text at secondary size to keep widget compact */
+  const fieldBase = 'rounded px-2 py-2 text-secondary leading-tight focus-within:ring-2 focus-within:ring-bonsai-sage-500 flex items-center gap-2 min-h-0'
+  const timeInputClass = 'min-w-[5rem] w-[5rem] rounded border-0 bg-transparent py-0 text-secondary text-bonsai-slate-700 focus:outline-none focus:ring-0'
+
+  if (!isOpen) return null
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Start / due date"
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={handleSave}>
-            Save
-          </Button>
-        </>
-      }
+    <div
+      ref={popoverRef}
+      className="fixed z-50 rounded-xl border border-bonsai-slate-200 bg-white shadow-xl p-5 md:p-6 min-h-[22rem] w-full max-w-xl min-w-[18rem]"
+      style={{ top: `${position.top}px`, left: `${position.left}px` }}
+      role="dialog"
+      aria-label="Start and due date"
     >
-      <div className="max-w-2xl w-full">
-        {/* Top row: Start date and Due date — single line with date + time inline */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        {/* Start and due date row: equal height, aligned content */}
+        <div className="grid grid-cols-2 gap-3 mb-5 min-w-0">
           <div
-            className={`${inlineFieldBase} ${focusedField === 'start' ? 'border-bonsai-sage-500 ring-1 ring-bonsai-sage-500' : 'border-bonsai-slate-300'}`}
+            className={`${fieldBase} min-h-[2.75rem] ${focusedField === 'start' ? 'bg-bonsai-sage-50 ring-2 ring-bonsai-sage-500' : 'bg-bonsai-slate-100'}`}
             onClick={() => setFocusedField('start')}
           >
-            <label className="block text-xs font-medium text-bonsai-slate-500 mb-1">Start date</label>
-            <div className="flex items-center gap-2 flex-wrap">
-              <CalendarIcon className="w-4 h-4 text-bonsai-slate-500 shrink-0" />
-              <div className="flex-1 min-w-0 flex items-center gap-1.5 min-h-8">
-                <div className="relative shrink-0 min-w-[5rem]">
-                  <input
-                    type="date"
-                    value={start}
-                    onChange={(e) => {
-                      setStart(e.target.value)
-                      /* Auto-switch to due date after selecting start date */
-                      if (e.target.value) setFocusedField('due')
-                    }}
-                    className="absolute inset-0 w-full opacity-0 cursor-pointer"
-                    aria-label="Start date"
-                  />
-                  <span className="pointer-events-none text-bonsai-slate-700">
-                    {start ? formatDateDisplay(start) : 'Select date'}
-                  </span>
-                </div>
-                {showStartTime && (
-                  <>
-                    <span className="text-bonsai-slate-400 shrink-0">·</span>
-                    <input
-                      type="time"
-                      value={startTime}
-                      onChange={(e) => setStartTime(e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      className={timeInputClass}
-                      aria-label="Start time"
-                    />
-                  </>
-                )}
-                {!showStartTime && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setShowStartTime(true) }}
-                    className="shrink-0 text-xs text-bonsai-sage-600 hover:text-bonsai-sage-700"
-                  >
-                    Add time
-                  </button>
-                )}
+            <CalendarIcon className="w-4 h-4 text-bonsai-slate-500 shrink-0" />
+            <div className="flex-1 min-w-0 flex items-center gap-2 flex-nowrap">
+              <div className="relative shrink-0 min-w-0 max-w-full">
+                <input
+                  type="date"
+                  value={start}
+                  onChange={(e) => {
+                    setStart(e.target.value)
+                    if (e.target.value) setFocusedField('due')
+                  }}
+                  className="absolute inset-0 w-full opacity-0 cursor-pointer min-w-[3rem]"
+                  aria-label="Start date"
+                />
+                <span className="pointer-events-none text-secondary text-bonsai-slate-700 truncate block">
+                  {start ? formatDateDisplay(start) : 'Start date'}
+                </span>
               </div>
-              {start && (
+              {showStartTime && (
+                <>
+                  <span className="text-secondary text-bonsai-slate-400 shrink-0">·</span>
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    className={timeInputClass}
+                    aria-label="Start time"
+                  />
+                </>
+              )}
+              {!showStartTime && (
                 <button
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); setStart(''); setShowStartTime(false) }}
-                  className="shrink-0 p-0.5 text-bonsai-slate-400 hover:text-bonsai-slate-600 rounded"
-                  aria-label="Clear start date"
+                  onClick={(e) => { e.stopPropagation(); setShowStartTime(true) }}
+                  className="shrink-0 text-secondary text-bonsai-sage-600 hover:text-bonsai-sage-700 whitespace-nowrap"
                 >
-                  <span className="text-lg leading-none">×</span>
+                  Add time
                 </button>
               )}
             </div>
+            {start && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setStart(''); setShowStartTime(false) }}
+                className="shrink-0 p-0.5 text-bonsai-slate-400 hover:text-bonsai-slate-600 rounded leading-none"
+                aria-label="Clear start date"
+              >
+                <span className="text-secondary">×</span>
+              </button>
+            )}
           </div>
           <div
-            className={`${inlineFieldBase} ${focusedField === 'due' ? 'border-bonsai-sage-500 ring-1 ring-bonsai-sage-500' : 'border-bonsai-slate-300'}`}
+            className={`${fieldBase} min-h-[2.75rem] ${focusedField === 'due' ? 'bg-bonsai-sage-50 ring-2 ring-bonsai-sage-500' : 'bg-bonsai-slate-100'}`}
             onClick={() => setFocusedField('due')}
           >
-            <label className="block text-xs font-medium text-bonsai-slate-500 mb-1">Due date</label>
-            <div className="flex items-center gap-2 flex-wrap">
-              <CalendarIcon className="w-4 h-4 text-bonsai-slate-500 shrink-0" />
-              <div className="flex-1 min-w-0 flex items-center gap-1.5 min-h-8">
-                <div className="relative shrink-0 min-w-[5rem]">
-                  <input
-                    type="date"
-                    value={due}
-                    onChange={(e) => {
-                      setDue(e.target.value)
-                      /* Auto-switch to start date after selecting due date */
-                      if (e.target.value) setFocusedField('start')
-                    }}
-                    className="absolute inset-0 w-full opacity-0 cursor-pointer"
-                    aria-label="Due date"
-                  />
-                  <span className="pointer-events-none text-bonsai-slate-700">
-                    {due ? formatDateDisplay(due) : 'Select date'}
-                  </span>
-                </div>
-                {showDueTime && (
-                  <>
-                    <span className="text-bonsai-slate-400 shrink-0">·</span>
-                    <input
-                      type="time"
-                      value={dueTime}
-                      onChange={(e) => setDueTime(e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      className={timeInputClass}
-                      aria-label="Due time"
-                    />
-                  </>
-                )}
-                {!showDueTime && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setShowDueTime(true) }}
-                    className="shrink-0 text-xs text-bonsai-sage-600 hover:text-bonsai-sage-700"
-                  >
-                    Add time
-                  </button>
-                )}
+            <CalendarIcon className="w-4 h-4 text-bonsai-slate-500 shrink-0" />
+            <div className="flex-1 min-w-0 flex items-center gap-2 flex-nowrap">
+              <div className="relative shrink-0 min-w-0 max-w-full">
+                <input
+                  type="date"
+                  value={due}
+                  onChange={(e) => {
+                    setDue(e.target.value)
+                    if (e.target.value) setFocusedField('start')
+                  }}
+                  className="absolute inset-0 w-full opacity-0 cursor-pointer min-w-[3rem]"
+                  aria-label="Due date"
+                />
+                <span className="pointer-events-none text-secondary text-bonsai-slate-700 truncate block">
+                  {due ? formatDateDisplay(due) : 'Due date'}
+                </span>
               </div>
-              {due && (
+              {showDueTime && (
+                <>
+                  <span className="text-secondary text-bonsai-slate-400 shrink-0">·</span>
+                  <input
+                    type="time"
+                    value={dueTime}
+                    onChange={(e) => setDueTime(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    className={timeInputClass}
+                    aria-label="Due time"
+                  />
+                </>
+              )}
+              {!showDueTime && (
                 <button
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); setDue(''); setShowDueTime(false) }}
-                  className="shrink-0 p-0.5 text-bonsai-slate-400 hover:text-bonsai-slate-600 rounded"
-                  aria-label="Clear due date"
+                  onClick={(e) => { e.stopPropagation(); setShowDueTime(true) }}
+                  className="shrink-0 text-secondary text-bonsai-sage-600 hover:text-bonsai-sage-700 whitespace-nowrap"
                 >
-                  <span className="text-lg leading-none">×</span>
+                  Add time
                 </button>
               )}
             </div>
+            {due && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setDue(''); setShowDueTime(false) }}
+                className="shrink-0 p-0.5 text-bonsai-slate-400 hover:text-bonsai-slate-600 rounded leading-none"
+                aria-label="Clear due date"
+              >
+                <span className="text-secondary">×</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Two columns: quick options (left) and calendar (right) */}
-        <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-4 md:gap-6">
-          {/* Left column: Quick date options + Set Recurring placeholder */}
-          <div className="flex flex-col gap-0.5 border-bonsai-slate-200 md:border-r md:pr-6 md:border-b-0">
+        {/* Quick options (left) and calendar (right): aligned columns */}
+        <div className="grid grid-cols-1 md:grid-cols-[11rem_1fr] gap-6 md:gap-8">
+          <div className="flex flex-col">
             {QUICK_OPTIONS.map((opt) => {
               const date = opt.getDate()
               const suffix = getQuickOptionSuffix(date, opt.isLater)
@@ -481,60 +523,58 @@ export function DatePickerModal({
                   key={opt.label}
                   type="button"
                   onClick={() => applyDate(date, opt.isLater)}
-                  className="flex items-center justify-between gap-4 rounded px-2 py-1.5 text-left text-sm text-bonsai-slate-700 hover:bg-bonsai-slate-100 w-full"
+                  className="flex items-center justify-between gap-3 rounded px-2 py-2 text-left text-secondary text-bonsai-slate-700 hover:bg-bonsai-slate-100 w-full"
                 >
                   <span>{opt.label}</span>
-                  <span className="text-bonsai-slate-500 text-xs shrink-0">{suffix}</span>
+                  <span className="text-secondary text-bonsai-slate-500 shrink-0 min-w-[3.25rem] text-right">{suffix}</span>
                 </button>
               )
             })}
-            {/* Set Recurring: placeholder button with no behavior yet */}
             <button
               type="button"
               onClick={() => {}}
-              className="mt-2 flex items-center justify-between gap-2 rounded px-2 py-1.5 text-sm text-bonsai-slate-600 hover:bg-bonsai-slate-100 w-full border-0 bg-transparent"
+              className="mt-2 flex items-center justify-between gap-2 rounded px-2 py-2 text-secondary text-bonsai-slate-600 hover:bg-bonsai-slate-100 w-full border-0 bg-transparent"
               aria-label="Set recurring (not yet implemented)"
             >
               <span>Set Recurring</span>
-              <svg className="w-4 h-4 text-bonsai-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <svg className="w-4 h-4 text-bonsai-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>
           </div>
 
-          {/* Right column: Calendar */}
-          <div className="min-w-0">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-bonsai-slate-800">{viewMonthLabel}</span>
+          <div className="min-w-0 flex flex-col">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <span className="text-secondary font-medium text-bonsai-slate-800">{viewMonthLabel}</span>
               <div className="flex items-center gap-1">
-                <Button variant="ghost" size="sm" onClick={goToToday} className="text-xs">
+                <Button variant="ghost" size="sm" onClick={goToToday} className="text-secondary px-2 py-1">
                   Today
                 </Button>
                 <button
                   type="button"
                   onClick={() => goToMonth(-1)}
-                  className="p-1 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100"
+                  className="p-1.5 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100"
                   aria-label="Previous month"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
                 <button
                   type="button"
                   onClick={() => goToMonth(1)}
-                  className="p-1 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100"
+                  className="p-1.5 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100"
                   aria-label="Next month"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-7 gap-0.5 text-center">
+            <div className="grid grid-cols-7 gap-1 text-center">
               {WEEKDAYS.map((wd) => (
-                <div key={wd} className="py-1 text-xs font-medium text-bonsai-slate-500">
+                <div key={wd} className="py-1 text-secondary font-medium text-bonsai-slate-500">
                   {wd}
                 </div>
               ))}
@@ -543,7 +583,7 @@ export function DatePickerModal({
                   key={cell.ymd}
                   type="button"
                   onClick={() => applyDate(cell.ymd)}
-                  className={`rounded py-1.5 text-sm ${getCellClass(cell.ymd)} ${!cell.isCurrentMonth ? 'opacity-50' : ''}`}
+                  className={`rounded py-2 text-secondary min-w-[2rem] ${getCellClass(cell.ymd)} ${!cell.isCurrentMonth ? 'opacity-50' : ''}`}
                 >
                   {cell.date.getDate()}
                 </button>
@@ -551,7 +591,16 @@ export function DatePickerModal({
             </div>
           </div>
         </div>
+
+      {/* Save and Cancel: aligned right */}
+      <div className="mt-6 pt-4 flex justify-end gap-3 border-t border-bonsai-slate-200">
+        <Button variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button variant="primary" onClick={handleSave}>
+          Save
+        </Button>
       </div>
-    </Modal>
+    </div>
   )
 }

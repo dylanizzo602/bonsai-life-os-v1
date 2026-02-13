@@ -57,9 +57,9 @@ export function AddButton({
   }
   const heightClasses = size ? fixedSizeClasses[size] : responsiveSizeClasses
 
-  /* Main section (left): plus + text; darkens on hover */
+  /* Main section (left): plus + text; darkens on hover; body typography per branding */
   const responsiveMainClasses =
-    'inline-flex items-center gap-1.5 pl-3 pr-2 text-sm md:gap-2 md:pl-4 md:pr-2.5 md:text-base lg:gap-2.5 lg:pl-6 lg:pr-3 lg:text-lg bg-bonsai-sage-600 hover:bg-bonsai-sage-700 active:bg-bonsai-sage-700 transition-colors'
+    'inline-flex items-center gap-1.5 pl-3 pr-2 md:gap-2 md:pl-4 md:pr-2.5 lg:gap-2.5 lg:pl-6 lg:pr-3 text-body bg-bonsai-sage-600 hover:bg-bonsai-sage-700 active:bg-bonsai-sage-700 transition-colors'
   const fixedMainClasses = {
     mobile:
       'inline-flex items-center gap-1.5 pl-3 pr-2 text-sm bg-bonsai-sage-600 hover:bg-bonsai-sage-700 active:bg-bonsai-sage-700 transition-colors',

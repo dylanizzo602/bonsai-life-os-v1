@@ -188,6 +188,8 @@ export function AddEditTaskModal({
   const priorityButtonRef = useRef<HTMLButtonElement>(null)
   /* Tag button ref: Used to position the tag popover */
   const tagButtonRef = useRef<HTMLButtonElement>(null)
+  /* Date picker button ref: Used to position the date picker popover */
+  const datePickerButtonRef = useRef<HTMLButtonElement>(null)
   const [attachmentModalOpen, setAttachmentModalOpen] = useState(false)
   const [previewAttachment, setPreviewAttachment] = useState<TaskAttachment | null>(null)
   const [newChecklistTitle, setNewChecklistTitle] = useState('')
@@ -355,6 +357,7 @@ export function AddEditTaskModal({
       {/* Metadata pills: open sub-modals */}
       <div className="flex flex-wrap gap-2 mb-4">
         <button
+          ref={datePickerButtonRef}
           type="button"
           onClick={() => setDatePickerOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
@@ -430,6 +433,7 @@ export function AddEditTaskModal({
           setStartDate(start)
           setDueDate(due)
         }}
+        triggerRef={datePickerButtonRef}
       />
       <StatusPickerModal
         isOpen={statusPickerOpen}

@@ -12,6 +12,7 @@ import {
   RepeatIcon,
   FlagIcon,
 } from '../../components/icons'
+import { TimeEstimateTooltip } from './modals/TimeEstimateTooltip'
 import type { Task, TaskPriority, TaskStatus } from './types'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
@@ -139,12 +140,20 @@ export function TabletTaskItem({
   formatDueDate,
 }: TabletTaskItemProps) {
   const displayStatus = getDisplayStatus(task.status)
-  /* Format date for display: use provided formatter or default */
+  /* Format date for display: use provided formatter or default. Date-only (YYYY-MM-DD) parsed as local. */
   const defaultFormatDueDate = (iso: string | null | undefined): string | null => {
     if (!iso) return null
-    const d = new Date(iso)
-    const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0
+    const isDateOnly = !iso.includes('T')
+    const d = isDateOnly
+      ? (() => {
+          const [y, m, day] = iso.split('-').map(Number)
+          return new Date(y, (m ?? 1) - 1, day ?? 1)
+        })()
+      : new Date(iso)
+    if (isNaN(d.getTime())) return null
     const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    if (isDateOnly) return dateStr
+    const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0
     if (hasTime) {
       const timeStr = d.toLocaleTimeString('en-US', {
         hour: 'numeric',
@@ -283,24 +292,26 @@ export function TabletTaskItem({
             <UsersIcon className="w-3.5 h-3.5" />
           </span>
         )}
-        {/* Time estimate */}
+        {/* Time estimate: Tooltip on hover with estimate and total with subtasks */}
         {task.time_estimate != null && task.time_estimate > 0 && (
-          <span className="flex items-center gap-1 text-bonsai-slate-600">
-            <HourglassIcon className="w-3.5 h-3.5" aria-hidden />
-            {task.time_estimate < 60
-              ? `${task.time_estimate}m`
-              : `${Math.floor(task.time_estimate / 60)}h${task.time_estimate % 60 ? ` ${task.time_estimate % 60}m` : ''}`}
-          </span>
+          <TimeEstimateTooltip minutes={task.time_estimate} position="top">
+            <span className="flex items-center gap-1 text-bonsai-slate-600">
+              <HourglassIcon className="w-3.5 h-3.5" aria-hidden />
+              {task.time_estimate < 60
+                ? `${task.time_estimate}m`
+                : `${Math.floor(task.time_estimate / 60)}h${task.time_estimate % 60 ? ` ${task.time_estimate % 60}m` : ''}`}
+            </span>
+          </TimeEstimateTooltip>
         )}
         {/* Date/time or repeat icon */}
         {dateDisplay && (
-          <span className="flex items-center gap-1 text-bonsai-slate-600">
+          <span className="flex items-center gap-1 text-bonsai-slate-600 shrink-0 min-w-0 max-w-full">
             {isRecurring ? (
-              <RepeatIcon className="w-3.5 h-3.5" aria-hidden />
+              <RepeatIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
             ) : (
-              <CalendarIcon className="w-3.5 h-3.5" aria-hidden />
+              <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
             )}
-            {dateDisplay}
+            <span className="truncate">{dateDisplay}</span>
           </span>
         )}
         {/* Priority flag */}

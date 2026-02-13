@@ -131,6 +131,8 @@ export interface AddEditSubtaskModalProps {
   onAddDependency?: (input: CreateTaskDependencyInput) => Promise<void>
   /** Remove a task dependency by id */
   onRemoveDependency?: (dependencyId: string) => Promise<void>
+  /** Called when dependencies change (e.g. to refetch parent list enrichment) */
+  onDependenciesChanged?: () => void
 }
 
 /**
@@ -150,6 +152,7 @@ export function AddEditSubtaskModal({
   getTaskDependencies,
   onAddDependency,
   onRemoveDependency,
+  onDependenciesChanged,
 }: AddEditSubtaskModalProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -173,6 +176,8 @@ export function AddEditSubtaskModal({
   const priorityButtonRef = useRef<HTMLButtonElement>(null)
   /* Tag button ref: Used to position the tag popover */
   const tagButtonRef = useRef<HTMLButtonElement>(null)
+  /* Date picker button ref: Used to position the date picker popover */
+  const datePickerButtonRef = useRef<HTMLButtonElement>(null)
   const [attachmentModalOpen, setAttachmentModalOpen] = useState(false)
   const [previewAttachment, setPreviewAttachment] = useState<TaskAttachment | null>(null)
   const [newChecklistTitle, setNewChecklistTitle] = useState('')
@@ -340,6 +345,7 @@ export function AddEditSubtaskModal({
       {/* Metadata pills: open sub-modals */}
       <div className="flex flex-wrap gap-2 mb-4">
         <button
+          ref={datePickerButtonRef}
           type="button"
           onClick={() => setDatePickerOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
@@ -422,6 +428,7 @@ export function AddEditSubtaskModal({
           setStartDate(start)
           setDueDate(due)
         }}
+        triggerRef={datePickerButtonRef}
       />
       <PriorityPickerModal
         isOpen={priorityOpen}
@@ -651,6 +658,7 @@ export function AddEditSubtaskModal({
                 getTaskDependencies={getTaskDependencies}
                 onAddDependency={onAddDependency}
                 onRemoveDependency={onRemoveDependency}
+                onDependenciesChanged={onDependenciesChanged}
               />
             ) : (
               <p className="text-sm text-bonsai-slate-500">

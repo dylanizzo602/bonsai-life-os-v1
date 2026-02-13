@@ -21,9 +21,9 @@ export function Input({ label, error, size, className = '', ...props }: InputPro
   /* Base input styles: full width, border, focus ring */
   const baseInputClasses =
     'w-full border rounded-lg focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent'
-  /* Responsive padding/text when size is omitted */
+  /* Responsive padding/text when size is omitted; body typography per branding */
   const responsiveSizeClasses =
-    'px-3 py-2 text-sm md:px-4 md:py-2.5 md:text-base lg:px-4 lg:py-3 lg:text-base'
+    'px-3 py-2 md:px-4 md:py-2.5 lg:px-4 lg:py-3 text-body'
   /* Fixed size overrides when size prop is provided */
   const fixedSizeClasses = {
     sm: 'px-3 py-1.5 text-sm',
@@ -35,8 +35,8 @@ export function Input({ label, error, size, className = '', ...props }: InputPro
     error ? 'border-red-500' : 'border-bonsai-slate-300'
   } ${className}`
 
-  /* Label: responsive text size when size omitted; fixed when size provided */
-  const responsiveLabelClasses = 'block text-sm font-medium text-bonsai-slate-700 mb-1 md:text-base'
+  /* Label: secondary typography when size omitted; fixed when size provided */
+  const responsiveLabelClasses = 'block text-secondary font-medium text-bonsai-slate-700 mb-1'
   const fixedLabelClasses = {
     sm: 'block text-sm font-medium text-bonsai-slate-700 mb-1',
     md: 'block text-base font-medium text-bonsai-slate-700 mb-1',
@@ -52,7 +52,7 @@ export function Input({ label, error, size, className = '', ...props }: InputPro
         </label>
       )}
       <input className={inputClasses} {...props} />
-      {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-1 text-secondary text-red-600">{error}</p>}
     </div>
   )
 }

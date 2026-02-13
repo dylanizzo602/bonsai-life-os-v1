@@ -40,8 +40,8 @@ export function Button({
       'bg-transparent text-bonsai-slate-700 hover:bg-bonsai-slate-100 focus:ring-bonsai-slate-400 active:bg-bonsai-slate-200',
   }
 
-  /* Responsive size: mobile → md (tablet) → lg (desktop) when size prop is omitted */
-  const responsiveSizeClasses = 'px-3 py-1.5 text-sm md:px-4 md:py-2 md:text-base lg:px-6 lg:py-3 lg:text-lg'
+  /* Responsive size: mobile → md (tablet) → lg (desktop) when size prop is omitted; body typography */
+  const responsiveSizeClasses = 'px-3 py-1.5 md:px-4 md:py-2 lg:px-6 lg:py-3 text-body'
   /* Fixed size overrides when size prop is provided */
   const fixedSizeClasses = {
     sm: 'px-3 py-1.5 text-sm',

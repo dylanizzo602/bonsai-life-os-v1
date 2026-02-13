@@ -21,8 +21,8 @@ export function Checkbox({ label, size, className = '', ...props }: CheckboxProp
   const fixedBoxClasses = { sm: 'w-4 h-4', md: 'w-5 h-5', lg: 'w-5 h-5' }
   const boxClasses = `${size ? fixedBoxClasses[size] : responsiveBoxClasses} text-bonsai-sage-600 border-bonsai-slate-300 rounded focus:ring-2 focus:ring-bonsai-sage-500 ${className}`
 
-  /* Responsive label text when size omitted; fixed when size provided */
-  const responsiveLabelClasses = 'ml-2 text-sm text-bonsai-slate-700 md:text-base'
+  /* Responsive label text when size omitted; secondary typography; fixed when size provided */
+  const responsiveLabelClasses = 'ml-2 text-secondary text-bonsai-slate-700'
   const fixedLabelClasses = {
     sm: 'ml-2 text-sm text-bonsai-slate-700',
     md: 'ml-2 text-base text-bonsai-slate-700',

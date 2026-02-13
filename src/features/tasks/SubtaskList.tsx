@@ -1,5 +1,5 @@
 /* SubtaskList component: Displays and manages subtasks (tasks with parent_id) */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Input } from '../../components/Input'
 import { Button } from '../../components/Button'
 import { CompactTaskItem } from './CompactTaskItem'
@@ -78,56 +78,58 @@ export function SubtaskList({
     load()
   }, [taskId, fetchSubtasks])
 
-  /* Fetch enrichment data for all subtasks: checklists, dependencies */
-  useEffect(() => {
-    const loadEnrichment = async () => {
-      const enrichment: typeof subtaskEnrichment = {}
-      await Promise.all(
-        subtasks.map(async (subtask) => {
-          try {
-            const [checklists, deps] = await Promise.all([
-              getTaskChecklists(subtask.id).catch((err) => {
-                console.error(`Error fetching checklists for subtask ${subtask.id}:`, err)
-                return []
-              }),
-              getTaskDependencies(subtask.id).catch((err) => {
-                console.error(`Error fetching dependencies for subtask ${subtask.id}:`, err)
-                return { blocking: [], blockedBy: [] }
-              }),
-            ])
-            let completed = 0
-            let total = 0
-            for (const c of checklists) {
-              const items = await getTaskChecklistItems(c.id).catch(() => [])
-              total += items.length
-              completed += items.filter((i) => i.completed).length
-            }
-            enrichment[subtask.id] = {
-              checklistSummary: total > 0 ? { completed, total } : undefined,
-              isBlocked: deps.blockedBy.length > 0,
-              isBlocking: deps.blocking.length > 0,
-              blockingCount: deps.blocking.length,
-              blockedByCount: deps.blockedBy.length,
-            }
-          } catch (err) {
-            console.error(`Error loading enrichment for subtask ${subtask.id}:`, err)
-            enrichment[subtask.id] = {
-              isBlocked: false,
-              isBlocking: false,
-              blockingCount: 0,
-              blockedByCount: 0,
-            }
-          }
-        }),
-      )
-      setSubtaskEnrichment(enrichment)
-    }
-    if (subtasks.length > 0) {
-      loadEnrichment()
-    } else {
+  /* Fetch enrichment for subtasks: checklists, dependencies (reusable for dependency popover refresh) */
+  const loadEnrichment = useCallback(async () => {
+    if (subtasks.length === 0) {
       setSubtaskEnrichment({})
+      return
     }
-  }, [subtasks])
+    const enrichment: typeof subtaskEnrichment = {}
+    await Promise.all(
+      subtasks.map(async (subtask) => {
+        try {
+          const [checklists, deps] = await Promise.all([
+            getTaskChecklists(subtask.id).catch((err) => {
+              console.error(`Error fetching checklists for subtask ${subtask.id}:`, err)
+              return []
+            }),
+            getTaskDependencies(subtask.id).catch((err) => {
+              console.error(`Error fetching dependencies for subtask ${subtask.id}:`, err)
+              return { blocking: [], blockedBy: [] }
+            }),
+          ])
+          let completed = 0
+          let total = 0
+          for (const c of checklists) {
+            const items = await getTaskChecklistItems(c.id).catch(() => [])
+            total += items.length
+            completed += items.filter((i) => i.completed).length
+          }
+          enrichment[subtask.id] = {
+            checklistSummary: total > 0 ? { completed, total } : undefined,
+            isBlocked: deps.blockedBy.length > 0,
+            isBlocking: deps.blocking.length > 0,
+            blockingCount: deps.blocking.length,
+            blockedByCount: deps.blockedBy.length,
+          }
+        } catch (err) {
+          console.error(`Error loading enrichment for subtask ${subtask.id}:`, err)
+          enrichment[subtask.id] = {
+            isBlocked: false,
+            isBlocking: false,
+            blockingCount: 0,
+            blockedByCount: 0,
+          }
+        }
+      }),
+    )
+    setSubtaskEnrichment(enrichment)
+  }, [subtasks, getTaskDependencies])
+
+  /* Run enrichment load when subtasks change */
+  useEffect(() => {
+    loadEnrichment()
+  }, [loadEnrichment])
 
   /* Create subtask: opens modal for full editing */
   const handleCreate = async () => {
@@ -243,6 +245,7 @@ export function SubtaskList({
           getTaskDependencies={getTaskDependencies}
           onAddDependency={onAddDependency}
           onRemoveDependency={onRemoveDependency}
+          onDependenciesChanged={loadEnrichment}
         />
       )}
     </div>

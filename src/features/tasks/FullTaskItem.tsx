@@ -18,9 +18,11 @@ import { DescriptionTooltip } from '../../components/DescriptionTooltip'
 import { DependencyTooltip } from '../../components/DependencyTooltip'
 import { StatusPickerModal } from './modals/StatusPickerModal'
 import { TimeEstimateModal } from './modals/TimeEstimateModal'
+import { TimeEstimateTooltip } from './modals/TimeEstimateTooltip'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { DatePickerModal } from './modals/DatePickerModal'
 import { TagModal } from './modals/TagModal'
+import { TaskDependenciesPopover } from './modals/TaskDependenciesPopover'
 import { TabletTaskItem } from './TabletTaskItem'
 import { useTags } from './hooks/useTags'
 import type { Task, TaskPriority, TaskStatus, UpdateTaskInput } from './types'
@@ -59,6 +61,19 @@ export interface FullTaskItemProps {
   onTagsUpdated?: () => void
   /** Whether this is displayed as a tablet task item (e.g. in modals, tablet/mobile views) */
   tablet?: boolean
+  /** Fetch all tasks (for dependency popover) */
+  getTasks?: () => Promise<import('./types').Task[]>
+  /** Fetch task dependencies */
+  getTaskDependencies?: (taskId: string) => Promise<{
+    blocking: import('./types').TaskDependency[]
+    blockedBy: import('./types').TaskDependency[]
+  }>
+  /** Create a task dependency */
+  onAddDependency?: (input: import('./types').CreateTaskDependencyInput) => Promise<void>
+  /** Remove a task dependency by id */
+  onRemoveDependency?: (dependencyId: string) => Promise<void>
+  /** Called when dependencies change (e.g. to refetch enrichment) */
+  onDependenciesChanged?: () => void
 }
 
 /** Map TaskStatus to display status for the status circle */
@@ -130,12 +145,20 @@ function TaskStatusIndicator({ status }: { status: DisplayStatus }) {
   )
 }
 
-/** Format due_date or start_date as "Jan 22 at 3:00pm" or "Jan 22" when no time */
+/** Format due_date or start_date as "Jan 22 at 3:00pm" or "Jan 22" when no time. Date-only (YYYY-MM-DD) parsed as local to avoid timezone shift. */
 function formatDateWithOptionalTime(isoString: string | null): string | null {
   if (!isoString) return null
-  const d = new Date(isoString)
-  const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0
+  const isDateOnly = !isoString.includes('T')
+  const d = isDateOnly
+    ? (() => {
+        const [y, m, day] = isoString.split('-').map(Number)
+        return new Date(y, (m ?? 1) - 1, day ?? 1)
+      })()
+    : new Date(isoString)
+  if (isNaN(d.getTime())) return null
   const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  if (isDateOnly) return dateStr
+  const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0
   if (hasTime) {
     const timeStr = d.toLocaleTimeString('en-US', {
       hour: 'numeric',
@@ -181,6 +204,11 @@ export function FullTaskItem({
   onUpdateTask,
   onTagsUpdated,
   tablet = false,
+  getTasks,
+  getTaskDependencies,
+  onAddDependency,
+  onRemoveDependency,
+  onDependenciesChanged,
 }: FullTaskItemProps) {
   const displayStatus = getDisplayStatus(task.status)
   /* Modal state: Track whether status picker modal is open */
@@ -193,8 +221,12 @@ export function FullTaskItem({
   const [isDatePickerModalOpen, setIsDatePickerModalOpen] = useState(false)
   /* Modal state: Track whether tag modal is open */
   const [isTagModalOpen, setIsTagModalOpen] = useState(false)
+  /* Modal state: Track whether dependencies popover is open */
+  const [isDependenciesPopoverOpen, setIsDependenciesPopoverOpen] = useState(false)
   /* Tag button ref: Used to position the tag popover */
   const tagButtonRef = useRef<HTMLButtonElement>(null)
+  /* Dependency icons button ref: Used to position the dependencies popover */
+  const dependencyIconsButtonRef = useRef<HTMLButtonElement>(null)
   const { searchTags, createTag, updateTag, deleteTagFromAllTasks, setTagsForTask } =
     useTags(task.user_id ?? null)
   /* Status button ref: Used to position the status popover */
@@ -203,6 +235,8 @@ export function FullTaskItem({
   const priorityButtonRef = useRef<HTMLButtonElement>(null)
   /* Time estimate button ref: Used to position the time estimate popover */
   const timeEstimateButtonRef = useRef<HTMLButtonElement>(null)
+  /* Date button ref: Used to position the date picker popover */
+  const dateButtonRef = useRef<HTMLButtonElement>(null)
   const dateDisplay = formatDateWithOptionalTime(task.due_date) ?? formatDateWithOptionalTime(task.start_date)
   const isRecurring = Boolean(task.recurrence_pattern)
   /* medium = "normal" for display; ensure priority is valid for flag classes */
@@ -350,33 +384,48 @@ export function FullTaskItem({
             maxWidth={availableWidth}
           />
           
-          {/* Dependency icons: Blocked and blocking icons appear immediately after task name */}
+          {/* Dependency icons: Clickable to open Task Dependencies popover */}
           {(isBlocked || isBlocking) && (
             <div ref={dependencyIconsRef} className="flex shrink-0 items-center gap-1.5">
-              {/* Blocked icon: Shows tooltip with dependency counts on hover */}
-              {isBlocked && (
-                <DependencyTooltip
-                  blockingCount={blockingCount}
-                  blockedByCount={blockedByCount}
-                  position="top"
-                >
-                  <span className="shrink-0 text-bonsai-slate-500">
-                    <BlockedIcon className="w-4 h-4 md:w-5 md:h-5" />
-                  </span>
-                </DependencyTooltip>
-              )}
-              {/* Blocking icon: Shows tooltip with dependency counts on hover */}
-              {isBlocking && (
-                <DependencyTooltip
-                  blockingCount={blockingCount}
-                  blockedByCount={blockedByCount}
-                  position="top"
-                >
-                  <span className="shrink-0 text-amber-500">
-                    <WarningIcon className="w-4 h-4 md:w-5 md:h-5" />
-                  </span>
-                </DependencyTooltip>
-              )}
+              <button
+                ref={dependencyIconsButtonRef}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (getTasks && getTaskDependencies && onAddDependency) {
+                    setIsDependenciesPopoverOpen(true)
+                  }
+                }}
+                className="flex shrink-0 items-center gap-1.5 rounded p-0.5 text-bonsai-slate-500 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label="Manage task dependencies"
+                disabled={!getTasks || !getTaskDependencies || !onAddDependency}
+                title="Task dependencies"
+              >
+                {/* Blocked icon: Shows when task is blocked by another */}
+                {isBlocked && (
+                  <DependencyTooltip
+                    blockingCount={blockingCount}
+                    blockedByCount={blockedByCount}
+                    position="top"
+                  >
+                    <span className="shrink-0">
+                      <BlockedIcon className="w-4 h-4 md:w-5 md:h-5" />
+                    </span>
+                  </DependencyTooltip>
+                )}
+                {/* Blocking icon: Shows when task is blocking another */}
+                {isBlocking && (
+                  <DependencyTooltip
+                    blockingCount={blockingCount}
+                    blockedByCount={blockedByCount}
+                    position="top"
+                  >
+                    <span className="shrink-0 text-amber-500">
+                      <WarningIcon className="w-4 h-4 md:w-5 md:h-5" />
+                    </span>
+                  </DependencyTooltip>
+                )}
+              </button>
             </div>
           )}
         </div>
@@ -454,46 +503,53 @@ export function FullTaskItem({
       {/* Right section: time estimate, date/time or repeat icon, priority flag */}
       <div ref={rightSectionRef} className="flex shrink-0 items-center gap-2">
         {task.time_estimate != null && task.time_estimate > 0 && (
-          <button
-            ref={timeEstimateButtonRef}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              /* Open time estimate modal when icon is clicked */
-              if (onUpdateTask) {
-                setIsTimeEstimateModalOpen(true)
-              }
-            }}
-            className="flex items-center gap-1 text-sm text-bonsai-slate-600 hover:text-bonsai-slate-800 transition-colors"
-            aria-label="Edit time estimate"
-            disabled={!onUpdateTask}
+          <TimeEstimateTooltip
+            minutes={task.time_estimate}
+            position="top"
           >
-            <HourglassIcon className="w-4 h-4 md:w-5 md:h-5" aria-hidden />
-            {task.time_estimate < 60
-              ? `${task.time_estimate}m`
-              : `${Math.floor(task.time_estimate / 60)}h${task.time_estimate % 60 ? ` ${task.time_estimate % 60}m` : ''}`}
-          </button>
+            <button
+              ref={timeEstimateButtonRef}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                /* Open time estimate modal when icon is clicked */
+                if (onUpdateTask) {
+                  setIsTimeEstimateModalOpen(true)
+                }
+              }}
+              className="flex items-center gap-1 text-sm text-bonsai-slate-600 hover:text-bonsai-slate-800 transition-colors"
+              aria-label="Edit time estimate"
+              disabled={!onUpdateTask}
+            >
+              <HourglassIcon className="w-4 h-4 md:w-5 md:h-5" aria-hidden />
+              {task.time_estimate < 60
+                ? `${task.time_estimate}m`
+                : `${Math.floor(task.time_estimate / 60)}h${task.time_estimate % 60 ? ` ${task.time_estimate % 60}m` : ''}`}
+            </button>
+          </TimeEstimateTooltip>
         )}
-        {dateDisplay && (
+        {(dateDisplay || onUpdateTask) && (
           <button
+            ref={dateButtonRef}
             type="button"
             onClick={(e) => {
               e.stopPropagation()
-              /* Open date picker modal when date is clicked */
-              if (onUpdateTask) {
-                setIsDatePickerModalOpen(true)
-              }
+              if (onUpdateTask) setIsDatePickerModalOpen(true)
             }}
-            className="flex items-center gap-1 text-sm text-bonsai-slate-600 hover:text-bonsai-slate-800 transition-colors"
-            aria-label="Edit start/due date"
+            className="flex items-center gap-1 text-sm text-bonsai-slate-600 hover:text-bonsai-slate-800 transition-colors shrink-0 min-w-0"
+            aria-label={dateDisplay ? 'Edit start/due date' : 'Add start/due date'}
             disabled={!onUpdateTask}
           >
             {isRecurring ? (
-              <RepeatIcon className="w-4 h-4 md:w-5 md:h-5" aria-hidden />
+              <RepeatIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" aria-hidden />
             ) : (
-              <CalendarIcon className="w-4 h-4 md:w-5 md:h-5" aria-hidden />
+              <CalendarIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" aria-hidden />
             )}
-            {dateDisplay}
+            {dateDisplay ? (
+              <span className="truncate">{dateDisplay}</span>
+            ) : (
+              <span>Add date</span>
+            )}
           </button>
         )}
         <button
@@ -585,7 +641,7 @@ export function FullTaskItem({
           deleteTagFromAllTasks={deleteTagFromAllTasks}
         />
       )}
-      {/* Date picker modal: Opens when date display is clicked */}
+      {/* Date picker popover: Opens when date button is clicked, positioned below it */}
       {onUpdateTask && (
         <DatePickerModal
           isOpen={isDatePickerModalOpen}
@@ -600,9 +656,24 @@ export function FullTaskItem({
               })
             } catch (error) {
               console.error('Failed to update dates:', error)
-              throw error // Re-throw so DatePickerModal can keep modal open
+              throw error
             }
           }}
+          triggerRef={dateButtonRef}
+        />
+      )}
+      {/* Task dependencies popover: Opens when dependency icon is clicked, separate from edit modal */}
+      {getTasks && getTaskDependencies && onAddDependency && (
+        <TaskDependenciesPopover
+          isOpen={isDependenciesPopoverOpen}
+          onClose={() => setIsDependenciesPopoverOpen(false)}
+          triggerRef={dependencyIconsButtonRef}
+          currentTaskId={task.id}
+          getTasks={getTasks}
+          getTaskDependencies={getTaskDependencies}
+          onAddDependency={onAddDependency}
+          onRemoveDependency={onRemoveDependency}
+          onDependenciesChanged={onDependenciesChanged}
         />
       )}
     </div>

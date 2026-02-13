@@ -1,6 +1,12 @@
 /* Tailwind CSS v4: base layer, components, and utilities (replaces @tailwind directives) */
 @import "tailwindcss";
 
+/* Bonsai branding: Typography
+ * Desktop (lg: ≥1024px): Page titles 36px, Body 18px, Secondary 16px
+ * Tablet/Mobile (<1024px): Page titles 28px, Body 16px, Secondary 14px
+ * Use classes: .text-page-title, .text-body, .text-secondary
+ */
+
 /* Bonsai logo palette: sage green, golden brown, muted blue-gray */
 @theme {
   /* Sage green (hexagonal foliage) – primary accent */
@@ -46,4 +52,35 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+}
+
+/* Typography utilities: Bonsai branding – page title, body, secondary (responsive) */
+@layer components {
+  /* Page titles: 28px tablet/mobile, 36px desktop */
+  .text-page-title {
+    font-size: 28px;
+  }
+  @media (min-width: 1024px) {
+    .text-page-title {
+      font-size: 36px;
+    }
+  }
+  /* Default body text: 16px tablet/mobile, 18px desktop */
+  .text-body {
+    font-size: 1rem;   /* 16px */
+  }
+  @media (min-width: 1024px) {
+    .text-body {
+      font-size: 1.125rem; /* 18px */
+    }
+  }
+  /* Secondary text (labels, captions, metadata): 14px tablet/mobile, 16px desktop */
+  .text-secondary {
+    font-size: 0.875rem; /* 14px */
+  }
+  @media (min-width: 1024px) {
+    .text-secondary {
+      font-size: 1rem;   /* 16px */
+    }
+  }
 }

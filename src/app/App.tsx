@@ -17,10 +17,10 @@ function ScreenTooSmallMessage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-bonsai-slate-50 p-4">
       <div className="text-center max-w-sm">
-        <h1 className="text-xl font-semibold text-bonsai-brown-700 mb-2">
+        <h1 className="text-page-title font-semibold text-bonsai-brown-700 mb-2">
           Display Too Small
         </h1>
-        <p className="text-bonsai-slate-600">
+        <p className="text-body text-bonsai-slate-600">
           Please view this application on a larger screen or device with a width of at least 320px.
         </p>
       </div>

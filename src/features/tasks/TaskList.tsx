@@ -227,6 +227,11 @@ export function TaskList({
                         throw error
                       }
                     }}
+                    getTasks={getTasks}
+                    getTaskDependencies={getTaskDependencies}
+                    onAddDependency={onAddDependency}
+                    onRemoveDependency={onRemoveDependency}
+                    onDependenciesChanged={loadEnrichment}
                   />
                   {isExpanded && enrichment.hasSubtasks && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
                     <div className="ml-8 pl-4 border-l-2 border-bonsai-slate-200">
@@ -309,6 +314,11 @@ export function TaskList({
                         throw error
                       }
                     }}
+                    getTasks={getTasks}
+                    getTaskDependencies={getTaskDependencies}
+                    onAddDependency={onAddDependency}
+                    onRemoveDependency={onRemoveDependency}
+                    onDependenciesChanged={loadEnrichment}
                   />
                   {isExpanded && enrichment.hasSubtasks && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
                     <div className="ml-4 pl-3 border-l-2 border-bonsai-slate-200">

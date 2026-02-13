@@ -13,14 +13,16 @@ interface ModalProps {
   children: ReactNode
   /** Optional footer content */
   footer?: ReactNode
+  /** When true, render only backdrop + children (no outer card). Use when children are a single popover box. */
+  noCard?: boolean
 }
 
 /**
  * Reusable modal component with backdrop and close functionality
  * Supports ESC key to close and click outside to close
  */
-export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) {
-  // Close modal on ESC key press
+export function Modal({ isOpen, onClose, title, children, footer, noCard = false }: ModalProps) {
+  /* Close modal on ESC key press */
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -30,7 +32,6 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
 
     if (isOpen) {
       document.addEventListener('keydown', handleEscape)
-      // Prevent body scroll when modal is open
       document.body.style.overflow = 'hidden'
     }
 
@@ -42,6 +43,20 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
 
   if (!isOpen) return null
 
+  /* Bare mode: only backdrop + children (no outer card). Child is the only visible box. */
+  if (noCard) {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-bonsai-slate-900/30 p-4 md:p-6"
+        onClick={onClose}
+      >
+        <div onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl flex justify-center">
+          {children}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-bonsai-slate-900/30 p-4 md:p-6"
@@ -51,13 +66,12 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
         className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modal header: responsive padding and title typography */}
         {title && (
           <div className="flex items-center justify-between p-4 md:p-5 lg:p-6 border-b border-bonsai-slate-200">
             {typeof title === 'string' ? (
-              <h2 className="text-xl font-semibold text-bonsai-brown-700 md:text-2xl">{title}</h2>
+              <h2 className="text-body font-semibold text-bonsai-brown-700">{title}</h2>
             ) : (
-              <div className="text-xl font-semibold text-bonsai-brown-700 md:text-2xl">{title}</div>
+              <div className="text-body font-semibold text-bonsai-brown-700">{title}</div>
             )}
             <button
               onClick={onClose}
@@ -81,10 +95,8 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
           </div>
         )}
 
-        {/* Modal content: responsive padding */}
         <div className="flex-1 overflow-y-auto p-4 md:p-5 lg:p-6">{children}</div>
 
-        {/* Modal footer: responsive padding */}
         {footer && (
           <div className="border-t border-bonsai-slate-200 p-4 md:p-5 lg:p-6 flex justify-end gap-2">
             {footer}

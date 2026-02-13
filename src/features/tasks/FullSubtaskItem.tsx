@@ -26,6 +26,19 @@ export interface FullSubtaskItemProps {
   onUpdateTask?: (taskId: string, input: UpdateTaskInput) => Promise<void>
   /** Called after tags are updated (e.g. to refetch subtask list) */
   onTagsUpdated?: () => void
+  /** Fetch all tasks (for dependency popover) */
+  getTasks?: () => Promise<Task[]>
+  /** Fetch task dependencies */
+  getTaskDependencies?: (taskId: string) => Promise<{
+    blocking: import('./types').TaskDependency[]
+    blockedBy: import('./types').TaskDependency[]
+  }>
+  /** Create a task dependency */
+  onAddDependency?: (input: import('./types').CreateTaskDependencyInput) => Promise<void>
+  /** Remove a task dependency by id */
+  onRemoveDependency?: (dependencyId: string) => Promise<void>
+  /** Called when dependencies change (e.g. to refetch enrichment) */
+  onDependenciesChanged?: () => void
 }
 
 /**
@@ -45,6 +58,11 @@ export function FullSubtaskItem({
   onUpdateStatus,
   onUpdateTask,
   onTagsUpdated,
+  getTasks,
+  getTaskDependencies,
+  onAddDependency,
+  onRemoveDependency,
+  onDependenciesChanged,
 }: FullSubtaskItemProps) {
   return (
     <FullTaskItem
@@ -60,6 +78,11 @@ export function FullSubtaskItem({
       onUpdateStatus={onUpdateStatus}
       onUpdateTask={onUpdateTask}
       onTagsUpdated={onTagsUpdated}
+      getTasks={getTasks}
+      getTaskDependencies={getTaskDependencies}
+      onAddDependency={onAddDependency}
+      onRemoveDependency={onRemoveDependency}
+      onDependenciesChanged={onDependenciesChanged}
       tablet={true}
     />
   )

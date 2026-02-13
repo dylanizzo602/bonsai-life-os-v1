@@ -43,10 +43,17 @@ export function TaskItem({
   const [showSubtasks, setShowSubtasks] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
-  /* Format due date for display */
+  /* Format due date for display. Date-only (YYYY-MM-DD) parsed as local to avoid timezone shift. */
   const formatDueDate = (dateString: string | null) => {
     if (!dateString) return null
-    const date = new Date(dateString)
+    const isDateOnly = !dateString.includes('T')
+    const date = isDateOnly
+      ? (() => {
+          const [y, m, day] = dateString.split('-').map(Number)
+          return new Date(y, (m ?? 1) - 1, day ?? 1)
+        })()
+      : new Date(dateString)
+    if (isNaN(date.getTime())) return null
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const taskDate = new Date(date)

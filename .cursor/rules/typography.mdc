@@ -1,0 +1,65 @@
+---
+description: Bonsai typography and branding – all displayed text must follow these sizes and roles
+alwaysApply: true
+---
+
+# Typography & Text Sizing (Bonsai Branding)
+
+All text in the UI must use the following roles and sizes. Use the semantic utility classes so typography stays consistent and responsive.
+
+## Breakpoints
+
+- **Tablet/Mobile**: Default (no prefix) – viewport &lt; 1024px
+- **Desktop**: `lg:` (Tailwind) – viewport ≥ 1024px
+
+## Text Roles and Sizes
+
+| Role | Tablet/Mobile | Desktop | Usage |
+|------|----------------|---------|--------|
+| **Page title** | 28px | 36px | Main `<h1>` on each page/section |
+| **Default body** | 16px | 18px | Paragraphs, form input values, button labels, main content |
+| **Secondary** | 14px | 16px | Labels, captions, metadata, helper text, placeholders |
+
+## Implementation
+
+### Semantic classes (preferred)
+
+Use the global utility classes defined in `src/index.css`:
+
+- **Page titles**: `text-page-title` (plus `font-bold` and `text-bonsai-brown-700` as needed)
+- **Default body text**: `text-body`
+- **Secondary text**: `text-secondary` (labels, captions, hints, metadata)
+
+```tsx
+// ✅ GOOD: Page title
+<h1 className="text-page-title font-bold text-bonsai-brown-700 mb-6">Section Name</h1>
+
+// ✅ GOOD: Body content
+<p className="text-body text-bonsai-slate-700">{description}</p>
+
+// ✅ GOOD: Labels and secondary info
+<label className="text-secondary font-medium text-bonsai-slate-700">Field name</label>
+<span className="text-secondary text-bonsai-slate-500">Optional hint</span>
+```
+
+### Tailwind equivalents (when semantic class is not used)
+
+If you need inline sizes instead of the semantic class:
+
+- **Page title**: `text-[28px] lg:text-[36px]`
+- **Body**: `text-base lg:text-lg` (16px → 18px)
+- **Secondary**: `text-sm lg:text-base` (14px → 16px)
+
+## Rules for New and Updated UI
+
+1. **Page/section `<h1>`**: Always use `text-page-title` (and keep `font-bold text-bonsai-brown-700` for consistency).
+2. **Paragraphs and main content**: Use `text-body`.
+3. **Form labels, captions, hints, metadata**: Use `text-secondary`.
+4. **Modal/dialog titles**: Use `text-body font-semibold` (not page-title; modals are not full pages).
+5. **Buttons and inputs**: Shared components already use `text-body` (responsive) and `text-secondary` for labels; when adding new controls, follow the same pattern.
+6. **Do not** use arbitrary fixed sizes (e.g. `text-xl`, `text-2xl`) for page titles or body/secondary text; use the semantic classes or the Tailwind equivalents above so that tablet/mobile vs desktop sizing stays consistent.
+
+## Reference
+
+- Typography utilities: `src/index.css` (`@layer components`: `.text-page-title`, `.text-body`, `.text-secondary`)
+- Breakpoint: desktop = 1024px (`lg:` in Tailwind v4)

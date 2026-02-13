@@ -199,13 +199,20 @@ export function TaskList() {
 - Avoid complex animations or visual effects initially
 - Progressive enhancement: add design polish after functionality is solid
 
+### Typography
+
+All text must follow Bonsai branding sizes. See **Typography rule** (`.cursor/rules/typography.mdc`) for:
+- Page titles: `text-page-title` (28px / 36px)
+- Body text: `text-body` (16px / 18px)
+- Secondary text: `text-secondary` (14px / 16px)
+
 ### Design Approach
 
 ```tsx
-// ✅ GOOD: Simple, functional styling
+// ✅ GOOD: Simple, functional styling; use typography classes for text
 <div className="border rounded-lg p-4">
-  <h2 className="text-lg font-semibold mb-2">{title}</h2>
-  <p className="text-gray-600">{description}</p>
+  <h2 className="text-body font-semibold mb-2">{title}</h2>
+  <p className="text-body text-bonsai-slate-600">{description}</p>
 </div>
 
 // ❌ BAD: Over-engineered design before functionality
