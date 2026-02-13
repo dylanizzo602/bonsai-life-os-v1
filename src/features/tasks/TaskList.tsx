@@ -3,7 +3,12 @@ import { useState, useEffect } from 'react'
 import { FullTaskItem } from './FullTaskItem'
 import { CompactTaskItem } from './CompactTaskItem'
 import { SubtaskList } from './SubtaskList'
-import { getTaskChecklists, getTaskChecklistItems, getTaskDependencies } from '../../lib/supabase/tasks'
+import {
+  getTaskChecklists,
+  getTaskChecklistItems,
+  getTaskDependencies,
+  toggleChecklistItemComplete,
+} from '../../lib/supabase/tasks'
 import type { Task, TaskFilters } from './types'
 
 export interface TaskListProps {
@@ -75,6 +80,8 @@ export function TaskList({
   const [taskEnrichment, setTaskEnrichment] = useState<Record<string, {
     checklistSummary?: { completed: number; total: number }
     hasSubtasks: boolean
+    /** Number of subtasks that are not completed (for unresolved-items modal) */
+    incompleteSubtaskCount: number
     /** Sum of subtask time_estimate in minutes (for "total with subtasks" display) */
     subtaskTimeTotal: number
     isBlocked: boolean
@@ -107,6 +114,7 @@ export function TaskList({
               }),
             ])
             const subtasks = Array.isArray(subtasksResult) ? subtasksResult : []
+            const incompleteSubtaskCount = subtasks.filter((s) => s.status !== 'completed').length
             const subtaskTimeTotal = subtasks.reduce((sum, st) => sum + (st.time_estimate ?? 0), 0)
             let completed = 0
             let total = 0
@@ -118,6 +126,7 @@ export function TaskList({
             enrichment[task.id] = {
               checklistSummary: total > 0 ? { completed, total } : undefined,
               hasSubtasks: subtasks.length > 0,
+              incompleteSubtaskCount,
               subtaskTimeTotal,
               isBlocked: deps.blockedBy.length > 0,
               isBlocking: deps.blocking.length > 0,
@@ -128,6 +137,7 @@ export function TaskList({
             console.error(`Error loading enrichment for task ${task.id}:`, err)
             enrichment[task.id] = {
               hasSubtasks: false,
+              incompleteSubtaskCount: 0,
               subtaskTimeTotal: 0,
               isBlocked: false,
               isBlocking: false,
@@ -196,6 +206,7 @@ export function TaskList({
             {tasks.map((task) => {
               const enrichment = taskEnrichment[task.id] ?? {
                 hasSubtasks: false,
+                incompleteSubtaskCount: 0,
                 subtaskTimeTotal: 0,
                 isBlocked: false,
                 isBlocking: false,
@@ -210,6 +221,7 @@ export function TaskList({
                     task={task}
                     onClick={() => onOpenEditModal?.(task)}
                     hasSubtasks={enrichment.hasSubtasks}
+                    incompleteSubtaskCount={enrichment.incompleteSubtaskCount}
                     checklistSummary={enrichment.checklistSummary}
                     totalTimeWithSubtasks={totalTimeWithSubtasks}
                     isBlocked={enrichment.isBlocked}
@@ -224,6 +236,27 @@ export function TaskList({
                         await updateTask(taskId, { status })
                       } catch (error) {
                         console.error('Failed to update task status:', error)
+                        throw error
+                      }
+                    }}
+                    onCompleteTaskAndResolveAll={async (taskId) => {
+                      try {
+                        const subtasks = await fetchSubtasks(taskId)
+                        for (const st of subtasks) {
+                          if (st.status !== 'completed') await toggleComplete(st.id, true)
+                        }
+                        const checklists = await getTaskChecklists(taskId)
+                        for (const c of checklists) {
+                          const items = await getTaskChecklistItems(c.id)
+                          for (const item of items) {
+                            if (!item.completed) await toggleChecklistItemComplete(item.id, true)
+                          }
+                        }
+                        await updateTask(taskId, { status: 'completed' })
+                        refetch?.()
+                        await loadEnrichment()
+                      } catch (error) {
+                        console.error('Failed to complete task and resolve items:', error)
                         throw error
                       }
                     }}
@@ -266,6 +299,7 @@ export function TaskList({
             {tasks.map((task) => {
               const enrichment = taskEnrichment[task.id] ?? {
                 hasSubtasks: false,
+                incompleteSubtaskCount: 0,
                 subtaskTimeTotal: 0,
                 isBlocked: false,
                 isBlocking: false,
@@ -309,6 +343,7 @@ export function TaskList({
             {tasks.map((task) => {
               const enrichment = taskEnrichment[task.id] ?? {
                 hasSubtasks: false,
+                incompleteSubtaskCount: 0,
                 subtaskTimeTotal: 0,
                 isBlocked: false,
                 isBlocking: false,
@@ -324,6 +359,7 @@ export function TaskList({
                     task={task}
                     onClick={() => onOpenEditModal?.(task)}
                     hasSubtasks={enrichment.hasSubtasks}
+                    incompleteSubtaskCount={enrichment.incompleteSubtaskCount}
                     checklistSummary={enrichment.checklistSummary}
                     totalTimeWithSubtasks={totalTimeWithSubtasks}
                     isBlocked={enrichment.isBlocked}
@@ -336,6 +372,27 @@ export function TaskList({
                         await updateTask(taskId, { status })
                       } catch (error) {
                         console.error('Failed to update task status:', error)
+                        throw error
+                      }
+                    }}
+                    onCompleteTaskAndResolveAll={async (taskId) => {
+                      try {
+                        const subtasks = await fetchSubtasks(taskId)
+                        for (const st of subtasks) {
+                          if (st.status !== 'completed') await toggleComplete(st.id, true)
+                        }
+                        const checklists = await getTaskChecklists(taskId)
+                        for (const c of checklists) {
+                          const items = await getTaskChecklistItems(c.id)
+                          for (const item of items) {
+                            if (!item.completed) await toggleChecklistItemComplete(item.id, true)
+                          }
+                        }
+                        await updateTask(taskId, { status: 'completed' })
+                        refetch?.()
+                        await loadEnrichment()
+                      } catch (error) {
+                        console.error('Failed to complete task and resolve items:', error)
                         throw error
                       }
                     }}

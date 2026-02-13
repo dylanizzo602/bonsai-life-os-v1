@@ -13,6 +13,7 @@ import {
   FlagIcon,
 } from '../../components/icons'
 import { TimeEstimateTooltip } from './modals/TimeEstimateTooltip'
+import { isOverdue } from './utils/date'
 import type { Task, TaskPriority, TaskStatus } from './types'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
@@ -169,6 +170,7 @@ export function TabletTaskItem({
   }
   const formatDate = formatDueDate ?? defaultFormatDueDate
   const dateDisplay = formatDate(task.due_date ?? task.start_date)
+  const isDueOverdue = Boolean(task.due_date && isOverdue(task.due_date))
   const isRecurring = Boolean(task.recurrence_pattern)
   const priority: TaskPriority = task.priority ?? 'medium'
 
@@ -214,8 +216,8 @@ export function TabletTaskItem({
           </button>
         )}
       </div>
-      {/* Bottom row: all icons and metadata in same order as FullTaskItem */}
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-bonsai-slate-600">
+      {/* Bottom row: all icons and metadata on a single row (horizontal scroll if needed) */}
+      <div className="mt-2 flex flex-nowrap items-center gap-2 overflow-x-auto text-xs text-bonsai-slate-600">
         {/* Dependency icons: blocked and blocking icons immediately after task name */}
         {(isBlocked || isBlocking) && (
           <div className="flex shrink-0 items-center gap-1.5">
@@ -308,7 +310,7 @@ export function TabletTaskItem({
         )}
         {/* Date/time or repeat icon */}
         {dateDisplay && (
-          <span className="flex items-center gap-1 text-bonsai-slate-600 shrink-0 min-w-0 max-w-full">
+          <span className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${isDueOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-600'}`}>
             {isRecurring ? (
               <RepeatIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
             ) : (
