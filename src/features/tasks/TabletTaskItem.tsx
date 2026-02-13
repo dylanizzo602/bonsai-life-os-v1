@@ -23,6 +23,8 @@ export interface TabletTaskItemProps {
   task: Task
   /** Checklist completed/total when task has checklists */
   checklistSummary?: { completed: number; total: number }
+  /** Total time in minutes (task estimate + sum of subtask estimates) for tooltip display */
+  totalTimeWithSubtasks?: number | null
   /** Task is blocked by another (show blocked icon) */
   isBlocked?: boolean
   /** Task is blocking another (show warning icon) */
@@ -129,6 +131,7 @@ function getPriorityFlagClasses(priority: TaskPriority): string {
 export function TabletTaskItem({
   task,
   checklistSummary,
+  totalTimeWithSubtasks,
   isBlocked = false,
   isBlocking = false,
   blockingCount = 0,
@@ -294,7 +297,7 @@ export function TabletTaskItem({
         )}
         {/* Time estimate: Tooltip on hover with estimate and total with subtasks */}
         {task.time_estimate != null && task.time_estimate > 0 && (
-          <TimeEstimateTooltip minutes={task.time_estimate} position="top">
+          <TimeEstimateTooltip minutes={task.time_estimate} totalWithSubtasks={totalTimeWithSubtasks} position="top">
             <span className="flex items-center gap-1 text-bonsai-slate-600">
               <HourglassIcon className="w-3.5 h-3.5" aria-hidden />
               {task.time_estimate < 60

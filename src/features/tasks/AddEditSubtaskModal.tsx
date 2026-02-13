@@ -163,7 +163,10 @@ export function AddEditSubtaskModal({
   const [time_estimate, setTimeEstimate] = useState<number | null>(null)
   const [attachments, setAttachments] = useState<TaskAttachment[]>([])
   const [status, setStatus] = useState<DisplayStatus>('open')
-  const [advancedOpen, setAdvancedOpen] = useState(false)
+  /* Advanced options: expanded by default on mobile (< 768px) for easier access */
+  const [advancedOpen, setAdvancedOpen] = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth < 768
+  )
   const [submitting, setSubmitting] = useState(false)
   const [datePickerOpen, setDatePickerOpen] = useState(false)
   const [priorityOpen, setPriorityOpen] = useState(false)
@@ -298,6 +301,7 @@ export function AddEditSubtaskModal({
       isOpen={isOpen}
       onClose={onClose}
       title={isEditMode ? 'Edit Subtask' : 'Add Subtask'}
+      fullScreenOnMobile
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>

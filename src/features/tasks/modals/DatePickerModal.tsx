@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Button } from '../../../components/Button'
+import { TimePickerModal } from './TimePickerModal'
 
 export interface DatePickerModalProps {
   isOpen: boolean
@@ -29,6 +30,95 @@ function toTimeInputValue(iso: string | null): string {
   const hours = d.getHours()
   const mins = d.getMinutes()
   return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
+}
+
+/** Format HH:mm (24h) for display as "4:00 PM" */
+function formatTimeDisplay(hhmm: string): string {
+  if (!hhmm || !hhmm.includes(':')) return '12:00 PM'
+  const [hStr, mStr] = hhmm.split(':')
+  const h = parseInt(hStr ?? '12', 10)
+  const m = parseInt(mStr ?? '0', 10)
+  const hour12 = h % 12 || 12
+  const ampm = h < 12 ? 'AM' : 'PM'
+  return `${hour12}:${String(m).padStart(2, '0')} ${ampm}`
+}
+
+/** Parse 2-digit year to full year: 00-29 -> 2000-2029, 30-99 -> 1930-1999 */
+function parseYear2(yy: number): number {
+  if (yy >= 0 && yy <= 29) return 2000 + yy
+  if (yy >= 30 && yy <= 99) return 1900 + yy
+  return yy
+}
+
+/** Parse typed date string to YYYY-MM-DD. Handles: 1/2/26, 1/2/2026, YYYY-MM-DD, today, tomorrow, yesterday, MM-DD-YYYY */
+function parseDateInput(str: string): string | null {
+  const s = str.trim().toLowerCase()
+  if (!s) return null
+  if (s === 'today') return todayYMD()
+  if (s === 'tomorrow') return toYMD(addDays(new Date(), 1))
+  if (s === 'yesterday') return toYMD(addDays(new Date(), -1))
+  /* YYYY-MM-DD */
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) {
+    const d = new Date(s)
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
+  }
+  /* M/D/YYYY or M/D/YY (1/2/26, 01/02/2026) */
+  const mdy4 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (mdy4) {
+    const d = new Date(parseInt(mdy4[3]), parseInt(mdy4[1]) - 1, parseInt(mdy4[2]))
+    if (!isNaN(d.getTime())) return toYMD(d)
+  }
+  const mdy2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/)
+  if (mdy2) {
+    const y = parseYear2(parseInt(mdy2[3], 10))
+    const d = new Date(y, parseInt(mdy2[1], 10) - 1, parseInt(mdy2[2], 10))
+    if (!isNaN(d.getTime())) return toYMD(d)
+  }
+  /* M-D-YYYY or M-D-YY */
+  const mdyDash4 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/)
+  if (mdyDash4) {
+    const d = new Date(parseInt(mdyDash4[3]), parseInt(mdyDash4[1], 10) - 1, parseInt(mdyDash4[2], 10))
+    if (!isNaN(d.getTime())) return toYMD(d)
+  }
+  const mdyDash2 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{2})$/)
+  if (mdyDash2) {
+    const y = parseYear2(parseInt(mdyDash2[3], 10))
+    const d = new Date(y, parseInt(mdyDash2[1], 10) - 1, parseInt(mdyDash2[2], 10))
+    if (!isNaN(d.getTime())) return toYMD(d)
+  }
+  /* Try native Date parse for other formats */
+  const d = new Date(s)
+  if (!isNaN(d.getTime())) return toYMD(d)
+  return null
+}
+
+/** Parse typed time string to HH:mm (24h). Handles: 4:00 PM, 16:00, 4:30 pm */
+function parseTimeInput(str: string): string | null {
+  const s = str.trim()
+  if (!s) return null
+  /* Match H:MM or HH:MM with optional am/pm */
+  const m = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i)
+  if (m) {
+    let h = parseInt(m[1], 10)
+    const min = Math.min(59, Math.max(0, parseInt(m[2], 10)))
+    const ampm = m[3]?.toLowerCase()
+    if (ampm === 'pm' && h !== 12) h += 12
+    if (ampm === 'am' && h === 12) h = 0
+    if (!ampm && (h < 0 || h > 23)) return null
+    if (ampm && (h < 1 || h > 12)) return null
+    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
+  }
+  /* Match H am/pm or HH am/pm (e.g. "4 pm") */
+  const m2 = s.match(/^(\d{1,2})\s*(am|pm)$/i)
+  if (m2) {
+    let h = parseInt(m2[1], 10)
+    const ampm = m2[2].toLowerCase()
+    if (h < 1 || h > 12) return null
+    if (ampm === 'pm' && h !== 12) h += 12
+    if (ampm === 'am' && h === 12) h = 0
+    return `${String(h).padStart(2, '0')}:00`
+  }
+  return null
 }
 
 /** Build ISO string from date (YYYY-MM-DD) and optional time (HH:mm). Returns date-only string (YYYY-MM-DD) when no time provided. */
@@ -61,6 +151,21 @@ function compareYMD(a: string, b: string): number {
 function isBetween(dateYMD: string, startYMD: string, dueYMD: string): boolean {
   if (!startYMD || !dueYMD) return false
   return compareYMD(startYMD, dateYMD) < 0 && compareYMD(dateYMD, dueYMD) < 0
+}
+
+/** Returns true if start datetime is after due datetime (invalid: start must be <= due) */
+function isStartAfterDue(
+  start: string,
+  due: string,
+  startTime: string,
+  dueTime: string,
+  showStartTime: boolean,
+  showDueTime: boolean
+): boolean {
+  if (!start || !due) return false
+  const startDt = showStartTime && startTime ? `${start}T${startTime}:00` : `${start}T00:00:00`
+  const dueDt = showDueTime && dueTime ? `${due}T${dueTime}:00` : `${due}T23:59:59`
+  return startDt > dueDt
 }
 
 /** Get today's date as YYYY-MM-DD (local) */
@@ -120,7 +225,7 @@ function getSaturdayNextWeek(): string {
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTH_NAMES_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-/** Format YYYY-MM-DD for display: Yesterday, Today, Tomorrow, day of week (within next 7 days), or "d Mon" */
+/** Format YYYY-MM-DD for display: Yesterday, Today, Tomorrow, day of week (within next 7 days), or "Mon d" */
 function formatDateDisplay(ymd: string): string {
   const today = todayYMD()
   const yesterday = toYMD(addDays(new Date(), -1))
@@ -138,7 +243,7 @@ function formatDateDisplay(ymd: string): string {
   const diffMs = date.getTime() - todayDate.getTime()
   const diffDays = Math.round(diffMs / (24 * 60 * 60 * 1000))
   if (diffDays >= 2 && diffDays <= 7) return dayName
-  return `${d} ${monthName}`
+  return `${monthName} ${d}`
 }
 
 /** Get display suffix for quick option list: time for "Later", day name for yesterday/today/tomorrow, else formatDateDisplay */
@@ -215,6 +320,15 @@ function CalendarIcon({ className }: { className?: string }) {
   )
 }
 
+/** Clock icon for time fields */
+function ClockIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
 export function DatePickerModal({
   isOpen,
   onClose,
@@ -224,13 +338,23 @@ export function DatePickerModal({
   triggerRef,
 }: DatePickerModalProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
+  const startTimeTriggerRef = useRef<HTMLButtonElement>(null)
+  const dueTimeTriggerRef = useRef<HTMLButtonElement>(null)
   const [position, setPosition] = useState({ top: 0, left: 0 })
+
+  /* Time picker: which field's time picker is open ('start' | 'due' | null) */
+  const [timePickerOpen, setTimePickerOpen] = useState<'start' | 'due' | null>(null)
 
   /* Date/time state: YYYY-MM-DD and optional HH:mm for start and due */
   const [start, setStart] = useState('')
   const [due, setDue] = useState('')
   const [startTime, setStartTime] = useState('')
   const [dueTime, setDueTime] = useState('')
+  /* Edit buffers: allow typing; synced from state, committed on blur */
+  const [startDateEdit, setStartDateEdit] = useState('')
+  const [dueDateEdit, setDueDateEdit] = useState('')
+  const [startTimeEdit, setStartTimeEdit] = useState('')
+  const [dueTimeEdit, setDueTimeEdit] = useState('')
   /* Toggles for showing "Add time" inputs */
   const [showStartTime, setShowStartTime] = useState(false)
   const [showDueTime, setShowDueTime] = useState(false)
@@ -295,24 +419,54 @@ export function DatePickerModal({
   /* Sync state when popover opens or props change */
   useEffect(() => {
     if (isOpen) {
-      setStart(toDateInputValue(startDate))
-      setDue(toDateInputValue(dueDate))
-      setStartTime(toTimeInputValue(startDate))
-      setDueTime(toTimeInputValue(dueDate))
-      setShowStartTime(!!toTimeInputValue(startDate))
-      setShowDueTime(!!toTimeInputValue(dueDate))
+      const s = toDateInputValue(startDate)
+      const d = toDateInputValue(dueDate)
+      const st = toTimeInputValue(startDate)
+      const dt = toTimeInputValue(dueDate)
+      setStart(s)
+      setDue(d)
+      setStartTime(st)
+      setDueTime(dt)
+      setStartDateEdit(s ? formatDateDisplay(s) : '')
+      setDueDateEdit(d ? formatDateDisplay(d) : '')
+      setStartTimeEdit(st ? formatTimeDisplay(st) : '')
+      setDueTimeEdit(dt ? formatTimeDisplay(dt) : '')
+      setShowStartTime(!!st)
+      setShowDueTime(!!dt)
       setViewMonth(startDate ? new Date(startDate) : dueDate ? new Date(dueDate) : new Date())
     }
   }, [isOpen, startDate, dueDate])
+
+  /* Sync edit buffers: display formatDateDisplay when valid (Today, Tomorrow, day name, etc.) */
+  useEffect(() => {
+    setStartDateEdit(start ? formatDateDisplay(start) : '')
+    setDueDateEdit(due ? formatDateDisplay(due) : '')
+    setStartTimeEdit(startTime ? formatTimeDisplay(startTime) : '')
+    setDueTimeEdit(dueTime ? formatTimeDisplay(dueTime) : '')
+  }, [start, due, startTime, dueTime])
+
+  /* Enforce start <= due: when start is after due, adjust due to match start */
+  useEffect(() => {
+    if (!start || !due) return
+    if (isStartAfterDue(start, due, startTime, dueTime, showStartTime, showDueTime)) {
+      setDue(start)
+      setDueTime(startTime)
+      setShowDueTime(showStartTime)
+    }
+  }, [start, due, startTime, dueTime, showStartTime, showDueTime])
 
   /* Build calendar grid for viewMonth */
   const calendarCells = useMemo(() => getCalendarCells(viewMonth), [viewMonth])
   const viewMonthLabel = `${MONTH_NAMES[viewMonth.getMonth()]} ${viewMonth.getFullYear()}`
 
-  /* Handle save: build ISO from date + optional time for both start and due */
+  /* Handle save: build ISO from date + optional time; ensure start <= due before saving */
   const handleSave = async () => {
-    const startISO = start ? toISO(start, showStartTime ? startTime || undefined : undefined) : null
-    const dueISO = due ? toISO(due, showDueTime ? dueTime || undefined : undefined) : null
+    let startISO = start ? toISO(start, showStartTime ? startTime || undefined : undefined) : null
+    let dueISO = due ? toISO(due, showDueTime ? dueTime || undefined : undefined) : null
+    /* Enforce start <= due: if invalid, use start for both (safety net before save) */
+    if (startISO && dueISO && isStartAfterDue(start, due, startTime, dueTime, showStartTime, showDueTime)) {
+      dueISO = startISO
+    }
     const result = onSave(startISO, dueISO)
     if (result instanceof Promise) {
       try {
@@ -386,63 +540,87 @@ export function DatePickerModal({
 
   /* All text at secondary size to keep widget compact */
   const fieldBase = 'rounded px-2 py-2 text-secondary leading-tight focus-within:ring-2 focus-within:ring-bonsai-sage-500 flex items-center gap-2 min-h-0'
-  const timeInputClass = 'min-w-[5rem] w-[5rem] rounded border-0 bg-transparent py-0 text-secondary text-bonsai-slate-700 focus:outline-none focus:ring-0'
+  /* Time input: Editable; flexible width for small screens */
+  const timeInputClass = 'min-w-[3.5rem] w-[4.5rem] max-w-[5rem] shrink rounded border-0 bg-transparent py-0 text-secondary text-bonsai-slate-700 focus:outline-none focus:ring-0 text-right placeholder:text-bonsai-slate-400'
 
   if (!isOpen) return null
 
   return (
     <div
       ref={popoverRef}
-      className="fixed z-50 rounded-xl border border-bonsai-slate-200 bg-white shadow-xl p-5 md:p-6 min-h-[22rem] w-full max-w-xl min-w-[18rem]"
+      className="fixed z-50 rounded-xl border border-bonsai-slate-200 bg-white shadow-xl p-4 sm:p-5 md:p-6 min-h-[22rem] w-[calc(100vw-2rem)] max-w-xl min-w-0 sm:min-w-[18rem]"
       style={{ top: `${position.top}px`, left: `${position.left}px` }}
       role="dialog"
       aria-label="Start and due date"
     >
-        {/* Start and due date row: equal height, aligned content */}
-        <div className="grid grid-cols-2 gap-3 mb-5 min-w-0">
+        {/* Start and due date row: stack on small screens, side-by-side on sm+ */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5 min-w-0">
           <div
             className={`${fieldBase} min-h-[2.75rem] ${focusedField === 'start' ? 'bg-bonsai-sage-50 ring-2 ring-bonsai-sage-500' : 'bg-bonsai-slate-100'}`}
             onClick={() => setFocusedField('start')}
           >
             <CalendarIcon className="w-4 h-4 text-bonsai-slate-500 shrink-0" />
             <div className="flex-1 min-w-0 flex items-center gap-2 flex-nowrap">
-              <div className="relative shrink-0 min-w-0 max-w-full">
-                <input
-                  type="date"
-                  value={start}
-                  onChange={(e) => {
-                    setStart(e.target.value)
-                    if (e.target.value) setFocusedField('due')
-                  }}
-                  className="absolute inset-0 w-full opacity-0 cursor-pointer min-w-[3rem]"
-                  aria-label="Start date"
-                />
-                <span className="pointer-events-none text-secondary text-bonsai-slate-700 truncate block">
-                  {start ? formatDateDisplay(start) : 'Start date'}
-                </span>
-              </div>
-              {showStartTime && (
-                <>
-                  <span className="text-secondary text-bonsai-slate-400 shrink-0">·</span>
+              {/* Date input: Editable; accepts YYYY-MM-DD, today, tomorrow, MM/DD/YYYY */}
+              <input
+                type="text"
+                value={startDateEdit}
+                onChange={(e) => setStartDateEdit(e.target.value)}
+                onBlur={() => {
+                  const p = parseDateInput(startDateEdit)
+                  if (p) {
+                    setStart(p)
+                    setStartDateEdit(formatDateDisplay(p))
+                    if (p) setFocusedField('due')
+                  } else {
+                    setStartDateEdit(start ? formatDateDisplay(start) : '')
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+                placeholder="1/2/26"
+                className="min-w-0 flex-1 bg-transparent border-0 py-0 text-secondary text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-0"
+                aria-label="Start date"
+              />
+              {/* Time section: Clock icon opens picker, input allows typing; gap-2 matches calendar icon spacing */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  ref={startTimeTriggerRef}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowStartTime(true); if (!startTime) setStartTime('12:00'); setTimePickerOpen('start') }}
+                  className="shrink-0 p-0.5 rounded text-bonsai-slate-500 hover:text-bonsai-slate-700 hover:bg-bonsai-slate-100"
+                  aria-label="Open time picker"
+                >
+                  <ClockIcon className="w-4 h-4" />
+                </button>
+                {showStartTime ? (
                   <input
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
+                    type="text"
+                    value={startTimeEdit}
+                    onChange={(e) => setStartTimeEdit(e.target.value)}
+                    onBlur={() => {
+                      const p = parseTimeInput(startTimeEdit)
+                      if (p) {
+                        setStartTime(p)
+                        setStartTimeEdit(formatTimeDisplay(p))
+                      } else {
+                        setStartTimeEdit(startTime ? formatTimeDisplay(startTime) : '12:00 PM')
+                      }
+                    }}
                     onClick={(e) => e.stopPropagation()}
+                    placeholder="12:00 PM"
                     className={timeInputClass}
                     aria-label="Start time"
                   />
-                </>
-              )}
-              {!showStartTime && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setShowStartTime(true) }}
-                  className="shrink-0 text-secondary text-bonsai-sage-600 hover:text-bonsai-sage-700 whitespace-nowrap"
-                >
-                  Add time
-                </button>
-              )}
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setShowStartTime(true); if (!startTime) setStartTime('12:00'); setStartTimeEdit('12:00 PM') }}
+                    className="shrink-0 text-secondary text-bonsai-sage-600 hover:text-bonsai-sage-700 whitespace-nowrap"
+                  >
+                    Add time
+                  </button>
+                )}
+              </div>
             </div>
             {start && (
               <button
@@ -461,43 +639,66 @@ export function DatePickerModal({
           >
             <CalendarIcon className="w-4 h-4 text-bonsai-slate-500 shrink-0" />
             <div className="flex-1 min-w-0 flex items-center gap-2 flex-nowrap">
-              <div className="relative shrink-0 min-w-0 max-w-full">
-                <input
-                  type="date"
-                  value={due}
-                  onChange={(e) => {
-                    setDue(e.target.value)
-                    if (e.target.value) setFocusedField('start')
-                  }}
-                  className="absolute inset-0 w-full opacity-0 cursor-pointer min-w-[3rem]"
-                  aria-label="Due date"
-                />
-                <span className="pointer-events-none text-secondary text-bonsai-slate-700 truncate block">
-                  {due ? formatDateDisplay(due) : 'Due date'}
-                </span>
-              </div>
-              {showDueTime && (
-                <>
-                  <span className="text-secondary text-bonsai-slate-400 shrink-0">·</span>
+              {/* Date input: Editable; accepts YYYY-MM-DD, today, tomorrow, MM/DD/YYYY */}
+              <input
+                type="text"
+                value={dueDateEdit}
+                onChange={(e) => setDueDateEdit(e.target.value)}
+                onBlur={() => {
+                  const p = parseDateInput(dueDateEdit)
+                  if (p) {
+                    setDue(p)
+                    setDueDateEdit(formatDateDisplay(p))
+                    if (p) setFocusedField('start')
+                  } else {
+                    setDueDateEdit(due ? formatDateDisplay(due) : '')
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+                placeholder="1/2/26"
+                className="min-w-0 flex-1 bg-transparent border-0 py-0 text-secondary text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-0"
+                aria-label="Due date"
+              />
+              {/* Time section: Clock icon opens picker, input allows typing; gap-2 matches calendar icon spacing */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  ref={dueTimeTriggerRef}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowDueTime(true); if (!dueTime) setDueTime('12:00'); setTimePickerOpen('due') }}
+                  className="shrink-0 p-0.5 rounded text-bonsai-slate-500 hover:text-bonsai-slate-700 hover:bg-bonsai-slate-100"
+                  aria-label="Open time picker"
+                >
+                  <ClockIcon className="w-4 h-4" />
+                </button>
+                {showDueTime ? (
                   <input
-                    type="time"
-                    value={dueTime}
-                    onChange={(e) => setDueTime(e.target.value)}
+                    type="text"
+                    value={dueTimeEdit}
+                    onChange={(e) => setDueTimeEdit(e.target.value)}
+                    onBlur={() => {
+                      const p = parseTimeInput(dueTimeEdit)
+                      if (p) {
+                        setDueTime(p)
+                        setDueTimeEdit(formatTimeDisplay(p))
+                      } else {
+                        setDueTimeEdit(dueTime ? formatTimeDisplay(dueTime) : '12:00 PM')
+                      }
+                    }}
                     onClick={(e) => e.stopPropagation()}
+                    placeholder="12:00 PM"
                     className={timeInputClass}
                     aria-label="Due time"
                   />
-                </>
-              )}
-              {!showDueTime && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setShowDueTime(true) }}
-                  className="shrink-0 text-secondary text-bonsai-sage-600 hover:text-bonsai-sage-700 whitespace-nowrap"
-                >
-                  Add time
-                </button>
-              )}
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setShowDueTime(true); if (!dueTime) setDueTime('12:00'); setDueTimeEdit('12:00 PM') }}
+                    className="shrink-0 text-secondary text-bonsai-sage-600 hover:text-bonsai-sage-700 whitespace-nowrap"
+                  >
+                    Add time
+                  </button>
+                )}
+              </div>
             </div>
             {due && (
               <button
@@ -512,9 +713,9 @@ export function DatePickerModal({
           </div>
         </div>
 
-        {/* Quick options (left) and calendar (right): aligned columns */}
+        {/* Quick options (left) and calendar (right): hidden on mobile, shown on md+ */}
         <div className="grid grid-cols-1 md:grid-cols-[11rem_1fr] gap-6 md:gap-8">
-          <div className="flex flex-col">
+          <div className="hidden md:flex flex-col">
             {QUICK_OPTIONS.map((opt) => {
               const date = opt.getDate()
               const suffix = getQuickOptionSuffix(date, opt.isLater)
@@ -544,6 +745,7 @@ export function DatePickerModal({
           </div>
 
           <div className="min-w-0 flex flex-col">
+            {/* Calendar header: Month and year with Today and nav buttons */}
             <div className="flex items-center justify-between gap-2 mb-3">
               <span className="text-secondary font-medium text-bonsai-slate-800">{viewMonthLabel}</span>
               <div className="flex items-center gap-1">
@@ -601,6 +803,25 @@ export function DatePickerModal({
           Save
         </Button>
       </div>
+
+      {/* Custom time picker for start time: Opens when start time display is clicked */}
+      <TimePickerModal
+        isOpen={timePickerOpen === 'start'}
+        onClose={() => setTimePickerOpen(null)}
+        value={startTime || '12:00'}
+        onChange={setStartTime}
+        triggerRef={startTimeTriggerRef}
+        ariaLabel="Select start time"
+      />
+      {/* Custom time picker for due time: Opens when due time display is clicked */}
+      <TimePickerModal
+        isOpen={timePickerOpen === 'due'}
+        onClose={() => setTimePickerOpen(null)}
+        value={dueTime || '12:00'}
+        onChange={setDueTime}
+        triggerRef={dueTimeTriggerRef}
+        ariaLabel="Select due time"
+      />
     </div>
   )
 }

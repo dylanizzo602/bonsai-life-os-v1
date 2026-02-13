@@ -15,13 +15,15 @@ interface ModalProps {
   footer?: ReactNode
   /** When true, render only backdrop + children (no outer card). Use when children are a single popover box. */
   noCard?: boolean
+  /** When true, modal is full-screen on mobile (< 768px), centered with max-width on tablet/desktop */
+  fullScreenOnMobile?: boolean
 }
 
 /**
  * Reusable modal component with backdrop and close functionality
  * Supports ESC key to close and click outside to close
  */
-export function Modal({ isOpen, onClose, title, children, footer, noCard = false }: ModalProps) {
+export function Modal({ isOpen, onClose, title, children, footer, noCard = false, fullScreenOnMobile = false }: ModalProps) {
   /* Close modal on ESC key press */
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -57,15 +59,17 @@ export function Modal({ isOpen, onClose, title, children, footer, noCard = false
     )
   }
 
+  /* Full-screen on mobile: no padding, modal fills viewport; on md+ use centered card */
+  const containerClass = fullScreenOnMobile
+    ? 'fixed inset-0 z-50 flex justify-center bg-bonsai-slate-900/30 p-0 md:p-6 items-stretch md:items-center'
+    : 'fixed inset-0 z-50 flex items-center justify-center bg-bonsai-slate-900/30 p-4 md:p-6'
+  const cardClass = fullScreenOnMobile
+    ? 'bg-white shadow-xl w-full min-h-full md:min-h-0 md:max-h-[90vh] md:max-w-2xl md:rounded-lg rounded-none overflow-hidden flex flex-col'
+    : 'bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col'
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-bonsai-slate-900/30 p-4 md:p-6"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className={containerClass} onClick={onClose}>
+      <div className={cardClass} onClick={(e) => e.stopPropagation()}>
         {title && (
           <div className="flex items-center justify-between p-4 md:p-5 lg:p-6 border-b border-bonsai-slate-200">
             {typeof title === 'string' ? (

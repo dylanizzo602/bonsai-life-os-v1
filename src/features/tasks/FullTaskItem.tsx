@@ -37,6 +37,8 @@ export interface FullTaskItemProps {
   hasSubtasks?: boolean
   /** Checklist completed/total when task has checklists */
   checklistSummary?: { completed: number; total: number }
+  /** Total time in minutes (task estimate + sum of subtask estimates) for tooltip display */
+  totalTimeWithSubtasks?: number | null
   /** Task is blocked by another (show blocked icon) */
   isBlocked?: boolean
   /** Task is blocking another (show warning icon) */
@@ -192,6 +194,7 @@ export function FullTaskItem({
   task,
   hasSubtasks = false,
   checklistSummary,
+  totalTimeWithSubtasks,
   isBlocked = false,
   isBlocking = false,
   isShared = false,
@@ -307,6 +310,7 @@ export function FullTaskItem({
       <TabletTaskItem
         task={task}
         checklistSummary={checklistSummary}
+        totalTimeWithSubtasks={totalTimeWithSubtasks}
         isBlocked={isBlocked}
         isBlocking={isBlocking}
         blockingCount={blockingCount}
@@ -505,6 +509,7 @@ export function FullTaskItem({
         {task.time_estimate != null && task.time_estimate > 0 && (
           <TimeEstimateTooltip
             minutes={task.time_estimate}
+            totalWithSubtasks={totalTimeWithSubtasks}
             position="top"
           >
             <button

@@ -175,7 +175,10 @@ export function AddEditTaskModal({
   const [time_estimate, setTimeEstimate] = useState<number | null>(null)
   const [attachments, setAttachments] = useState<TaskAttachment[]>([])
   const [status, setStatus] = useState<DisplayStatus>('open')
-  const [advancedOpen, setAdvancedOpen] = useState(false)
+  /* Advanced options: expanded by default on mobile (< 768px) for easier access */
+  const [advancedOpen, setAdvancedOpen] = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth < 768
+  )
   const [submitting, setSubmitting] = useState(false)
   const [datePickerOpen, setDatePickerOpen] = useState(false)
   const [priorityOpen, setPriorityOpen] = useState(false)
@@ -310,6 +313,7 @@ export function AddEditTaskModal({
       isOpen={isOpen}
       onClose={onClose}
       title={isEditMode ? 'Edit Task' : 'Add Task'}
+      fullScreenOnMobile
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -467,6 +471,7 @@ export function AddEditTaskModal({
         minutes={time_estimate}
         onSave={setTimeEstimate}
         taskId={task?.id ?? null}
+        parentTaskMinutes={time_estimate}
       />
       {task?.id && onUpdateTask && (
         <>

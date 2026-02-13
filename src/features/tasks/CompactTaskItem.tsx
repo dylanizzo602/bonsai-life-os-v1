@@ -1,6 +1,6 @@
 /* CompactTaskItem component: Minimal compact task display with essential information only.
- * Top row: status and task name.
- * Bottom row: tag, dependency, start/due date, and flag.
+ * Top row: chevron (if subtasks), status, task name.
+ * Bottom row: tag, dependency icons, time estimate, start/due date, and flag.
  * No hover tooltips; safe for compact views and small screens. */
 
 import {
@@ -9,6 +9,8 @@ import {
   WarningIcon,
   RepeatIcon,
   FlagIcon,
+  ChevronDownIcon,
+  HourglassIcon,
 } from '../../components/icons'
 import type { Task, TaskPriority, TaskStatus } from './types'
 
@@ -18,6 +20,12 @@ type DisplayStatus = 'open' | 'in_progress' | 'complete'
 export interface CompactTaskItemProps {
   /** Task data to display */
   task: Task
+  /** Whether this task has subtasks (shows chevron and allows expand/collapse) */
+  hasSubtasks?: boolean
+  /** Whether subtasks section is expanded */
+  expanded?: boolean
+  /** Toggle expand/collapse when chevron is clicked */
+  onToggleExpand?: () => void
   /** Task is blocked by another (show blocked icon) */
   isBlocked?: boolean
   /** Task is blocking another (show warning icon) */
@@ -109,12 +117,15 @@ function getPriorityFlagClasses(priority: TaskPriority): string {
 
 /**
  * Compact task item component with minimal two-row layout.
- * Top row: status circle and task name.
- * Bottom row: tag, dependency icons, start/due date, and priority flag.
+ * Top row: chevron (if has subtasks), status circle, and task name.
+ * Bottom row: tag, dependency icons, time estimate, start/due date, and priority flag.
  * Used for compact views where space is limited.
  */
 export function CompactTaskItem({
   task,
+  hasSubtasks = false,
+  expanded = false,
+  onToggleExpand,
   isBlocked = false,
   isBlocking = false,
   onClick,
@@ -170,8 +181,25 @@ export function CompactTaskItem({
           : undefined
       }
     >
-      {/* Top row: status circle and task name */}
+      {/* Top row: chevron (if has subtasks), status circle, and task name */}
       <div className="flex items-center gap-2">
+        {/* Chevron: show when task has subtasks; click toggles expand without opening edit */}
+        {hasSubtasks && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggleExpand?.()
+            }}
+            className="shrink-0 flex items-center justify-center w-6 h-6 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-800 transition-colors"
+            aria-expanded={expanded}
+            aria-label={expanded ? 'Collapse subtasks' : 'Expand subtasks'}
+          >
+            <ChevronDownIcon
+              className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+        )}
         {/* Status circle */}
         <div className="shrink-0">
           <TaskStatusIndicator status={displayStatus} />
@@ -249,6 +277,15 @@ export function CompactTaskItem({
               </button>
             )}
           </div>
+        )}
+        {/* Time estimate: hourglass icon + formatted duration (e.g. 5m, 1h 30m) */}
+        {task.time_estimate != null && task.time_estimate > 0 && (
+          <span className="flex items-center gap-1 text-bonsai-slate-600 shrink-0">
+            <HourglassIcon className="w-3.5 h-3.5" aria-hidden />
+            {task.time_estimate < 60
+              ? `${task.time_estimate}m`
+              : `${Math.floor(task.time_estimate / 60)}h${task.time_estimate % 60 ? ` ${task.time_estimate % 60}m` : ''}`}
+          </span>
         )}
         {/* Start/due date */}
         {dateDisplay && (

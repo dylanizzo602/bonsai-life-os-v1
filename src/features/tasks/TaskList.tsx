@@ -75,6 +75,8 @@ export function TaskList({
   const [taskEnrichment, setTaskEnrichment] = useState<Record<string, {
     checklistSummary?: { completed: number; total: number }
     hasSubtasks: boolean
+    /** Sum of subtask time_estimate in minutes (for "total with subtasks" display) */
+    subtaskTimeTotal: number
     isBlocked: boolean
     isBlocking: boolean
     blockingCount: number
@@ -105,6 +107,7 @@ export function TaskList({
               }),
             ])
             const subtasks = Array.isArray(subtasksResult) ? subtasksResult : []
+            const subtaskTimeTotal = subtasks.reduce((sum, st) => sum + (st.time_estimate ?? 0), 0)
             let completed = 0
             let total = 0
             for (const c of checklists) {
@@ -115,6 +118,7 @@ export function TaskList({
             enrichment[task.id] = {
               checklistSummary: total > 0 ? { completed, total } : undefined,
               hasSubtasks: subtasks.length > 0,
+              subtaskTimeTotal,
               isBlocked: deps.blockedBy.length > 0,
               isBlocking: deps.blocking.length > 0,
               blockingCount: deps.blocking.length,
@@ -124,6 +128,7 @@ export function TaskList({
             console.error(`Error loading enrichment for task ${task.id}:`, err)
             enrichment[task.id] = {
               hasSubtasks: false,
+              subtaskTimeTotal: 0,
               isBlocked: false,
               isBlocking: false,
               blockingCount: 0,
@@ -191,12 +196,14 @@ export function TaskList({
             {tasks.map((task) => {
               const enrichment = taskEnrichment[task.id] ?? {
                 hasSubtasks: false,
+                subtaskTimeTotal: 0,
                 isBlocked: false,
                 isBlocking: false,
                 blockingCount: 0,
                 blockedByCount: 0,
               }
               const isExpanded = expandedTasks.has(task.id)
+              const totalTimeWithSubtasks = (task.time_estimate ?? 0) + (enrichment.subtaskTimeTotal ?? 0)
               return (
                 <div key={task.id} className="space-y-2">
                   <FullTaskItem
@@ -204,6 +211,7 @@ export function TaskList({
                     onClick={() => onOpenEditModal?.(task)}
                     hasSubtasks={enrichment.hasSubtasks}
                     checklistSummary={enrichment.checklistSummary}
+                    totalTimeWithSubtasks={totalTimeWithSubtasks}
                     isBlocked={enrichment.isBlocked}
                     isBlocking={enrichment.isBlocking}
                     blockingCount={enrichment.blockingCount}
@@ -253,32 +261,12 @@ export function TaskList({
               )
             })}
           </div>
-          {/* Mobile (< md): compact task items, no hover tooltips; tap opens edit modal */}
+          {/* Mobile (< md): compact task items with collapsible subtasks; tap opens edit modal */}
           <div className="md:hidden space-y-2">
             {tasks.map((task) => {
               const enrichment = taskEnrichment[task.id] ?? {
                 hasSubtasks: false,
-                isBlocked: false,
-                isBlocking: false,
-                blockingCount: 0,
-                blockedByCount: 0,
-              }
-              return (
-                <CompactTaskItem
-                  key={task.id}
-                  task={task}
-                  onClick={() => onOpenEditModal?.(task)}
-                  isBlocked={enrichment.isBlocked}
-                  isBlocking={enrichment.isBlocking}
-                />
-              )
-            })}
-          </div>
-          {/* Tablet (md to lg): tablet task items, no hover tooltips; tap opens edit modal */}
-          <div className="hidden md:block lg:hidden space-y-2">
-            {tasks.map((task) => {
-              const enrichment = taskEnrichment[task.id] ?? {
-                hasSubtasks: false,
+                subtaskTimeTotal: 0,
                 isBlocked: false,
                 isBlocking: false,
                 blockingCount: 0,
@@ -287,12 +275,57 @@ export function TaskList({
               const isExpanded = expandedTasks.has(task.id)
               return (
                 <div key={task.id} className="space-y-2">
+                  <CompactTaskItem
+                    task={task}
+                    hasSubtasks={enrichment.hasSubtasks}
+                    expanded={isExpanded}
+                    onToggleExpand={() => toggleExpand(task.id)}
+                    onClick={() => onOpenEditModal?.(task)}
+                    isBlocked={enrichment.isBlocked}
+                    isBlocking={enrichment.isBlocking}
+                  />
+                  {isExpanded && enrichment.hasSubtasks && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
+                    <div className="ml-4 pl-3 border-l-2 border-bonsai-slate-200">
+                      <SubtaskList
+                        taskId={task.id}
+                        fetchSubtasks={fetchSubtasks}
+                        onCreateSubtask={(taskId, title) => createSubtask(taskId, { title })}
+                        onUpdateTask={updateTask}
+                        onDeleteTask={deleteTask}
+                        onToggleComplete={toggleComplete}
+                        getTasks={getTasks}
+                        getTaskDependencies={getTaskDependencies}
+                        onAddDependency={onAddDependency}
+                        onRemoveDependency={onRemoveDependency}
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {/* Tablet (md to lg): tablet task items, no hover tooltips; tap opens edit modal */}
+          <div className="hidden md:block lg:hidden space-y-2">
+            {tasks.map((task) => {
+              const enrichment = taskEnrichment[task.id] ?? {
+                hasSubtasks: false,
+                subtaskTimeTotal: 0,
+                isBlocked: false,
+                isBlocking: false,
+                blockingCount: 0,
+                blockedByCount: 0,
+              }
+              const isExpanded = expandedTasks.has(task.id)
+              const totalTimeWithSubtasks = (task.time_estimate ?? 0) + (enrichment.subtaskTimeTotal ?? 0)
+              return (
+                <div key={task.id} className="space-y-2">
                   <FullTaskItem
                     tablet={true}
                     task={task}
                     onClick={() => onOpenEditModal?.(task)}
                     hasSubtasks={enrichment.hasSubtasks}
                     checklistSummary={enrichment.checklistSummary}
+                    totalTimeWithSubtasks={totalTimeWithSubtasks}
                     isBlocked={enrichment.isBlocked}
                     isBlocking={enrichment.isBlocking}
                     blockingCount={enrichment.blockingCount}
