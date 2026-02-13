@@ -61,6 +61,7 @@ export function RemindersPage() {
           error={error}
           onToggleComplete={toggleComplete}
           onEdit={openEdit}
+          onUpdateReminder={updateReminder}
         />
       </div>
 

@@ -7,9 +7,9 @@
 export type TaskPriority = 'none' | 'low' | 'medium' | 'high' | 'urgent'
 
 /**
- * Task status. UI mapping: active → OPEN (or IN_PROGRESS if extended), completed → COMPLETE.
+ * Task status. UI mapping: active → OPEN, in_progress → IN PROGRESS, completed → COMPLETE.
  */
-export type TaskStatus = 'active' | 'completed'
+export type TaskStatus = 'active' | 'in_progress' | 'completed'
 
 /** Attachment stored as JSONB in tasks.attachments */
 export interface TaskAttachment {

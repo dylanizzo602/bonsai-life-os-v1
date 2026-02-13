@@ -29,7 +29,7 @@ import { TagModal } from './modals/TagModal'
 import { TaskDependenciesPopover } from './modals/TaskDependenciesPopover'
 import { TabletTaskItem } from './TabletTaskItem'
 import { useTags } from './hooks/useTags'
-import { isOverdue } from './utils/date'
+import { isOverdue, formatStartDueDisplay, isPastStartDate } from './utils/date'
 import type { Task, TaskPriority, TaskStatus, UpdateTaskInput } from './types'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
@@ -100,12 +100,14 @@ export interface FullTaskItemProps {
 /** Map TaskStatus to display status for the status circle */
 function getDisplayStatus(status: TaskStatus): DisplayStatus {
   if (status === 'completed') return 'complete'
+  if (status === 'in_progress') return 'in_progress'
   return 'open'
 }
 
 /** Map DisplayStatus back to TaskStatus for database updates */
 function getTaskStatus(displayStatus: DisplayStatus): TaskStatus {
   if (displayStatus === 'complete') return 'completed'
+  if (displayStatus === 'in_progress') return 'in_progress'
   return 'active'
 }
 
@@ -185,31 +187,6 @@ function formatDateForTooltip(isoString: string | null): string | null {
     : new Date(isoString)
   if (isNaN(d.getTime())) return null
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-/** Format due_date or start_date as "Jan 22 at 3:00pm" or "Jan 22" when no time. Date-only (YYYY-MM-DD) parsed as local to avoid timezone shift. */
-function formatDateWithOptionalTime(isoString: string | null | undefined): string | null {
-  if (isoString == null || isoString === '') return null
-  const isDateOnly = !isoString.includes('T')
-  const d = isDateOnly
-    ? (() => {
-        const [y, m, day] = isoString.split('-').map(Number)
-        return new Date(y, (m ?? 1) - 1, day ?? 1)
-      })()
-    : new Date(isoString)
-  if (isNaN(d.getTime())) return null
-  const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  if (isDateOnly) return dateStr
-  const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0
-  if (hasTime) {
-    const timeStr = d.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
-    return `${dateStr} at ${timeStr}`
-  }
-  return dateStr
 }
 
 /** Priority flag color classes: none, low, normal (medium), high, urgent */
@@ -299,7 +276,7 @@ export function FullTaskItem({
   const timeEstimateButtonRef = useRef<HTMLButtonElement>(null)
   /* Date button ref: Used to position the date picker popover */
   const dateButtonRef = useRef<HTMLButtonElement>(null)
-  const dateDisplay = formatDateWithOptionalTime(task.due_date) ?? formatDateWithOptionalTime(task.start_date)
+  const dateDisplay = formatStartDueDisplay(task.start_date, task.due_date)
   const isDueOverdue = Boolean(task.due_date && isOverdue(task.due_date))
   const isRecurring = Boolean(task.recurrence_pattern)
   /* medium = "normal" for display; ensure priority is valid for flag classes */
@@ -379,7 +356,6 @@ export function FullTaskItem({
         onClick={onClick}
         onContextMenu={onContextMenu}
         inlineEditTitle={inlineEditTitle}
-        formatDueDate={formatDateWithOptionalTime}
       />
     )
   }
@@ -644,7 +620,9 @@ export function FullTaskItem({
             const dateTooltipContent =
               startFormatted || dueFormatted ? (
                 <div className="text-center text-secondary text-bonsai-slate-800">
-                  {startFormatted && <div>Started {startFormatted}</div>}
+                  {startFormatted && (
+                    <div>{isPastStartDate(task.start_date) ? 'Started' : 'Starts'} {startFormatted}</div>
+                  )}
                   {dueFormatted && <div>Due on {dueFormatted}</div>}
                 </div>
               ) : null

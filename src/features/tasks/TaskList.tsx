@@ -308,6 +308,7 @@ export function TaskList({
                           }
                         : undefined
                     }
+                    onUpdateReminder={onUpdateReminder}
                   />
                 )
               }
@@ -454,6 +455,7 @@ export function TaskList({
                           }
                         : undefined
                     }
+                    onUpdateReminder={onUpdateReminder}
                   />
                 )
               }
@@ -548,6 +550,7 @@ export function TaskList({
                           }
                         : undefined
                     }
+                    onUpdateReminder={onUpdateReminder}
                   />
                 )
               }

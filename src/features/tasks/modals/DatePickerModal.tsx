@@ -552,6 +552,9 @@ export function DatePickerModal({
       style={{ top: `${position.top}px`, left: `${position.left}px` }}
       role="dialog"
       aria-label="Start and due date"
+      /* Stop propagation so clicks inside popover do not open the task edit modal (row click) */
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
     >
         {/* Start and due date row: stack on small screens, side-by-side on sm+ */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5 min-w-0">

@@ -14,6 +14,8 @@ export interface ReminderListProps {
   onToggleComplete: (id: string, completed: boolean) => void
   /** Open edit modal for a reminder */
   onEdit: (reminder: Reminder) => void
+  /** Update reminder (e.g. for date picker popover); when provided, reminder date is clickable */
+  onUpdateReminder?: (id: string, input: import('./types').UpdateReminderInput) => Promise<Reminder>
 }
 
 /**
@@ -25,6 +27,7 @@ export function ReminderList({
   error = null,
   onToggleComplete,
   onEdit,
+  onUpdateReminder,
 }: ReminderListProps) {
   if (loading) {
     return (
@@ -58,6 +61,7 @@ export function ReminderList({
           reminder={reminder}
           onToggleComplete={onToggleComplete}
           onEdit={onEdit}
+          onUpdateReminder={onUpdateReminder}
         />
       ))}
     </div>

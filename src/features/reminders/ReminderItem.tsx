@@ -1,8 +1,10 @@
-/* ReminderItem: Single row with checkbox, name, and remind date; click opens edit */
+/* ReminderItem: Single row with checkbox, name, and remind date; click opens edit; date click opens date picker popover */
 
+import { useRef, useState } from 'react'
 import { Checkbox } from '../../components/Checkbox'
 import { InlineTitleInput } from '../../components/InlineTitleInput'
-import type { Reminder } from './types'
+import { SingleDatePickerModal } from './modals/SingleDatePickerModal'
+import type { Reminder, UpdateReminderInput } from './types'
 
 /** Format remind_at for list display */
 function formatRemindDate(iso: string | null): string {
@@ -31,12 +33,25 @@ export interface ReminderItemProps {
     onSave: (newName: string) => void | Promise<void>
     onCancel: () => void
   }
+  /** Update reminder (e.g. for date picker popover); when provided, reminder date is clickable and opens single-date popover */
+  onUpdateReminder?: (id: string, input: UpdateReminderInput) => Promise<Reminder>
 }
 
 /**
- * Single reminder row: checkbox, name, remind date. Clicking row opens edit modal.
+ * Single reminder row: checkbox, name, remind date. Clicking row opens edit modal; clicking date opens date picker popover when onUpdateReminder is provided.
  */
-export function ReminderItem({ reminder, onToggleComplete, onEdit, onContextMenu, inlineEditName }: ReminderItemProps) {
+export function ReminderItem({
+  reminder,
+  onToggleComplete,
+  onEdit,
+  onContextMenu,
+  inlineEditName,
+  onUpdateReminder,
+}: ReminderItemProps) {
+  /* Date picker popover: open state and trigger ref for positioning */
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
+  const dateButtonRef = useRef<HTMLButtonElement>(null)
+
   const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     e.stopPropagation()
     onToggleComplete(reminder.id, e.target.checked)
@@ -82,10 +97,37 @@ export function ReminderItem({ reminder, onToggleComplete, onEdit, onContextMenu
           </span>
         )}
       </div>
-      {/* Remind date: aligned to the right of the item box */}
-      <span className="text-secondary text-bonsai-slate-500 shrink-0 ml-2">
-        {formatRemindDate(reminder.remind_at)}
-      </span>
+      {/* Remind date: clickable when onUpdateReminder provided; opens single-date picker popover */}
+      {onUpdateReminder ? (
+        <button
+          ref={dateButtonRef}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsDatePickerOpen(true)
+          }}
+          className="text-secondary text-bonsai-slate-500 shrink-0 ml-2 hover:text-bonsai-slate-700 hover:underline transition-colors rounded px-1 -mx-1"
+          aria-label={reminder.remind_at ? 'Edit reminder date' : 'Set reminder date'}
+        >
+          {formatRemindDate(reminder.remind_at)}
+        </button>
+      ) : (
+        <span className="text-secondary text-bonsai-slate-500 shrink-0 ml-2">
+          {formatRemindDate(reminder.remind_at)}
+        </span>
+      )}
+      {/* Single-date picker popover: edit reminder date without opening full edit modal */}
+      {onUpdateReminder && (
+        <SingleDatePickerModal
+          isOpen={isDatePickerOpen}
+          onClose={() => setIsDatePickerOpen(false)}
+          value={reminder.remind_at}
+          onSave={async (iso) => {
+            await onUpdateReminder(reminder.id, { remind_at: iso })
+          }}
+          triggerRef={dateButtonRef}
+        />
+      )}
     </div>
   )
 }

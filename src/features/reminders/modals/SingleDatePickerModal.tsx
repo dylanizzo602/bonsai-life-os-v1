@@ -416,6 +416,9 @@ export function SingleDatePickerModal({
       style={{ top: `${position.top}px`, left: `${position.left}px` }}
       role="dialog"
       aria-label="Select a date"
+      /* Stop propagation so clicks inside popover do not trigger reminder row click (edit modal) */
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       {/* Single date + time row */}
       <div className={`${fieldBase} min-h-[2.75rem] bg-bonsai-slate-100 mb-5`}>

@@ -41,12 +41,14 @@ type DisplayStatus = 'open' | 'in_progress' | 'complete'
 /** Map TaskStatus to display status for the status circle */
 function getDisplayStatus(status: TaskStatus): DisplayStatus {
   if (status === 'completed') return 'complete'
+  if (status === 'in_progress') return 'in_progress'
   return 'open'
 }
 
 /** Map DisplayStatus back to TaskStatus for database updates */
 function getTaskStatus(displayStatus: DisplayStatus): TaskStatus {
   if (displayStatus === 'complete') return 'completed'
+  if (displayStatus === 'in_progress') return 'in_progress'
   return 'active'
 }
 

@@ -14,7 +14,7 @@ import {
 } from '../../components/icons'
 import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { TimeEstimateTooltip } from './modals/TimeEstimateTooltip'
-import { isOverdue } from './utils/date'
+import { isOverdue, formatStartDueDisplay } from './utils/date'
 import type { Task, TaskPriority, TaskStatus } from './types'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
@@ -58,6 +58,7 @@ export interface TabletTaskItemProps {
 /** Map TaskStatus to display status for the status circle */
 function getDisplayStatus(status: TaskStatus): DisplayStatus {
   if (status === 'completed') return 'complete'
+  if (status === 'in_progress') return 'in_progress'
   return 'open'
 }
 
@@ -152,35 +153,11 @@ export function TabletTaskItem({
   inlineEditTitle,
   onRemove,
   onDependencyClick,
-  formatDueDate,
+  formatDueDate: _formatDueDate,
 }: TabletTaskItemProps) {
   const displayStatus = getDisplayStatus(task.status)
-  /* Format date for display: use provided formatter or default. Date-only (YYYY-MM-DD) parsed as local. */
-  const defaultFormatDueDate = (iso: string | null | undefined): string | null => {
-    if (!iso) return null
-    const isDateOnly = !iso.includes('T')
-    const d = isDateOnly
-      ? (() => {
-          const [y, m, day] = iso.split('-').map(Number)
-          return new Date(y, (m ?? 1) - 1, day ?? 1)
-        })()
-      : new Date(iso)
-    if (isNaN(d.getTime())) return null
-    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    if (isDateOnly) return dateStr
-    const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0
-    if (hasTime) {
-      const timeStr = d.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-      })
-      return `${dateStr} at ${timeStr}`
-    }
-    return dateStr
-  }
-  const formatDate = formatDueDate ?? defaultFormatDueDate
-  const dateDisplay = formatDate(task.due_date ?? task.start_date)
+  /* Date display: single line for start/due (Starts Jan 1, Due Jan 3 at 5pm, Jan 1 - Jan 3 at 5pm, etc.) */
+  const dateDisplay = formatStartDueDisplay(task.start_date, task.due_date)
   const isDueOverdue = Boolean(task.due_date && isOverdue(task.due_date))
   const isRecurring = Boolean(task.recurrence_pattern)
   const priority: TaskPriority = task.priority ?? 'medium'
