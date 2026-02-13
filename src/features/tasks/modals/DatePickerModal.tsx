@@ -579,7 +579,7 @@ export function DatePickerModal({
                     setStartDateEdit(start ? formatDateDisplay(start) : '')
                   }
                 }}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); setFocusedField('start') }}
                 placeholder="1/2/26"
                 className="min-w-0 flex-1 bg-transparent border-0 py-0 text-secondary text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-0"
                 aria-label="Start date"
@@ -657,7 +657,7 @@ export function DatePickerModal({
                     setDueDateEdit(due ? formatDateDisplay(due) : '')
                   }
                 }}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); setFocusedField('due') }}
                 placeholder="1/2/26"
                 className="min-w-0 flex-1 bg-transparent border-0 py-0 text-secondary text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-0"
                 aria-label="Due date"

@@ -172,7 +172,7 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
   if (input.attachments !== undefined) updateData.attachments = input.attachments
   if (input.status !== undefined) {
     updateData.status = input.status
-    /* Keep completed_at in sync with status so list and details stay consistent */
+    /* Keep completed_at in sync: only completed status has completed_at set */
     updateData.completed_at = input.status === 'completed' ? new Date().toISOString() : null
   }
   if (input.category !== undefined) updateData.category = input.category

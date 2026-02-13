@@ -8,8 +8,9 @@ export type TaskPriority = 'none' | 'low' | 'medium' | 'high' | 'urgent'
 
 /**
  * Task status. UI mapping: active → OPEN, in_progress → IN PROGRESS, completed → COMPLETE.
+ * archived and deleted are hidden by default; shown when "Show archived" / "Show deleted" toggles are on.
  */
-export type TaskStatus = 'active' | 'in_progress' | 'completed'
+export type TaskStatus = 'active' | 'in_progress' | 'completed' | 'archived' | 'deleted'
 
 /** Attachment stored as JSONB in tasks.attachments */
 export interface TaskAttachment {

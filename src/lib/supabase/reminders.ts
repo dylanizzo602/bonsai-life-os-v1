@@ -18,7 +18,11 @@ export async function getReminders(): Promise<Reminder[]> {
     throw error
   }
 
-  return (data ?? []) as Reminder[]
+  /* Ensure deleted is always boolean (default false for pre-migration rows) */
+  return ((data ?? []) as (Reminder & { deleted?: boolean })[]).map((r) => ({
+    ...r,
+    deleted: r.deleted ?? false,
+  })) as Reminder[]
 }
 
 /**
@@ -53,6 +57,7 @@ export async function updateReminder(id: string, input: UpdateReminderInput): Pr
   if (input.name !== undefined) updateData.name = input.name
   if (input.remind_at !== undefined) updateData.remind_at = input.remind_at
   if (input.completed !== undefined) updateData.completed = input.completed
+  if (input.deleted !== undefined) updateData.deleted = input.deleted
 
   const { data, error } = await supabase
     .from('reminders')

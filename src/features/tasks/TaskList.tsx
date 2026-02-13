@@ -54,8 +54,10 @@ export interface TaskListProps {
   onOpenEditModal?: (task: Task) => void
   /** Create a new task (e.g. for Duplicate from context menu) */
   onCreateTask?: (input: import('./types').CreateTaskInput) => Promise<Task>
-  /** Optional: Archive a task (context menu); access to archived items can be added later */
+  /** Optional: Archive a task (context menu; sets status to archived) */
   onArchiveTask?: (task: Task) => void | Promise<void>
+  /** Optional: Mark task as deleted (soft delete; sets status to deleted) */
+  onMarkDeletedTask?: (task: Task) => void | Promise<void>
   /** Reminders to display alongside tasks */
   reminders?: Reminder[]
   /** Reminders loading state */
@@ -71,6 +73,8 @@ export interface TaskListProps {
   /** Create a new reminder (e.g. for Duplicate from context menu) */
   onCreateReminder?: (input: import('../reminders/types').CreateReminderInput) => Promise<Reminder>
   /** Delete a reminder */
+  /** Mark reminder as deleted (soft delete) */
+  onMarkDeletedReminder?: (reminder: Reminder) => void | Promise<void>
   onDeleteReminder?: (id: string) => Promise<void>
 }
 
@@ -89,6 +93,7 @@ export function TaskList({
   onOpenEditModal,
   onCreateTask,
   onArchiveTask,
+  onMarkDeletedTask,
   /* Rest kept for interface; used when SubtaskList/FullTaskItem need them */
   updateTask,
   deleteTask,
@@ -106,6 +111,7 @@ export function TaskList({
   onEditReminder,
   onUpdateReminder,
   onCreateReminder,
+  onMarkDeletedReminder,
   onDeleteReminder,
 }: TaskListProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
@@ -694,6 +700,7 @@ export function TaskList({
             refetch?.()
           }}
           onArchive={onArchiveTask}
+          onMarkDeleted={onMarkDeletedTask}
           onDelete={async (t) => {
             await deleteTask(t.id)
             setContextTask(null)
@@ -717,6 +724,7 @@ export function TaskList({
           onDuplicate={async (r) => {
             if (onCreateReminder) await onCreateReminder({ name: `${r.name} (copy)`, remind_at: r.remind_at ?? undefined })
           }}
+          onMarkDeleted={onMarkDeletedReminder}
           onDelete={async (r) => {
             if (onDeleteReminder) {
               await onDeleteReminder(r.id)

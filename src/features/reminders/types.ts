@@ -1,12 +1,13 @@
 /* Reminder types: TypeScript definitions for reminder entities */
 
-/** Main reminder entity: name, single remind datetime, completed flag */
+/** Main reminder entity: name, single remind datetime, completed flag, soft-delete flag */
 export interface Reminder {
   id: string
   user_id: string | null
   name: string
   remind_at: string | null
   completed: boolean
+  deleted: boolean
   created_at: string
   updated_at: string
 }
@@ -23,4 +24,5 @@ export interface UpdateReminderInput {
   name?: string
   remind_at?: string | null
   completed?: boolean
+  deleted?: boolean
 }

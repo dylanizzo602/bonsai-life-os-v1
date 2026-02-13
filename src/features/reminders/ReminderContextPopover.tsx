@@ -19,7 +19,9 @@ export interface ReminderContextPopoverProps {
   onRename: (reminder: Reminder) => void
   /** Duplicate the reminder */
   onDuplicate: (reminder: Reminder) => void
-  /** Delete the reminder */
+  /** Mark reminder as deleted (soft delete; hidden until "Show deleted" is on) */
+  onMarkDeleted?: (reminder: Reminder) => void
+  /** Permanently delete the reminder from the database */
   onDelete: (reminder: Reminder) => void
 }
 
@@ -38,6 +40,7 @@ export function ReminderContextPopover({
   reminder,
   onRename,
   onDuplicate,
+  onMarkDeleted,
   onDelete,
 }: ReminderContextPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
@@ -92,6 +95,10 @@ export function ReminderContextPopover({
     onDuplicate(reminder)
     onClose()
   }
+  const handleMarkDeleted = () => {
+    onMarkDeleted?.(reminder)
+    onClose()
+  }
   const handleDelete = () => {
     onDelete(reminder)
     onClose()
@@ -122,13 +129,23 @@ export function ReminderContextPopover({
         >
           Duplicate
         </button>
+        {onMarkDeleted && (
+          <button
+            type="button"
+            role="menuitem"
+            onClick={handleMarkDeleted}
+            className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors"
+          >
+            Mark deleted
+          </button>
+        )}
         <button
           type="button"
           role="menuitem"
           onClick={handleDelete}
           className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors rounded-none last:rounded-b-xl"
         >
-          Delete
+          Permanently delete
         </button>
       </div>
     </div>

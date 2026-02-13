@@ -1,6 +1,6 @@
 /* Tasks page: Section header, reminders list, task list, Add/Edit Task modal, Add/Edit Reminder modal */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { AddButton } from '../../components/AddButton'
 import { BellIcon } from '../../components/icons'
 import { AddEditTaskModal } from './AddEditTaskModal'
@@ -89,6 +89,31 @@ export function TasksPage() {
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false)
   const [editReminder, setEditReminder] = useState<Reminder | null>(null)
 
+  /* Visibility toggles: closed (completed), archived, and deleted are hidden by default; show when toggles are on */
+  const [showClosed, setShowClosed] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
+  const [showDeleted, setShowDeleted] = useState(false)
+
+  /* Filter tasks: include active/in_progress always; include completed/archived/deleted only when respective toggle is on */
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((task) => {
+      if (task.status === 'active' || task.status === 'in_progress') return true
+      if (task.status === 'completed') return showClosed
+      if (task.status === 'archived') return showArchived
+      if (task.status === 'deleted') return showDeleted
+      return false
+    })
+  }, [tasks, showClosed, showArchived, showDeleted])
+
+  /* Filter reminders: hide completed (closed) and deleted by default; include when toggles are on */
+  const filteredReminders = useMemo(() => {
+    return reminders.filter((r) => {
+      if (r.completed && !showClosed) return false
+      if ((r.deleted ?? false) && !showDeleted) return false
+      return true
+    })
+  }, [reminders, showClosed, showDeleted])
+
   const openAdd = () => {
     setEditTask(null)
     setIsModalOpen(true)
@@ -121,22 +146,49 @@ export function TasksPage() {
 
   return (
     <div className="min-h-full">
-      {/* Section header: Title on left, add button on right */}
+      {/* Section header: Title on left; visibility toggles and add button on right */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <h1 className="text-page-title font-bold text-bonsai-brown-700">Tasks</h1>
-        <AddButton
-          className="self-end sm:self-auto"
-          aria-label="Add new task"
-          dropdownContent={<AddTaskDropdownContent onAddReminder={openAddReminder} />}
-          onClick={openAdd}
-        >
-          Add new task
-        </AddButton>
+        <div className="flex flex-wrap items-center gap-2 justify-end sm:justify-start">
+          {/* Temporary visibility toggles: show closed (completed), archived, deleted when toggled on */}
+          <button
+            type="button"
+            onClick={() => setShowClosed((v) => !v)}
+            className={`rounded px-3 py-1.5 text-secondary font-medium transition-colors ${showClosed ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
+            aria-pressed={showClosed}
+          >
+            Show closed
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowArchived((v) => !v)}
+            className={`rounded px-3 py-1.5 text-secondary font-medium transition-colors ${showArchived ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
+            aria-pressed={showArchived}
+          >
+            Show archived
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowDeleted((v) => !v)}
+            className={`rounded px-3 py-1.5 text-secondary font-medium transition-colors ${showDeleted ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
+            aria-pressed={showDeleted}
+          >
+            Show deleted
+          </button>
+          <AddButton
+            className="self-end sm:self-auto"
+            aria-label="Add new task"
+            dropdownContent={<AddTaskDropdownContent onAddReminder={openAddReminder} />}
+            onClick={openAdd}
+          >
+            Add new task
+          </AddButton>
+        </div>
       </div>
 
       {/* Task list: Includes both tasks and reminders in the same list */}
       <TaskList
-        tasks={tasks}
+        tasks={filteredTasks}
         loading={loading}
         error={error}
         filters={filters}
@@ -154,13 +206,22 @@ export function TasksPage() {
         onOpenAddModal={openAdd}
         onOpenEditModal={openEdit}
         onCreateTask={createTask}
-        reminders={reminders}
+        onArchiveTask={async (task) => {
+          await updateTask(task.id, { status: 'archived' })
+        }}
+        onMarkDeletedTask={async (task) => {
+          await updateTask(task.id, { status: 'deleted' })
+        }}
+        reminders={filteredReminders}
         remindersLoading={remindersLoading}
         remindersError={remindersError}
         onToggleReminderComplete={toggleReminderComplete}
         onEditReminder={openEditReminder}
         onUpdateReminder={updateReminder}
         onCreateReminder={createReminder}
+        onMarkDeletedReminder={async (reminder) => {
+          await updateReminder(reminder.id, { deleted: true })
+        }}
         onDeleteReminder={deleteReminder}
       />
 

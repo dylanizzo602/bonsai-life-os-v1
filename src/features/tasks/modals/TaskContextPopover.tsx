@@ -19,9 +19,11 @@ export interface TaskContextPopoverProps {
   onRename: (task: Task) => void
   /** Duplicate the task */
   onDuplicate: (task: Task) => void
-  /** Archive the task (optional; access to archived items can be added later) */
+  /** Archive the task (optional; sets status to archived) */
   onArchive?: (task: Task) => void
-  /** Delete the task */
+  /** Mark task as deleted (soft delete; sets status to deleted) */
+  onMarkDeleted?: (task: Task) => void
+  /** Permanently delete the task from the database */
   onDelete: (task: Task) => void
 }
 
@@ -41,6 +43,7 @@ export function TaskContextPopover({
   onRename,
   onDuplicate,
   onArchive,
+  onMarkDeleted,
   onDelete,
 }: TaskContextPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
@@ -99,6 +102,10 @@ export function TaskContextPopover({
     onArchive?.(task)
     onClose()
   }
+  const handleMarkDeleted = () => {
+    onMarkDeleted?.(task)
+    onClose()
+  }
   const handleDelete = () => {
     onDelete(task)
     onClose()
@@ -137,13 +144,23 @@ export function TaskContextPopover({
         >
           Archive
         </button>
+        {onMarkDeleted && (
+          <button
+            type="button"
+            role="menuitem"
+            onClick={handleMarkDeleted}
+            className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors"
+          >
+            Mark deleted
+          </button>
+        )}
         <button
           type="button"
           role="menuitem"
           onClick={handleDelete}
           className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors rounded-none last:rounded-b-xl"
         >
-          Delete
+          Permanently delete
         </button>
       </div>
     </div>
