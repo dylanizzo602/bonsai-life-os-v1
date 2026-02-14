@@ -25,6 +25,10 @@ export interface TaskContextPopoverProps {
   onMarkDeleted?: (task: Task) => void
   /** Permanently delete the task from the database */
   onDelete: (task: Task) => void
+  /** Line Up task IDs (show "Add to Line Up" / "Remove from Line Up") */
+  lineUpTaskIds?: Set<string>
+  onAddToLineUp?: (taskId: string) => void
+  onRemoveFromLineUp?: (taskId: string) => void
 }
 
 const PADDING = 8
@@ -45,6 +49,9 @@ export function TaskContextPopover({
   onArchive,
   onMarkDeleted,
   onDelete,
+  lineUpTaskIds,
+  onAddToLineUp,
+  onRemoveFromLineUp,
 }: TaskContextPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
 
@@ -119,6 +126,15 @@ export function TaskContextPopover({
     onDelete(task)
     onClose()
   }
+  const inLineUp = lineUpTaskIds?.has(task.id) ?? false
+  const handleAddToLineUp = () => {
+    onAddToLineUp?.(task.id)
+    onClose()
+  }
+  const handleRemoveFromLineUp = () => {
+    onRemoveFromLineUp?.(task.id)
+    onClose()
+  }
 
   const popover = (
     <div
@@ -145,6 +161,27 @@ export function TaskContextPopover({
         >
           Duplicate
         </button>
+        {onAddToLineUp && onRemoveFromLineUp && lineUpTaskIds != null && (
+          inLineUp ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={handleRemoveFromLineUp}
+              className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors"
+            >
+              Remove from Line Up
+            </button>
+          ) : (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={handleAddToLineUp}
+              className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors"
+            >
+              Add to Line Up
+            </button>
+          )
+        )}
         <button
           type="button"
           role="menuitem"

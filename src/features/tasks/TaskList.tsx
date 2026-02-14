@@ -76,6 +76,20 @@ export interface TaskListProps {
   /** Mark reminder as deleted (soft delete) */
   onMarkDeletedReminder?: (reminder: Reminder) => void | Promise<void>
   onDeleteReminder?: (id: string) => Promise<void>
+  /** Show only archived tasks (Archive at bottom of list) */
+  onShowArchived?: () => void
+  /** Show only deleted tasks (Trash at bottom of list) */
+  onShowDeleted?: () => void
+  /** Whether we are currently showing archived list */
+  showArchived?: boolean
+  /** Whether we are currently showing deleted list */
+  showDeleted?: boolean
+  /** Clear archive/trash view and return to main list */
+  onClearArchiveTrashView?: () => void
+  /** Line Up task IDs (for context menu "Add to Line Up" / "Remove from Line Up") */
+  lineUpTaskIds?: Set<string>
+  onAddToLineUp?: (taskId: string) => void
+  onRemoveFromLineUp?: (taskId: string) => void
 }
 
 /**
@@ -113,6 +127,14 @@ export function TaskList({
   onCreateReminder,
   onMarkDeletedReminder,
   onDeleteReminder,
+  onShowArchived,
+  onShowDeleted,
+  showArchived = false,
+  showDeleted = false,
+  onClearArchiveTrashView,
+  lineUpTaskIds,
+  onAddToLineUp,
+  onRemoveFromLineUp,
 }: TaskListProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
   /* Context menu state: which task or reminder is open and at what position */
@@ -706,6 +728,9 @@ export function TaskList({
             setContextTask(null)
             refetch?.()
           }}
+          lineUpTaskIds={lineUpTaskIds}
+          onAddToLineUp={onAddToLineUp}
+          onRemoveFromLineUp={onRemoveFromLineUp}
         />
       )}
 
@@ -732,6 +757,37 @@ export function TaskList({
             }
           }}
         />
+      )}
+
+      {/* Archive and Trash controls at bottom of task list */}
+      {onShowArchived != null && onShowDeleted != null && (
+        <div className="flex flex-wrap items-center gap-3 pt-6 mt-6 border-t border-bonsai-slate-200">
+          <button
+            type="button"
+            onClick={onShowArchived}
+            className={`text-secondary font-medium transition-colors ${showArchived ? 'text-bonsai-sage-700 underline' : 'text-bonsai-slate-600 hover:text-bonsai-slate-800'}`}
+            aria-pressed={showArchived}
+          >
+            Archive
+          </button>
+          <button
+            type="button"
+            onClick={onShowDeleted}
+            className={`text-secondary font-medium transition-colors ${showDeleted ? 'text-bonsai-sage-700 underline' : 'text-bonsai-slate-600 hover:text-bonsai-slate-800'}`}
+            aria-pressed={showDeleted}
+          >
+            Trash
+          </button>
+          {(showArchived || showDeleted) && onClearArchiveTrashView && (
+            <button
+              type="button"
+              onClick={onClearArchiveTrashView}
+              className="text-secondary font-medium text-bonsai-slate-600 hover:text-bonsai-slate-800"
+            >
+              Back to list
+            </button>
+          )}
+        </div>
       )}
     </div>
   )

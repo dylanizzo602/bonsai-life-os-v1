@@ -1,15 +1,35 @@
-/* Tasks page: Section header, reminders list, task list, Add/Edit Task modal, Add/Edit Reminder modal */
+/* Tasks page: Section header, view toolbar (Line Up / Available / All / Custom), Filter/Sort/Search, task list, Archive/Trash at bottom, Add/Edit modals */
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AddButton } from '../../components/AddButton'
-import { BellIcon } from '../../components/icons'
+import {
+  BellIcon,
+  FilterIcon,
+  SortIcon,
+  SearchIcon,
+  LineUpIcon,
+  ListIcon,
+  InfinityIcon,
+  CloseIcon,
+  ChevronDownIcon,
+} from '../../components/icons'
 import { AddEditTaskModal } from './AddEditTaskModal'
 import { TaskList } from './TaskList'
 import { useTasks } from './hooks/useTasks'
 import { AddEditReminderModal } from '../reminders'
 import { useReminders } from '../reminders/hooks/useReminders'
+import { getDependenciesForTaskIds } from '../../lib/supabase/tasks'
+import { getSavedViews, createSavedView } from '../../lib/supabase/savedViews'
+import { useTags } from './hooks/useTags'
+import { FilterModal } from './modals/FilterModal'
+import { SortModal } from './modals/SortModal'
 import type { Task } from './types'
 import type { Reminder } from '../reminders/types'
+import type { SortByEntry } from './types'
+import type { FilterCondition } from './modals/FilterModal'
+import type { SavedView } from '../../lib/supabase/savedViews'
+
+const LINE_UP_STORAGE_KEY = 'bonsai-task-lineup'
 
 /**
  * Dropdown content for Add new task: "Add new reminder" option; click opens reminder modal.
@@ -27,10 +47,237 @@ function AddTaskDropdownContent({ onAddReminder }: { onAddReminder: () => void }
   )
 }
 
+/** Priority order for sort: higher index = higher priority (urgent last so it sorts first when desc) */
+const PRIORITY_ORDER: Record<Task['priority'], number> = {
+  none: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+  urgent: 4,
+}
+
+/** Available view default filter (for display in Filter modal when in Available view); plan-aligned values */
+const AVAILABLE_DEFAULT_FILTER_CONDITIONS: FilterCondition[] = [
+  { id: 'av-status', field: 'status', operator: 'is_not', value: 'Closed' },
+  { id: 'av-deps', field: 'dependencies', operator: 'is_not', value: 'Blocked' },
+  { id: 'av-start', field: 'start_date', operator: 'is', value: 'Now or earlier' },
+]
+
+/** Available view default sort (for display in Sort modal when in Available view): due date, priority, status */
+const AVAILABLE_DEFAULT_SORT: SortByEntry[] = [
+  { field: 'due_date', direction: 'asc' },
+  { field: 'priority', direction: 'desc' },
+  { field: 'status', direction: 'asc' },
+]
+
+/** Date preset helpers for filter: return [start, end] in ms or null for "not set" checks */
+function getDateRangeForPreset(
+  preset: string,
+  kind: 'start' | 'due',
+): { start: number; end: number } | null {
+  const now = new Date()
+  const todayStart = new Date(now)
+  todayStart.setHours(0, 0, 0, 0)
+  const todayEnd = new Date(now)
+  todayEnd.setHours(23, 59, 59, 999)
+  const dayMs = 24 * 60 * 60 * 1000
+  const weekStart = new Date(todayStart)
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay())
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekEnd.getDate() + 6)
+  weekEnd.setHours(23, 59, 59, 999)
+  const nextWeekStart = new Date(weekStart)
+  nextWeekStart.setDate(nextWeekStart.getDate() + 7)
+  const nextWeekEnd = new Date(nextWeekStart)
+  nextWeekEnd.setDate(nextWeekEnd.getDate() + 6)
+  nextWeekEnd.setHours(23, 59, 59, 999)
+
+  switch (preset) {
+    case 'Today':
+      return { start: todayStart.getTime(), end: todayEnd.getTime() }
+    case 'Tomorrow': {
+      const t = new Date(todayStart)
+      t.setDate(t.getDate() + 1)
+      const tEnd = new Date(t)
+      tEnd.setHours(23, 59, 59, 999)
+      return { start: t.getTime(), end: tEnd.getTime() }
+    }
+    case 'This week':
+      return { start: weekStart.getTime(), end: weekEnd.getTime() }
+    case 'Next week':
+      return { start: nextWeekStart.getTime(), end: nextWeekEnd.getTime() }
+    case 'Now or earlier':
+      return kind === 'start' ? { start: 0, end: now.getTime() } : null
+    case 'Later':
+      return kind === 'start' ? { start: now.getTime() + dayMs, end: Number.MAX_SAFE_INTEGER } : null
+    case 'Overdue':
+      return kind === 'due' ? { start: 0, end: todayStart.getTime() - 1 } : null
+    default:
+      return null
+  }
+}
+
+/** Evaluate one filter condition against a task; returns true if task matches. */
+function evaluateFilterCondition(
+  c: FilterCondition,
+  t: Task,
+  blockedIds: Set<string>,
+  blockingIds: Set<string>,
+): boolean {
+  const val = (c.value ?? '').trim()
+  const valLower = val.toLowerCase()
+  const title = (t.title ?? '').toLowerCase()
+  const statusMap: Record<string, Task['status']> = {
+    open: 'active',
+    'in progress': 'in_progress',
+    closed: 'completed',
+  }
+  const priorityMap: Record<string, Task['priority']> = {
+    none: 'none',
+    low: 'low',
+    medium: 'medium',
+    high: 'high',
+    urgent: 'urgent',
+  }
+
+  if (c.field === 'status') {
+    const match = statusMap[valLower] ?? (c.value as Task['status'])
+    if (c.operator === 'is') return t.status === match
+    if (c.operator === 'is_not') return t.status !== match
+    return true
+  }
+
+  if (c.field === 'task_name') {
+    if (c.operator === 'contains') return title.includes(valLower)
+    if (c.operator === 'does_not_contain') return !title.includes(valLower)
+    if (c.operator === 'starts_with') return title.startsWith(valLower)
+    if (c.operator === 'ends_with') return title.endsWith(valLower)
+    if (c.operator === 'is_exactly' || c.operator === 'is') return title === valLower
+    return true
+  }
+
+  if (c.field === 'priority') {
+    const match = priorityMap[valLower] ?? (c.value as Task['priority'])
+    if (c.operator === 'is') return (t.priority ?? 'medium') === match
+    if (c.operator === 'is_not') return (t.priority ?? 'medium') !== match
+    return true
+  }
+
+  /* Parse YYYY-MM-DD as start/end of that day (for Before/After date picker). */
+  const parseDatePickerValue = (v: string): { start: number; end: number } | null => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null
+    const d = new Date(v + 'T00:00:00')
+    if (Number.isNaN(d.getTime())) return null
+    const start = d.getTime()
+    const end = d.getTime() + 24 * 60 * 60 * 1000 - 1
+    return { start, end }
+  }
+
+  if (c.field === 'start_date') {
+    const iso = t.start_date ? new Date(t.start_date).getTime() : null
+    if (c.operator === 'is_set') return iso != null
+    if (c.operator === 'is_not_set') return iso == null
+    const range = getDateRangeForPreset(val, 'start') ?? parseDatePickerValue(val)
+    if (range && c.operator === 'is') {
+      if (iso == null) return false
+      return iso >= range.start && iso <= range.end
+    }
+    if (range && c.operator === 'is_not') {
+      if (iso == null) return true
+      return iso < range.start || iso > range.end
+    }
+    if (iso != null && range && c.operator === 'before') return iso < range.start
+    if (iso != null && range && c.operator === 'after') return iso > range.end
+    return true
+  }
+
+  if (c.field === 'due_date') {
+    const iso = t.due_date ? new Date(t.due_date).getTime() : null
+    if (c.operator === 'is_set') return iso != null
+    if (c.operator === 'is_not_set') return iso == null
+    const range = getDateRangeForPreset(val, 'due') ?? parseDatePickerValue(val)
+    if (range && c.operator === 'is') {
+      if (iso == null) return false
+      return iso >= range.start && iso <= range.end
+    }
+    if (range && c.operator === 'is_not') {
+      if (iso == null) return true
+      return iso < range.start || iso > range.end
+    }
+    if (iso != null && range && c.operator === 'before') return iso < range.start
+    if (iso != null && range && c.operator === 'after') return iso > range.end
+    return true
+  }
+
+  if (c.field === 'tags') {
+    const taskTagNames = (t.tags ?? []).map((tag) => (tag.name ?? '').toLowerCase())
+    const hasNoTags = taskTagNames.length === 0
+    if (c.operator === 'has_none') return hasNoTags
+    const selected = (c.value ?? '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+    const noTagsSelected = selected.includes('no tags')
+    const tagNamesSelected = selected.filter((s) => s !== 'no tags')
+    if (c.operator === 'has_any_of' || c.operator === 'contains') {
+      if (noTagsSelected && hasNoTags) return true
+      if (tagNamesSelected.length === 0) return noTagsSelected ? hasNoTags : true
+      return tagNamesSelected.some((name) => taskTagNames.some((n) => n === name || n.includes(name) || name.includes(n)))
+    }
+    if (c.operator === 'does_not_contain') {
+      if (tagNamesSelected.length === 0) return true
+      if (noTagsSelected && hasNoTags) return false
+      return !tagNamesSelected.some((name) => taskTagNames.some((n) => n === name || n.includes(name)))
+    }
+    if (c.operator === 'has_all_of') {
+      if (noTagsSelected && tagNamesSelected.length === 0) return hasNoTags
+      if (noTagsSelected && !hasNoTags) return false
+      if (tagNamesSelected.length === 0) return true
+      return tagNamesSelected.every((name) => taskTagNames.some((n) => n === name || n.includes(name)))
+    }
+    return true
+  }
+
+  if (c.field === 'dependencies') {
+    if (valLower === 'blocked') return blockedIds.has(t.id)
+    if (valLower === 'is blocking') return blockingIds.has(t.id)
+    if (valLower === 'none') return !blockedIds.has(t.id) && !blockingIds.has(t.id)
+    if (c.operator === 'is') {
+      if (valLower === 'blocked') return blockedIds.has(t.id)
+      if (valLower === 'is blocking') return blockingIds.has(t.id)
+      if (valLower === 'none') return !blockedIds.has(t.id) && !blockingIds.has(t.id)
+    }
+    if (c.operator === 'is_not') {
+      if (valLower === 'blocked') return !blockedIds.has(t.id)
+      if (valLower === 'is blocking') return !blockingIds.has(t.id)
+      if (valLower === 'none') return blockedIds.has(t.id) || blockingIds.has(t.id)
+    }
+    return true
+  }
+
+  if (c.field === 'recurring') {
+    const isRecurring = Boolean(t.recurrence_pattern)
+    if (valLower === 'recurring') return isRecurring
+    if (valLower === 'non-recurring') return !isRecurring
+    return true
+  }
+
+  if (c.field === 'time_estimate') {
+    const mins = t.time_estimate ?? 0
+    const num = Number(c.value)
+    if (Number.isNaN(num)) return true
+    if (c.operator === 'greater_than') return mins > num
+    if (c.operator === 'less_than') return mins < num
+    if (c.operator === 'equal_to') return mins === num
+    return true
+  }
+
+  return true
+}
+
 /**
  * Tasks page component.
- * Section header with Add new task button; Add/Edit Task modal with full fields and sub-modals.
- * Edit mode: pass task and handlers for subtasks, checklists, dependencies. After create, optionally reopen as edit.
+ * Toolbar: view buttons (Line Up, Available, All, Custom), Filter, Sort, Search, Add. Task list with Archive/Trash at bottom.
  */
 export function TasksPage() {
   const {
@@ -63,22 +310,22 @@ export function TasksPage() {
     toggleComplete: toggleReminderComplete,
   } = useReminders()
 
+  const { fetchTags } = useTags()
+  const [availableTagNames, setAvailableTagNames] = useState<string[]>([])
+
   /* Wrapper to refetch reminders after create/update to ensure list stays in sync */
   const createReminder = async (input: import('../reminders/types').CreateReminderInput) => {
     const result = await createReminderBase(input)
-    /* Refetch to ensure we have the latest data from database */
     await refetchReminders()
     return result
   }
 
   const updateReminder = async (id: string, input: import('../reminders/types').UpdateReminderInput) => {
     const result = await updateReminderBase(id, input)
-    /* Refetch to ensure we have the latest data from database */
     await refetchReminders()
     return result
   }
 
-  /* Wrapper to refetch reminders after delete so list stays in sync */
   const deleteReminder = async (id: string) => {
     await deleteReminderBase(id)
     await refetchReminders()
@@ -89,30 +336,297 @@ export function TasksPage() {
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false)
   const [editReminder, setEditReminder] = useState<Reminder | null>(null)
 
-  /* Visibility toggles: closed (completed), archived, and deleted are hidden by default; show when toggles are on */
-  const [showClosed, setShowClosed] = useState(false)
+  /* View mode: lineup | available | all | custom. Available is default. */
+  const [viewMode, setViewMode] = useState<'lineup' | 'available' | 'all' | 'custom'>('available')
+  /* Archive/Trash: when true, list shows only archived or only deleted tasks (no filters applied). */
   const [showArchived, setShowArchived] = useState(false)
   const [showDeleted, setShowDeleted] = useState(false)
+  /* Line Up: task IDs in the lineup (persisted in localStorage). */
+  const [lineUpTaskIds, setLineUpTaskIds] = useState<Set<string>>(new Set())
+  /* Search: query and whether the search pill is expanded. */
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchExpanded, setSearchExpanded] = useState(false)
+  /* Filter and Sort modals open state. */
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [sortOpen, setSortOpen] = useState(false)
+  /* Custom view: filter conditions (flat list) and sort order. */
+  const [filterConditions, setFilterConditions] = useState<FilterCondition[]>([])
+  const [sortBy, setSortBy] = useState<SortByEntry[]>([])
+  const [_selectedSavedViewId, setSelectedSavedViewId] = useState<string | null>(null)
+  /* Saved views list for Custom dropdown (fetch on mount). */
+  const [savedViews, setSavedViews] = useState<SavedView[]>([])
+  const [customDropdownOpen, setCustomDropdownOpen] = useState(false)
+  const [saveViewName, setSaveViewName] = useState('')
+  const [savingView, setSavingView] = useState(false)
+  /* Blocked/blocking task IDs: for Available view and for Custom filter (Task dependencies). */
+  const [blockedTaskIds, setBlockedTaskIds] = useState<Set<string>>(new Set())
+  const [blockingTaskIds, setBlockingTaskIds] = useState<Set<string>>(new Set())
 
-  /* Filter tasks: include active/in_progress always; include completed/archived/deleted only when respective toggle is on */
-  const filteredTasks = useMemo(() => {
-    return tasks.filter((task) => {
-      if (task.status === 'active' || task.status === 'in_progress') return true
-      if (task.status === 'completed') return showClosed
-      if (task.status === 'archived') return showArchived
-      if (task.status === 'deleted') return showDeleted
-      return false
-    })
-  }, [tasks, showClosed, showArchived, showDeleted])
+  /* Fetch saved views on mount (for Custom dropdown). */
+  useEffect(() => {
+    getSavedViews(null)
+      .then(setSavedViews)
+      .catch(() => setSavedViews([]))
+  }, [])
 
-  /* Filter reminders: hide completed (closed) and deleted by default; include when toggles are on */
-  const filteredReminders = useMemo(() => {
-    return reminders.filter((r) => {
-      if (r.completed && !showClosed) return false
-      if ((r.deleted ?? false) && !showDeleted) return false
+  /* Fetch existing tag names when filter modal opens (for Tags multi-select). */
+  useEffect(() => {
+    if (filterOpen) {
+      fetchTags()
+        .then((tags) => setAvailableTagNames(tags.map((t) => t.name ?? '').filter(Boolean)))
+        .catch(() => setAvailableTagNames([]))
+    }
+  }, [filterOpen, fetchTags])
+
+  /* Load lineup from localStorage on mount and when key might have changed. */
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LINE_UP_STORAGE_KEY)
+      const ids: string[] = raw ? JSON.parse(raw) : []
+      setLineUpTaskIds(new Set(Array.isArray(ids) ? ids : []))
+    } catch {
+      setLineUpTaskIds(new Set())
+    }
+  }, [])
+
+  /* Compute blocked and blocking task IDs (for Available view and Custom dependency filters). */
+  useEffect(() => {
+    if (tasks.length === 0) {
+      setBlockedTaskIds(new Set())
+      setBlockingTaskIds(new Set())
+      return
+    }
+    const taskIds = tasks.map((t) => t.id)
+    const byId = Object.fromEntries(tasks.map((t) => [t.id, t]))
+    getDependenciesForTaskIds(taskIds)
+      .then((deps) => {
+        const blocked = new Set<string>()
+        const blocking = new Set<string>()
+        for (const d of deps) {
+          blocking.add(d.blocker_id)
+          const blocker = byId[d.blocker_id]
+          if (blocker && blocker.status !== 'completed') {
+            blocked.add(d.blocked_id)
+          }
+        }
+        setBlockedTaskIds(blocked)
+        setBlockingTaskIds(blocking)
+      })
+      .catch(() => {
+        setBlockedTaskIds(new Set())
+        setBlockingTaskIds(new Set())
+      })
+  }, [tasks])
+
+  /* Persist lineup to localStorage when it changes. */
+  const persistLineUp = useCallback((ids: Set<string>) => {
+    const arr = Array.from(ids)
+    try {
+      localStorage.setItem(LINE_UP_STORAGE_KEY, JSON.stringify(arr))
+    } catch {
+      // ignore
+    }
+    setLineUpTaskIds(ids)
+  }, [])
+
+  const addToLineUp = useCallback(
+    (id: string) => {
+      setLineUpTaskIds((prev) => {
+        const next = new Set(prev)
+        next.add(id)
+        persistLineUp(next)
+        return next
+      })
+    },
+    [persistLineUp],
+  )
+
+  const removeFromLineUp = useCallback(
+    (id: string) => {
+      setLineUpTaskIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        persistLineUp(next)
+        return next
+      })
+    },
+    [persistLineUp],
+  )
+
+  const handleLoadSavedView = useCallback((view: SavedView) => {
+    setFilterConditions((view.filter_json as FilterCondition[]) ?? [])
+    setSortBy((view.sort_json as SortByEntry[]) ?? [])
+    setSelectedSavedViewId(view.id)
+    setViewMode('custom')
+    setCustomDropdownOpen(false)
+  }, [])
+
+  const handleSaveCurrentView = useCallback(async () => {
+    const name = saveViewName.trim() || 'Untitled view'
+    setSavingView(true)
+    try {
+      const created = await createSavedView({
+        user_id: null,
+        name,
+        filter_json: filterConditions,
+        sort_json: sortBy,
+      })
+      setSavedViews((prev) => [created, ...prev])
+      setSaveViewName('')
+      setSelectedSavedViewId(created.id)
+      setCustomDropdownOpen(false)
+    } catch {
+      // leave dropdown open
+    } finally {
+      setSavingView(false)
+    }
+  }, [saveViewName, filterConditions, sortBy])
+
+  /* Filter pipeline: Archive/Trash first, then by view, then by filter (custom), then by search, then by sort. */
+  const { filteredTasks, filteredReminders } = useMemo(() => {
+    /* Reminders: hide completed and deleted by default (no toggles for reminders). */
+    const remindersFiltered = reminders.filter((r) => {
+      if (r.completed) return false
+      if (r.deleted ?? false) return false
       return true
     })
-  }, [reminders, showClosed, showDeleted])
+
+    /* Archive/Trash: show only archived or only deleted; no filter/sort applied. */
+    if (showArchived) {
+      const list = tasks.filter((t) => t.status === 'archived')
+      return {
+        filteredTasks: list,
+        filteredReminders: remindersFiltered,
+      }
+    }
+    if (showDeleted) {
+      const list = tasks.filter((t) => t.status === 'deleted')
+      return {
+        filteredTasks: list,
+        filteredReminders: remindersFiltered,
+      }
+    }
+
+    /* By view: lineup, available, all, or custom base list. */
+    let viewTasks: Task[]
+    switch (viewMode) {
+      case 'lineup':
+        viewTasks = tasks.filter((t) => lineUpTaskIds.has(t.id))
+        break
+      case 'available': {
+        const todayStartMs = new Date()
+        todayStartMs.setHours(0, 0, 0, 0)
+        const todayStart = todayStartMs.getTime()
+        viewTasks = tasks.filter((t) => {
+          if (t.status === 'completed' || t.status === 'archived' || t.status === 'deleted') return false
+          if (blockedTaskIds.has(t.id)) return false
+          if (t.start_date != null && String(t.start_date).trim() !== '') {
+            const startDate = new Date(t.start_date)
+            const startMs = startDate.getTime()
+            if (Number.isNaN(startMs)) return true
+            const startDayMs = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime()
+            if (startDayMs > todayStart) return false
+          }
+          return true
+        })
+        /* Sort Available: urgent first, then due date (earliest), priority (high to low), status (in progress before open). */
+        viewTasks = [...viewTasks].sort((a, b) => {
+          const aUrgent = a.priority === 'urgent' ? 1 : 0
+          const bUrgent = b.priority === 'urgent' ? 1 : 0
+          if (bUrgent !== aUrgent) return bUrgent - aUrgent
+          const aDue = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER
+          const bDue = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER
+          if (aDue !== bDue) return aDue - bDue
+          const aPri = PRIORITY_ORDER[a.priority] ?? 0
+          const bPri = PRIORITY_ORDER[b.priority] ?? 0
+          if (bPri !== aPri) return bPri - aPri
+          const statusOrder = (s: Task['status']) => (s === 'in_progress' ? 1 : s === 'active' ? 0 : -1)
+          return statusOrder(b.status) - statusOrder(a.status)
+        })
+        break
+      }
+      case 'all':
+        viewTasks = [...tasks]
+        break
+      case 'custom':
+      default:
+        viewTasks = [...tasks]
+        /* Apply filter conditions (flat AND): each condition must match (plan-aligned fields and operators). */
+        if (filterConditions.length > 0) {
+          viewTasks = viewTasks.filter((t) =>
+            filterConditions.every((c) =>
+              evaluateFilterCondition(c, t, blockedTaskIds, blockingTaskIds),
+            ),
+          )
+        }
+        /* Apply user sort when in custom and sortBy has entries. */
+        if (sortBy.length > 0) {
+          viewTasks.sort((a, b) => {
+            for (const { field, direction } of sortBy) {
+              let cmp = 0
+              if (field === 'due_date') {
+                const av = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER
+                const bv = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER
+                cmp = av - bv
+              } else if (field === 'start_date') {
+                const av = a.start_date ? new Date(a.start_date).getTime() : Number.MAX_SAFE_INTEGER
+                const bv = b.start_date ? new Date(b.start_date).getTime() : Number.MAX_SAFE_INTEGER
+                cmp = av - bv
+              } else if (field === 'priority') {
+                cmp = (PRIORITY_ORDER[a.priority] ?? 0) - (PRIORITY_ORDER[b.priority] ?? 0)
+              } else if (field === 'status') {
+                const so: Record<Task['status'], number> = {
+                  active: 0,
+                  in_progress: 1,
+                  completed: 2,
+                  archived: 3,
+                  deleted: 4,
+                }
+                cmp = (so[a.status] ?? 0) - (so[b.status] ?? 0)
+              } else if (field === 'task_name') {
+                cmp = (a.title ?? '').localeCompare(b.title ?? '', undefined, { sensitivity: 'base' })
+              } else if (field === 'time_estimate') {
+                const av = a.time_estimate ?? 0
+                const bv = b.time_estimate ?? 0
+                cmp = av - bv
+              }
+              if (cmp !== 0) return direction === 'asc' ? cmp : -cmp
+            }
+            return 0
+          })
+        }
+        break
+    }
+
+    /* By search: client-side match on task title/description and reminder name. */
+    const q = searchQuery.trim().toLowerCase()
+    if (q) {
+      viewTasks = viewTasks.filter(
+        (t) =>
+          (t.title ?? '').toLowerCase().includes(q) ||
+          (t.description ?? '').toLowerCase().includes(q),
+      )
+      // Reminders are not filtered by search in plan for now; optionally filter:
+      // remindersFiltered = remindersFiltered.filter((r) => (r.name ?? '').toLowerCase().includes(q))
+    }
+
+    return {
+      filteredTasks: viewTasks,
+      filteredReminders: remindersFiltered,
+    }
+  }, [
+    tasks,
+    reminders,
+    showArchived,
+    showDeleted,
+    viewMode,
+    lineUpTaskIds,
+    blockedTaskIds,
+    blockingTaskIds,
+    filterConditions,
+    sortBy,
+    searchQuery,
+  ])
 
   const openAdd = () => {
     setEditTask(null)
@@ -146,35 +660,154 @@ export function TasksPage() {
 
   return (
     <div className="min-h-full">
-      {/* Section header: Title on left; visibility toggles and add button on right */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
-        <h1 className="text-page-title font-bold text-bonsai-brown-700">Tasks</h1>
-        <div className="flex flex-wrap items-center gap-2 justify-end sm:justify-start">
-          {/* Temporary visibility toggles: show closed (completed), archived, deleted when toggled on */}
+      {/* Row 1: Page title only */}
+      <h1 className="text-page-title font-bold text-bonsai-brown-700 mb-4">Tasks</h1>
+
+      {/* Row 2: Toolbar — left = view buttons, right = Filter, Sort, Search, Add */}
+      <div className="flex flex-wrap items-center gap-2 justify-between mb-4">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setShowClosed((v) => !v)}
-            className={`rounded px-3 py-1.5 text-secondary font-medium transition-colors ${showClosed ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
-            aria-pressed={showClosed}
+            onClick={() => setViewMode('lineup')}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-secondary font-medium transition-colors ${viewMode === 'lineup' ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
+            aria-pressed={viewMode === 'lineup'}
           >
-            Show closed
+            <LineUpIcon className="w-4 h-4 md:w-5 md:h-5" />
+            Line Up
           </button>
           <button
             type="button"
-            onClick={() => setShowArchived((v) => !v)}
-            className={`rounded px-3 py-1.5 text-secondary font-medium transition-colors ${showArchived ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
-            aria-pressed={showArchived}
+            onClick={() => setViewMode('available')}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-secondary font-medium transition-colors ${viewMode === 'available' ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
+            aria-pressed={viewMode === 'available'}
           >
-            Show archived
+            <ListIcon className="w-4 h-4 md:w-5 md:h-5" />
+            Available
           </button>
           <button
             type="button"
-            onClick={() => setShowDeleted((v) => !v)}
-            className={`rounded px-3 py-1.5 text-secondary font-medium transition-colors ${showDeleted ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
-            aria-pressed={showDeleted}
+            onClick={() => setViewMode('all')}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-secondary font-medium transition-colors ${viewMode === 'all' ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
+            aria-pressed={viewMode === 'all'}
           >
-            Show deleted
+            <InfinityIcon className="w-4 h-4 md:w-5 md:h-5" />
+            All Tasks
           </button>
+          {/* Custom: button with dropdown for save/load saved views */}
+          <div className="relative inline-block">
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode('custom')
+                setCustomDropdownOpen((v) => !v)
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-secondary font-medium transition-colors ${viewMode === 'custom' ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
+              aria-pressed={viewMode === 'custom'}
+              aria-haspopup="true"
+              aria-expanded={customDropdownOpen}
+            >
+              Custom
+              <ChevronDownIcon className="w-4 h-4" />
+            </button>
+            {customDropdownOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  aria-hidden
+                  onClick={() => setCustomDropdownOpen(false)}
+                />
+                <div className="absolute left-0 top-full z-50 mt-1 min-w-[200px] rounded-lg border border-bonsai-slate-200 bg-white py-2 shadow-lg">
+                  <div className="px-3 py-2 border-b border-bonsai-slate-100">
+                    <input
+                      type="text"
+                      value={saveViewName}
+                      onChange={(e) => setSaveViewName(e.target.value)}
+                      placeholder="Name for new view"
+                      className="w-full rounded border border-bonsai-slate-300 px-2 py-1.5 text-body text-bonsai-slate-700"
+                      aria-label="View name"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveCurrentView}
+                      disabled={savingView}
+                      className="mt-2 w-full rounded-lg px-2 py-1.5 text-body font-medium text-bonsai-sage-700 bg-bonsai-sage-100 hover:bg-bonsai-sage-200 disabled:opacity-50"
+                    >
+                      {savingView ? 'Saving…' : 'Save current view'}
+                    </button>
+                  </div>
+                  {savedViews.length > 0 && (
+                    <div className="max-h-48 overflow-y-auto">
+                      {savedViews.map((v) => (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={() => handleLoadSavedView(v)}
+                          className="w-full text-left px-3 py-2 text-body text-bonsai-slate-700 hover:bg-bonsai-slate-100"
+                        >
+                          {v.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {searchExpanded ? (
+            <div className="flex items-center gap-2 flex-1 min-w-[200px] max-w-md">
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search tasks..."
+                className="flex-1 rounded-full border-2 border-bonsai-sage-500 px-4 py-2 text-body bg-white focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500"
+                aria-label="Search tasks"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('')
+                  setSearchExpanded(false)
+                }}
+                className="shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200"
+                aria-label="Clear search"
+              >
+                <CloseIcon className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setFilterOpen(true)}
+                className="flex items-center justify-center w-8 h-8 md:w-9 md:h-9 rounded-full bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200 transition-colors"
+                aria-label="Filter tasks"
+                aria-expanded={filterOpen}
+              >
+                <FilterIcon className="w-4 h-4 md:w-5 md:h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortOpen(true)}
+                className="flex items-center justify-center w-8 h-8 md:w-9 md:h-9 rounded-full bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200 transition-colors"
+                aria-label="Sort tasks"
+                aria-expanded={sortOpen}
+              >
+                <SortIcon className="w-4 h-4 md:w-5 md:h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setSearchExpanded(true)}
+                className="flex items-center justify-center w-8 h-8 md:w-9 md:h-9 rounded-full bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200 transition-colors"
+                aria-label="Search tasks"
+              >
+                <SearchIcon className="w-4 h-4 md:w-5 md:h-5" />
+              </button>
+            </>
+          )}
           <AddButton
             className="self-end sm:self-auto"
             aria-label="Add new task"
@@ -186,7 +819,33 @@ export function TasksPage() {
         </div>
       </div>
 
-      {/* Task list: Includes both tasks and reminders in the same list */}
+      {/* Filter modal: show effective filter (Available default or Custom conditions) so user sees what is selected */}
+      <FilterModal
+        isOpen={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        savedViewIds={savedViews.map((v) => ({ id: v.id, name: v.name }))}
+        onLoadSavedView={(id) => {
+          const v = savedViews.find((s) => s.id === id)
+          if (v) handleLoadSavedView(v)
+          setFilterOpen(false)
+        }}
+        conditions={viewMode === 'available' ? AVAILABLE_DEFAULT_FILTER_CONDITIONS : filterConditions}
+        onConditionsChange={setFilterConditions}
+        onApply={() => setViewMode('custom')}
+        availableTagNames={availableTagNames}
+      />
+
+      {/* Sort modal: show effective sort (Available default or Custom sortBy) so user sees what is selected */}
+      <SortModal
+        isOpen={sortOpen}
+        onClose={() => setSortOpen(false)}
+        sortBy={viewMode === 'available' ? AVAILABLE_DEFAULT_SORT : sortBy}
+        onSortByChange={setSortBy}
+        onApply={() => setViewMode('custom')}
+        defaultSortLabel={viewMode === 'all' && sortBy.length === 0 ? 'Default order (newest first)' : undefined}
+      />
+
+      {/* Task list: tasks and reminders; Archive/Trash at bottom rendered inside TaskList */}
       <TaskList
         tasks={filteredTasks}
         loading={loading}
@@ -223,9 +882,25 @@ export function TasksPage() {
           await updateReminder(reminder.id, { deleted: true })
         }}
         onDeleteReminder={deleteReminder}
+        onShowArchived={() => {
+          setShowArchived(true)
+          setShowDeleted(false)
+        }}
+        onShowDeleted={() => {
+          setShowDeleted(true)
+          setShowArchived(false)
+        }}
+        showArchived={showArchived}
+        showDeleted={showDeleted}
+        onClearArchiveTrashView={() => {
+          setShowArchived(false)
+          setShowDeleted(false)
+        }}
+        lineUpTaskIds={lineUpTaskIds}
+        onAddToLineUp={addToLineUp}
+        onRemoveFromLineUp={removeFromLineUp}
       />
 
-      {/* Add/Edit Task modal: full form, sub-modals, checklists, subtasks, dependencies */}
       <AddEditTaskModal
         isOpen={isModalOpen}
         onClose={closeModal}
@@ -244,7 +919,6 @@ export function TasksPage() {
         onRemoveDependency={onRemoveDependency}
       />
 
-      {/* Add/Edit reminder modal: opened from "Add new reminder" in dropdown or by clicking a reminder */}
       <AddEditReminderModal
         isOpen={isReminderModalOpen}
         onClose={closeReminderModal}

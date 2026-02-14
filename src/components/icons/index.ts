@@ -25,5 +25,11 @@ export {
   WarningIcon,
   UsersIcon,
   RepeatIcon,
+  FilterIcon,
+  SortIcon,
+  SearchIcon,
+  LineUpIcon,
+  ListIcon,
+  InfinityIcon,
 } from './NavIcons'
 export { BonsaiLogo } from './BonsaiLogo'

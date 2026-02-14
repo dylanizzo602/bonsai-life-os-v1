@@ -155,6 +155,20 @@ export function CompactTaskItem({
   const isRecurring = Boolean(task.recurrence_pattern)
   const priority: TaskPriority = task.priority ?? 'medium'
   const tagDisplay = task.tags?.[0] ?? null
+  /* Tag pill class by color (mint, blue, lavender, yellow, periwinkle, default) */
+  const tagPillClass = tagDisplay
+    ? tagDisplay.color === 'mint'
+      ? 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800'
+      : tagDisplay.color === 'blue'
+        ? 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800'
+        : tagDisplay.color === 'lavender'
+          ? 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-violet-100 text-violet-800'
+          : tagDisplay.color === 'yellow'
+            ? 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800'
+            : tagDisplay.color === 'periwinkle'
+              ? 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800'
+              : 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-bonsai-slate-100 text-bonsai-slate-700'
+    : ''
 
   return (
     <div
@@ -227,26 +241,8 @@ export function CompactTaskItem({
       </div>
       {/* Bottom row: all icons and metadata in one row (horizontal scroll on tablet/mobile/compact) */}
       <div className="mt-2 flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto text-xs text-bonsai-slate-600">
-        {/* Tag: show first tag if available; shrink-0 so row stays single line */
-        {tagDisplay && (
-          <span
-            className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${
-              tagDisplay.color === 'mint'
-                ? 'bg-emerald-100 text-emerald-800'
-                : tagDisplay.color === 'blue'
-                  ? 'bg-blue-100 text-blue-800'
-                  : tagDisplay.color === 'lavender'
-                    ? 'bg-violet-100 text-violet-800'
-                    : tagDisplay.color === 'yellow'
-                      ? 'bg-amber-100 text-amber-800'
-                      : tagDisplay.color === 'periwinkle'
-                        ? 'bg-indigo-100 text-indigo-800'
-                        : 'bg-bonsai-slate-100 text-bonsai-slate-700'
-            }`}
-          >
-            {tagDisplay.name}
-          </span>
-        )}
+        {/* Tag: show first tag if available; shrink-0 so row stays single line */}
+        {(tagDisplay != null ? <span className={tagPillClass}>{tagDisplay.name}</span> : null)}
         {/* Dependency icons: blocked and blocking */}
         {(isBlocked || isBlocking) && (
           <div className="flex shrink-0 items-center gap-1.5">

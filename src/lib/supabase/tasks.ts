@@ -572,3 +572,22 @@ export async function getTaskDependencies(taskId: string): Promise<{
     blockedBy: (blockedBy as TaskDependency[]) ?? [],
   }
 }
+
+/**
+ * Fetch all dependencies where blocked_id is in the given task IDs (for bulk "is blocked" check).
+ * Returns list of { blocked_id, blocker_id }. Caller can compute blocked set using task statuses.
+ */
+export async function getDependenciesForTaskIds(blockedIds: string[]): Promise<
+  { blocked_id: string; blocker_id: string }[]
+> {
+  if (blockedIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('task_dependencies')
+    .select('blocked_id, blocker_id')
+    .in('blocked_id', blockedIds)
+  if (error) {
+    console.error('Error fetching dependencies for task ids:', error)
+    throw error
+  }
+  return (data as { blocked_id: string; blocker_id: string }[]) ?? []
+}

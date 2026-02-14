@@ -140,3 +140,18 @@ export interface TaskFilters {
   /** When true, fetch all tasks (including subtasks) for dependency linking */
   includeAllTasks?: boolean
 }
+
+/** Sort field ids for the sort modal (tasks only) */
+export type SortFieldId =
+  | 'start_date'
+  | 'due_date'
+  | 'priority'
+  | 'time_estimate'
+  | 'status'
+  | 'task_name'
+
+/** One sort level: field and direction */
+export interface SortByEntry {
+  field: SortFieldId
+  direction: 'asc' | 'desc'
+}
