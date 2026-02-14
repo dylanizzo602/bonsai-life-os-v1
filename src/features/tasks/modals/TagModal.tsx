@@ -89,24 +89,33 @@ export function TagModal({
     run()
   }, [isOpen, searchQuery, searchTags])
 
-  /* Position calculation: Popover below trigger with viewport boundary detection */
+  /* Position: center on mobile/tablet (< 1024px); below trigger on desktop */
+  const DESKTOP_BREAKPOINT = 1024
+
   useEffect(() => {
-    if (!isOpen || !triggerRef.current || !popoverRef.current) return
+    if (!isOpen || !popoverRef.current) return
 
     const calculatePosition = () => {
-      const triggerRect = triggerRef.current!.getBoundingClientRect()
-      const popoverRect = popoverRef.current!.getBoundingClientRect()
-      let top = triggerRect.bottom + 4
-      let left = triggerRect.left
+      if (!popoverRef.current) return
+      const popoverRect = popoverRef.current.getBoundingClientRect()
       const padding = 8
       const vw = window.innerWidth
       const vh = window.innerHeight
-
-      if (left + popoverRect.width > vw - padding) left = vw - popoverRect.width - padding
-      if (left < padding) left = padding
-      if (top + popoverRect.height > vh - padding) top = triggerRect.top - popoverRect.height - 4
-      if (top < padding) top = padding
-
+      let top: number
+      let left: number
+      if (vw < DESKTOP_BREAKPOINT) {
+        top = Math.max(padding, (vh - popoverRect.height) / 2)
+        left = Math.max(padding, (vw - popoverRect.width) / 2)
+      } else {
+        if (!triggerRef.current) return
+        const triggerRect = triggerRef.current.getBoundingClientRect()
+        top = triggerRect.bottom + 4
+        left = triggerRect.left
+        if (left + popoverRect.width > vw - padding) left = vw - popoverRect.width - padding
+        if (left < padding) left = padding
+        if (top + popoverRect.height > vh - padding) top = triggerRect.top - popoverRect.height - 4
+        if (top < padding) top = padding
+      }
       setPosition({ top, left })
     }
 
@@ -298,13 +307,13 @@ export function TagModal({
     <>
       <div
         ref={popoverRef}
-        className="fixed z-50 flex flex-col rounded-lg border border-bonsai-slate-200 bg-white shadow-lg min-w-[280px] max-w-[320px]"
+        className="fixed z-50 flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-lg border border-bonsai-slate-200 bg-white shadow-lg min-w-[280px] max-w-[320px]"
         style={{ top: `${position.top}px`, left: `${position.left}px` }}
         role="dialog"
         aria-label="Add or manage tags"
       >
-        {/* Search/create input with explicit Create button */}
-        <div className="p-3 space-y-2">
+        {/* Search/create input with explicit Create button; shrink-0 */}
+        <div className="shrink-0 space-y-2 p-3">
           <div className="flex gap-2">
             <input
               ref={inputRef}
@@ -334,9 +343,9 @@ export function TagModal({
           )}
         </div>
 
-        {/* Search results list */}
+        {/* Search results list; shrink-0 so height is bounded */}
         {searchQuery.trim() && (
-          <div className="max-h-32 overflow-y-auto border-t border-bonsai-slate-100 px-3 py-2">
+          <div className="max-h-32 shrink-0 overflow-hidden border-t border-bonsai-slate-100 px-3 py-2">
             {searchResults.length > 0 ? (
               <ul className="space-y-0.5">
                 {searchResults
@@ -375,8 +384,8 @@ export function TagModal({
           </div>
         )}
 
-        {/* Selected tags with remove / delete-from-all */}
-        <div className="border-t border-bonsai-slate-100 px-3 py-2">
+        {/* Selected tags with remove / delete-from-all; flex-1 min-h-0 so content fits in viewport */}
+        <div className="min-h-0 flex-1 overflow-hidden border-t border-bonsai-slate-100 px-3 py-2">
           {selectedTags.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {selectedTags.map((tag) => (

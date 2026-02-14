@@ -119,62 +119,39 @@ export function TimeEstimateModal({
     fetchSubtasksData()
   }, [isOpen, taskId])
 
-  /* Position calculation: Calculate popover position relative to trigger element with viewport boundary detection */
+  /* Position: center on mobile/tablet (< 1024px); below trigger on desktop (or center when no trigger) */
+  const DESKTOP_BREAKPOINT = 1024
+
   useEffect(() => {
     if (!isOpen || !popoverRef.current) return
 
     const calculatePosition = () => {
       if (!popoverRef.current) return
-      
       const popoverRect = popoverRef.current.getBoundingClientRect()
-      const padding = 8 // Minimum padding from viewport edges
+      const padding = 8
       const viewportWidth = window.innerWidth
       const viewportHeight = window.innerHeight
-      
-      /* Use actual rendered width/height, or fallback if not yet rendered */
       const popoverWidth = popoverRect.width > 0 ? popoverRect.width : 384
       const popoverHeight = popoverRect.height > 0 ? popoverRect.height : 200
 
+      /* Mobile/tablet: always center in viewport */
+      if (viewportWidth < DESKTOP_BREAKPOINT) {
+        const top = Math.max(padding, (viewportHeight - popoverHeight) / 2)
+        const left = Math.max(padding, (viewportWidth - popoverWidth) / 2)
+        setPosition({ top, left })
+        return
+      }
+
       if (triggerRef?.current) {
-        /* Popover positioning: Position below trigger when triggerRef is provided */
         const triggerRect = triggerRef.current.getBoundingClientRect()
-        
-        /* Initial position: Below the trigger, aligned to its left edge */
-        let top = triggerRect.bottom + 4 // 4px gap below trigger
-        let left = triggerRect.left // Align with left edge of trigger
-        
-        /* Horizontal boundary: Ensure popover stays within viewport */
-        /* Check if popover would overflow right edge */
-        if (left + popoverWidth > viewportWidth - padding) {
-          /* Shift left to keep popover within viewport */
-          left = Math.max(padding, viewportWidth - popoverWidth - padding)
-        }
-        
-        /* Ensure popover doesn't go off left edge */
-        if (left < padding) {
-          left = padding
-        }
-        
-        /* Final check: Ensure right edge doesn't exceed viewport */
-        const rightEdge = left + popoverWidth
-        if (rightEdge > viewportWidth - padding) {
-          left = Math.max(padding, viewportWidth - popoverWidth - padding)
-        }
-        
-        /* Vertical boundary: Adjust top if popover would overflow bottom edge */
-        if (top + popoverHeight > viewportHeight - padding) {
-          /* Position above trigger instead of below */
-          top = Math.max(padding, triggerRect.top - popoverHeight - 4)
-        }
-        
-        /* Ensure popover doesn't go off top edge */
-        if (top < padding) {
-          top = padding
-        }
-        
+        let top = triggerRect.bottom + 4
+        let left = triggerRect.left
+        if (left + popoverWidth > viewportWidth - padding) left = Math.max(padding, viewportWidth - popoverWidth - padding)
+        if (left < padding) left = padding
+        if (top + popoverHeight > viewportHeight - padding) top = Math.max(padding, triggerRect.top - popoverHeight - 4)
+        if (top < padding) top = padding
         setPosition({ top, left })
       } else {
-        /* Centered positioning: Center in viewport when no triggerRef */
         const top = Math.max(padding, (viewportHeight - popoverHeight) / 2)
         const left = Math.max(padding, Math.min((viewportWidth - popoverWidth) / 2, viewportWidth - popoverWidth - padding))
         setPosition({ top, left })
@@ -287,7 +264,7 @@ export function TimeEstimateModal({
       )}
       <div
         ref={popoverRef}
-        className="fixed z-50 bg-white rounded-lg border border-bonsai-slate-200 shadow-lg p-4 w-full max-w-sm"
+        className="fixed z-50 flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-lg border border-bonsai-slate-200 bg-white p-4 shadow-lg w-full max-w-sm"
         style={{
           top: `${position.top}px`,
           left: `${position.left}px`,

@@ -83,4 +83,12 @@ body {
       font-size: 1rem;   /* 16px */
     }
   }
+  /* Hide scrollbar while keeping overflow scroll (e.g. popovers) */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
 }

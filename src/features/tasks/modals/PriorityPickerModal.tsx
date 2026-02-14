@@ -51,45 +51,33 @@ export function PriorityPickerModal({ isOpen, onClose, value, onSelect, triggerR
   const popoverRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState({ top: 0, left: 0 })
 
-  /* Position calculation: Calculate popover position relative to trigger element with viewport boundary detection */
+  /* Position: center on mobile/tablet (< 1024px); below trigger on desktop */
+  const DESKTOP_BREAKPOINT = 1024
+
   useEffect(() => {
-    if (!isOpen || !triggerRef.current || !popoverRef.current) return
+    if (!isOpen || !popoverRef.current) return
 
     const calculatePosition = () => {
-      const triggerRect = triggerRef.current!.getBoundingClientRect()
-      const popoverRect = popoverRef.current!.getBoundingClientRect()
-      
-      /* Initial position: Below the priority flag, aligned to its left edge */
-      let top = triggerRect.bottom + 4 // 4px gap below trigger
-      let left = triggerRect.left // Align with left edge of trigger
-      
-      /* Boundary adjustment: Keep popover within viewport */
-      const padding = 8 // Minimum padding from viewport edges
+      if (!popoverRef.current) return
+      const popoverRect = popoverRef.current.getBoundingClientRect()
+      const padding = 8
       const viewportWidth = window.innerWidth
       const viewportHeight = window.innerHeight
-      
-      /* Horizontal boundary: Adjust left if popover would overflow right edge */
-      if (left + popoverRect.width > viewportWidth - padding) {
-        /* Shift left to keep popover within viewport */
-        left = viewportWidth - popoverRect.width - padding
+      let top: number
+      let left: number
+      if (viewportWidth < DESKTOP_BREAKPOINT) {
+        top = Math.max(padding, (viewportHeight - popoverRect.height) / 2)
+        left = Math.max(padding, (viewportWidth - popoverRect.width) / 2)
+      } else {
+        if (!triggerRef.current) return
+        const triggerRect = triggerRef.current.getBoundingClientRect()
+        top = triggerRect.bottom + 4
+        left = triggerRect.left
+        if (left + popoverRect.width > viewportWidth - padding) left = viewportWidth - popoverRect.width - padding
+        if (left < padding) left = padding
+        if (top + popoverRect.height > viewportHeight - padding) top = triggerRect.top - popoverRect.height - 4
+        if (top < padding) top = padding
       }
-      
-      /* Ensure popover doesn't go off left edge */
-      if (left < padding) {
-        left = padding
-      }
-      
-      /* Vertical boundary: Adjust top if popover would overflow bottom edge */
-      if (top + popoverRect.height > viewportHeight - padding) {
-        /* Position above trigger instead of below */
-        top = triggerRect.top - popoverRect.height - 4
-      }
-      
-      /* Ensure popover doesn't go off top edge */
-      if (top < padding) {
-        top = padding
-      }
-      
       setPosition({ top, left })
     }
 
@@ -143,7 +131,7 @@ export function PriorityPickerModal({ isOpen, onClose, value, onSelect, triggerR
       {/* Popover: Compact dropdown positioned below priority flag */}
       <div
         ref={popoverRef}
-        className="fixed z-50 rounded-lg border border-bonsai-slate-200 bg-white shadow-lg"
+        className="fixed z-50 flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-lg border border-bonsai-slate-200 bg-white shadow-lg"
         style={{
           top: `${position.top}px`,
           left: `${position.left}px`,

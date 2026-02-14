@@ -2,6 +2,9 @@
 import React, { type ReactNode } from 'react'
 import { useState, useRef, useEffect } from 'react'
 
+/** Desktop breakpoint (lg): tooltips only on viewport >= 1024px; no tooltips on tablet, mobile, or compact */
+const TOOLTIP_MEDIA_QUERY = '(min-width: 1024px)'
+
 interface TooltipProps {
   /** Content to display inside the tooltip (can be modals, components, text, etc.) */
   content: ReactNode
@@ -17,6 +20,7 @@ interface TooltipProps {
 
 /**
  * Reusable tooltip component that displays content on hover.
+ * Tooltips are disabled on tablet, mobile, and compact views (viewport < 1024px).
  * Can contain any React content including modals and other components.
  * Responsive by default (Tailwind breakpoints); optional size override when fixed size is needed.
  */
@@ -32,6 +36,19 @@ export function Tooltip({
   const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 })
   const triggerRef = useRef<HTMLSpanElement>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
+
+  /* Viewport check: Only enable hover tooltips on desktop (lg: >= 1024px); none on tablet/mobile/compact */
+  const [tooltipsEnabled, setTooltipsEnabled] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(TOOLTIP_MEDIA_QUERY).matches : false
+  )
+  useEffect(() => {
+    const mql = window.matchMedia(TOOLTIP_MEDIA_QUERY)
+    const handler = () => {
+      setTooltipsEnabled(mql.matches)
+    }
+    mql.addEventListener('change', handler)
+    return () => mql.removeEventListener('change', handler)
+  }, [])
 
   /* Position calculation: Calculate tooltip position relative to trigger element */
   useEffect(() => {
@@ -171,10 +188,14 @@ export function Tooltip({
     return true
   }
 
-  /* Hover handlers: Show/hide tooltip on hover, but only if content is provided */
+  /* Hide tooltip when switching to tablet/mobile/compact so no tooltip lingers */
+  useEffect(() => {
+    if (!tooltipsEnabled) setIsVisible(false)
+  }, [tooltipsEnabled])
+
+  /* Hover handlers: Show/hide tooltip on hover only on desktop; only if content is provided */
   const handleMouseEnter = () => {
-    /* Check if content exists and is not empty */
-    if (hasValidContent()) {
+    if (tooltipsEnabled && hasValidContent()) {
       setIsVisible(true)
     }
   }

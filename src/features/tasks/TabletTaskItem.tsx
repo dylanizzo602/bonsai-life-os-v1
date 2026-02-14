@@ -216,8 +216,8 @@ export function TabletTaskItem({
           </button>
         )}
       </div>
-      {/* Bottom row: all icons and metadata on a single row (horizontal scroll if needed) */}
-      <div className="mt-2 flex flex-nowrap items-center gap-2 overflow-x-auto text-xs text-bonsai-slate-600">
+      {/* Bottom row: all icons and metadata in one row (no wrap; horizontal scroll on tablet/mobile) */}
+      <div className="mt-2 flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto text-xs text-bonsai-slate-600">
         {/* Dependency icons: blocked and blocking icons immediately after task name */}
         {(isBlocked || isBlocking) && (
           <div className="flex shrink-0 items-center gap-1.5">

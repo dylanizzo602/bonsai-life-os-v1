@@ -293,20 +293,30 @@ export function SingleDatePickerModal({
   const [viewMonth, setViewMonth] = useState(() => new Date())
   const [timePickerOpen, setTimePickerOpen] = useState(false)
 
-  /* Position popover below trigger (always below the Set reminder date button) */
+  /* Position: center on mobile/tablet (< 1024px); below trigger on desktop */
+  const DESKTOP_BREAKPOINT = 1024
+
   useEffect(() => {
-    if (!isOpen || !triggerRef.current || !popoverRef.current) return
+    if (!isOpen || !popoverRef.current) return
     const updatePosition = () => {
-      if (!triggerRef.current || !popoverRef.current) return
-      const triggerRect = triggerRef.current.getBoundingClientRect()
+      if (!popoverRef.current) return
       const popoverRect = popoverRef.current.getBoundingClientRect()
       const padding = 8
       const viewportWidth = window.innerWidth
-      /* Always place below trigger; clamp horizontal to viewport */
-      const top = triggerRect.bottom + 4
-      let left = triggerRect.left
-      if (left + popoverRect.width > viewportWidth - padding) left = viewportWidth - popoverRect.width - padding
-      if (left < padding) left = padding
+      const viewportHeight = window.innerHeight
+      let top: number
+      let left: number
+      if (viewportWidth < DESKTOP_BREAKPOINT) {
+        top = Math.max(padding, (viewportHeight - popoverRect.height) / 2)
+        left = Math.max(padding, (viewportWidth - popoverRect.width) / 2)
+      } else {
+        if (!triggerRef.current) return
+        const triggerRect = triggerRef.current.getBoundingClientRect()
+        top = triggerRect.bottom + 4
+        left = triggerRect.left
+        if (left + popoverRect.width > viewportWidth - padding) left = viewportWidth - popoverRect.width - padding
+        if (left < padding) left = padding
+      }
       setPosition({ top, left })
     }
     const t = setTimeout(updatePosition, 0)
@@ -444,7 +454,7 @@ export function SingleDatePickerModal({
   return (
     <div
       ref={popoverRef}
-      className="fixed z-50 rounded-xl border border-bonsai-slate-200 bg-white shadow-xl p-4 sm:p-5 md:p-6 min-h-[22rem] w-[calc(100vw-2rem)] max-w-xl min-w-0 sm:min-w-[18rem]"
+      className="fixed z-50 flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-xl border border-bonsai-slate-200 bg-white shadow-xl p-3 sm:p-5 md:p-6 w-[calc(100vw-2rem)] max-w-xl min-w-0 sm:min-w-[18rem]"
       style={{ top: `${position.top}px`, left: `${position.left}px` }}
       role="dialog"
       aria-label="Select a date"
@@ -452,8 +462,8 @@ export function SingleDatePickerModal({
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      {/* Single date + time row */}
-      <div className={`${fieldBase} min-h-[2.75rem] bg-bonsai-slate-100 mb-5`}>
+      {/* Single date + time row; shrink-0 so it doesn't collapse */}
+      <div className={`${fieldBase} min-h-[2.75rem] shrink-0 bg-bonsai-slate-100 pb-3 sm:mb-5`}>
         <CalendarIcon className="w-4 h-4 text-bonsai-slate-500 shrink-0" />
         <div className="flex-1 min-w-0 flex items-center gap-2 flex-nowrap">
           <input
@@ -538,9 +548,9 @@ export function SingleDatePickerModal({
         )}
       </div>
 
-      {/* Left column: suggested dates (default) or recurring settings */}
-      <div className="grid grid-cols-1 md:grid-cols-[14rem_1fr] gap-6 md:gap-8">
-        <div className="flex flex-col min-w-0 gap-2">
+      {/* Left column: suggested dates or recurring; right: calendar; flex-1 min-h-0 so content fits viewport */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden md:grid-cols-[14rem_1fr] md:gap-8">
+        <div className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
           {showRecurringSection ? (
             <RecurringSettingsSection
               value={recurrencePattern}
@@ -579,8 +589,8 @@ export function SingleDatePickerModal({
           )}
         </div>
 
-        <div className="min-w-0 flex flex-col">
-          <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+          <div className="mb-2 flex shrink-0 items-center justify-between gap-2 md:mb-3">
             <span className="text-secondary font-medium text-bonsai-slate-800">{viewMonthLabel}</span>
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="sm" onClick={goToToday} className="text-secondary px-2 py-1">
@@ -608,9 +618,9 @@ export function SingleDatePickerModal({
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-7 gap-1 text-center">
+          <div className="grid min-h-0 flex-1 grid-cols-7 gap-0.5 text-center sm:gap-1">
             {WEEKDAYS.map((wd) => (
-              <div key={wd} className="py-1 text-secondary font-medium text-bonsai-slate-500">
+              <div key={wd} className="py-0.5 text-xs font-medium text-bonsai-slate-500 sm:py-1 sm:text-secondary">
                 {wd}
               </div>
             ))}
@@ -619,7 +629,7 @@ export function SingleDatePickerModal({
                 key={cell.ymd}
                 type="button"
                 onClick={() => applyDate(cell.ymd)}
-                className={`rounded py-2 text-secondary min-w-[2rem] ${getCellClass(cell.ymd)} ${!cell.isCurrentMonth ? 'opacity-50' : ''}`}
+                className={`rounded py-1 text-xs min-w-[1.75rem] sm:min-w-[2rem] sm:py-2 sm:text-secondary ${getCellClass(cell.ymd)} ${!cell.isCurrentMonth ? 'opacity-50' : ''}`}
               >
                 {cell.date.getDate()}
               </button>
@@ -628,8 +638,12 @@ export function SingleDatePickerModal({
         </div>
       </div>
 
-      <div className="mt-6 pt-4 flex justify-end gap-3 border-t border-bonsai-slate-200">
-        <Button variant="secondary" onClick={onClose}>
+      {/* When in Recurring view, Cancel goes back to date picker; otherwise closes modal */}
+      <div className="mt-3 flex shrink-0 justify-end gap-3 border-t border-bonsai-slate-200 pt-3 md:mt-6 md:pt-4">
+        <Button
+          variant="secondary"
+          onClick={showRecurringSection ? () => setShowRecurringSection(false) : onClose}
+        >
           Cancel
         </Button>
         <Button variant="primary" onClick={handleSave}>

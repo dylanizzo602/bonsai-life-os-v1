@@ -47,33 +47,33 @@ export function TaskDependenciesPopover({
   const popoverRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState({ top: 0, left: 0 })
 
-  /* Position calculation: Calculate popover position relative to trigger with viewport boundary detection */
+  /* Position: center on mobile/tablet (< 1024px); below trigger on desktop */
+  const DESKTOP_BREAKPOINT = 1024
+
   useEffect(() => {
-    if (!isOpen || !triggerRef.current || !popoverRef.current) return
+    if (!isOpen || !popoverRef.current) return
 
     const calculatePosition = () => {
-      const triggerRect = triggerRef.current!.getBoundingClientRect()
-      const popoverRect = popoverRef.current!.getBoundingClientRect()
-
-      /* Position below trigger, aligned to its left edge */
-      let top = triggerRect.bottom + 8
-      let left = triggerRect.left
-
-      /* Boundary adjustment: Keep popover within viewport */
+      if (!popoverRef.current) return
+      const popoverRect = popoverRef.current.getBoundingClientRect()
       const padding = 8
       const viewportWidth = window.innerWidth
       const viewportHeight = window.innerHeight
-
-      if (left + popoverRect.width > viewportWidth - padding) {
-        left = viewportWidth - popoverRect.width - padding
+      let top: number
+      let left: number
+      if (viewportWidth < DESKTOP_BREAKPOINT) {
+        top = Math.max(padding, (viewportHeight - popoverRect.height) / 2)
+        left = Math.max(padding, (viewportWidth - popoverRect.width) / 2)
+      } else {
+        if (!triggerRef.current) return
+        const triggerRect = triggerRef.current.getBoundingClientRect()
+        top = triggerRect.bottom + 8
+        left = triggerRect.left
+        if (left + popoverRect.width > viewportWidth - padding) left = viewportWidth - popoverRect.width - padding
+        if (left < padding) left = padding
+        if (top + popoverRect.height > viewportHeight - padding) top = triggerRect.top - popoverRect.height - 8
+        if (top < padding) top = padding
       }
-      if (left < padding) left = padding
-
-      if (top + popoverRect.height > viewportHeight - padding) {
-        top = triggerRect.top - popoverRect.height - 8
-      }
-      if (top < padding) top = padding
-
       setPosition({ top, left })
     }
 
@@ -110,7 +110,7 @@ export function TaskDependenciesPopover({
   return (
     <div
       ref={popoverRef}
-      className="fixed z-[100] w-full max-w-md rounded-lg border border-bonsai-slate-200 bg-white shadow-lg"
+      className="fixed z-[100] max-h-[calc(100vh-16px)] overflow-hidden w-full max-w-md rounded-lg border border-bonsai-slate-200 bg-white shadow-lg flex flex-col"
       style={{
         top: `${position.top}px`,
         left: `${position.left}px`,
@@ -125,8 +125,8 @@ export function TaskDependenciesPopover({
       <div className="border-b border-bonsai-slate-200 px-4 py-3">
         <h3 className="text-sm font-semibold text-bonsai-slate-800">Task Dependencies</h3>
       </div>
-      {/* Popover body: Dependencies section */}
-      <div className="max-h-[70vh] overflow-y-auto p-4">
+      {/* Popover body: Dependencies section; fills remaining height and scrolls within viewport */}
+      <div className="min-h-0 flex-1 overflow-hidden p-4">
         <DependenciesSection
           currentTaskId={currentTaskId}
           getTasks={getTasks}

@@ -141,16 +141,16 @@ export function DependenciesSection({
   const getBlockedTask = (dep: TaskDependency) => taskMap[dep.blocked_id]
 
   return (
-    <div className="space-y-4">
+    <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
       {/* "This task is blocked by" section: BlockedIcon, search input, linked task cards */}
-      <div>
-        <div className="flex items-center gap-2 mb-2">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="mb-2 flex shrink-0 items-center gap-2">
           <BlockedIcon className="w-5 h-5 text-bonsai-slate-700 shrink-0" aria-hidden />
           <span className="text-sm font-medium text-bonsai-slate-700">
             This task is blocked by
           </span>
         </div>
-        <div className="space-y-2">
+        <div className="min-h-0 flex-1 space-y-2 overflow-hidden">
           {/* TaskSearchSelect: search and link blocking tasks */}
           <TaskSearchSelect
             getTasks={getTasksForSearch}
@@ -187,14 +187,14 @@ export function DependenciesSection({
       </div>
 
       {/* "This task is blocking." section: WarningIcon, link action */}
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <WarningIcon className="w-5 h-5 text-bonsai-slate-700 shrink-0" aria-hidden />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="mb-2 flex shrink-0 items-center gap-2">
+          <WarningIcon className="w-5 h-5 shrink-0 text-bonsai-slate-700" aria-hidden />
           <span className="text-sm font-medium text-bonsai-slate-700">
             This task is blocking.
           </span>
         </div>
-        <div className="space-y-2">
+        <div className="min-h-0 flex-1 space-y-2 overflow-hidden">
           {/* TaskSearchSelect: search and link tasks this task blocks */}
           <TaskSearchSelect
             getTasks={getTasksForSearch}

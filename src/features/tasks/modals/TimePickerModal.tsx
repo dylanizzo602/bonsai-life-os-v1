@@ -68,7 +68,7 @@ function TimeColumn<T>({
   return (
     <div
       ref={listRef}
-      className="flex flex-col overflow-y-auto max-h-[12rem] min-w-[2.5rem] border-r border-bonsai-slate-200 last:border-r-0"
+      className="flex flex-col overflow-hidden max-h-[12rem] min-w-[2.5rem] border-r border-bonsai-slate-200 last:border-r-0"
     >
       {options.map((opt) => {
         const isSelected = opt === selected
@@ -125,22 +125,32 @@ export function TimePickerModal({
     onChange(newValue)
   }
 
-  /* Position popover below trigger with viewport boundary detection */
+  /* Position: center on mobile/tablet (< 1024px); below trigger on desktop */
+  const DESKTOP_BREAKPOINT = 1024
+
   useEffect(() => {
-    if (!isOpen || !triggerRef.current || !popoverRef.current) return
+    if (!isOpen || !popoverRef.current) return
     const updatePosition = () => {
-      if (!triggerRef.current || !popoverRef.current) return
-      const triggerRect = triggerRef.current.getBoundingClientRect()
+      if (!popoverRef.current) return
       const popoverRect = popoverRef.current.getBoundingClientRect()
       const padding = 8
       const viewportWidth = window.innerWidth
       const viewportHeight = window.innerHeight
-      let top = triggerRect.bottom + 4
-      let left = triggerRect.left
-      if (left + popoverRect.width > viewportWidth - padding) left = viewportWidth - popoverRect.width - padding
-      if (left < padding) left = padding
-      if (top + popoverRect.height > viewportHeight - padding) top = triggerRect.top - popoverRect.height - 4
-      if (top < padding) top = padding
+      let top: number
+      let left: number
+      if (viewportWidth < DESKTOP_BREAKPOINT) {
+        top = Math.max(padding, (viewportHeight - popoverRect.height) / 2)
+        left = Math.max(padding, (viewportWidth - popoverRect.width) / 2)
+      } else {
+        if (!triggerRef.current) return
+        const triggerRect = triggerRef.current.getBoundingClientRect()
+        top = triggerRect.bottom + 4
+        left = triggerRect.left
+        if (left + popoverRect.width > viewportWidth - padding) left = viewportWidth - popoverRect.width - padding
+        if (left < padding) left = padding
+        if (top + popoverRect.height > viewportHeight - padding) top = triggerRect.top - popoverRect.height - 4
+        if (top < padding) top = padding
+      }
       setPosition({ top, left })
     }
     const t = setTimeout(updatePosition, 0)
@@ -201,7 +211,7 @@ export function TimePickerModal({
   return (
     <div
       ref={popoverRef}
-      className="fixed z-[60] flex rounded-lg border border-bonsai-slate-200 bg-white shadow-xl overflow-hidden"
+      className="fixed z-[60] flex max-h-[calc(100vh-16px)] min-h-0 overflow-hidden rounded-lg border border-bonsai-slate-200 bg-white shadow-xl"
       style={{ top: `${position.top}px`, left: `${position.left}px` }}
       role="dialog"
       aria-label={ariaLabel}

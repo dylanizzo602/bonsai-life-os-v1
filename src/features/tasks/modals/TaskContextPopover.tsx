@@ -48,19 +48,28 @@ export function TaskContextPopover({
 }: TaskContextPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
 
-  /* Position and clamp to viewport: Adjust so popover stays on screen */
+  /* Position: center on mobile/tablet (< 1024px); at (x,y) with clamp on desktop */
+  const DESKTOP_BREAKPOINT = 1024
+
   useEffect(() => {
     if (!isOpen || !popoverRef.current) return
     const el = popoverRef.current
     const rect = el.getBoundingClientRect()
     const vw = window.innerWidth
     const vh = window.innerHeight
-    let left = x
-    let top = y
-    if (left + rect.width > vw - PADDING) left = vw - rect.width - PADDING
-    if (left < PADDING) left = PADDING
-    if (top + rect.height > vh - PADDING) top = vh - rect.height - PADDING
-    if (top < PADDING) top = PADDING
+    let left: number
+    let top: number
+    if (vw < DESKTOP_BREAKPOINT) {
+      left = Math.max(PADDING, (vw - rect.width) / 2)
+      top = Math.max(PADDING, (vh - rect.height) / 2)
+    } else {
+      left = x
+      top = y
+      if (left + rect.width > vw - PADDING) left = vw - rect.width - PADDING
+      if (left < PADDING) left = PADDING
+      if (top + rect.height > vh - PADDING) top = vh - rect.height - PADDING
+      if (top < PADDING) top = PADDING
+    }
     el.style.left = `${left}px`
     el.style.top = `${top}px`
   }, [isOpen, x, y])
@@ -114,7 +123,7 @@ export function TaskContextPopover({
   const popover = (
     <div
       ref={popoverRef}
-      className="fixed z-[10000] rounded-xl border border-bonsai-slate-200 bg-bonsai-brown-50 shadow-lg py-2"
+      className="fixed z-[10000] flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-xl border border-bonsai-slate-200 bg-bonsai-brown-50 py-2 shadow-lg"
       style={{ left: x, top: y, minWidth: MIN_WIDTH }}
       role="menu"
       aria-label="Task options"

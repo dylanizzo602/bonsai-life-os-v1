@@ -225,12 +225,12 @@ export function CompactTaskItem({
           </button>
         )}
       </div>
-      {/* Bottom row: tag, dependency, start/due date, and flag */}
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-bonsai-slate-600">
-        {/* Tag: show first tag if available */}
+      {/* Bottom row: all icons and metadata in one row (horizontal scroll on tablet/mobile/compact) */}
+      <div className="mt-2 flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto text-xs text-bonsai-slate-600">
+        {/* Tag: show first tag if available; shrink-0 so row stays single line */
         {tagDisplay && (
           <span
-            className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+            className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${
               tagDisplay.color === 'mint'
                 ? 'bg-emerald-100 text-emerald-800'
                 : tagDisplay.color === 'blue'
