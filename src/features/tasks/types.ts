@@ -7,9 +7,10 @@
 export type TaskPriority = 'none' | 'low' | 'medium' | 'high' | 'urgent'
 
 /**
- * Task status. UI mapping: active → OPEN (or IN_PROGRESS if extended), completed → COMPLETE.
+ * Task status. UI mapping: active → OPEN, in_progress → IN PROGRESS, completed → COMPLETE.
+ * archived and deleted are hidden by default; shown when "Show archived" / "Show deleted" toggles are on.
  */
-export type TaskStatus = 'active' | 'completed'
+export type TaskStatus = 'active' | 'in_progress' | 'completed' | 'archived' | 'deleted'
 
 /** Attachment stored as JSONB in tasks.attachments */
 export interface TaskAttachment {
@@ -91,6 +92,7 @@ export interface CreateTaskInput {
   time_estimate?: number | null
   attachments?: TaskAttachment[]
   status?: TaskStatus
+  recurrence_pattern?: string | null
 }
 
 /** Input for updating an existing task (all optional). Tags are managed via addTagToTask/removeTagFromTask. */

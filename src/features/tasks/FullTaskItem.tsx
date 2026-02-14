@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState } from 'react'
 import {
   ChevronDownIcon,
+  ChevronRightIcon,
   CalendarIcon,
   FlagIcon,
   ParagraphIcon,
@@ -13,10 +14,13 @@ import {
   RepeatIcon,
   HourglassIcon,
 } from '../../components/icons'
+import { Tooltip } from '../../components/Tooltip'
+import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { TaskNameHover } from './TaskNameHover'
 import { DescriptionTooltip } from '../../components/DescriptionTooltip'
 import { DependencyTooltip } from '../../components/DependencyTooltip'
 import { StatusPickerModal } from './modals/StatusPickerModal'
+import { UnresolvedItemsConfirmModal } from './modals/UnresolvedItemsConfirmModal'
 import { TimeEstimateModal } from './modals/TimeEstimateModal'
 import { TimeEstimateTooltip } from './modals/TimeEstimateTooltip'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
@@ -25,6 +29,8 @@ import { TagModal } from './modals/TagModal'
 import { TaskDependenciesPopover } from './modals/TaskDependenciesPopover'
 import { TabletTaskItem } from './TabletTaskItem'
 import { useTags } from './hooks/useTags'
+import { isOverdue, formatStartDueDisplay, isPastStartDate } from './utils/date'
+import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
 import type { Task, TaskPriority, TaskStatus, UpdateTaskInput } from './types'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
@@ -35,6 +41,8 @@ export interface FullTaskItemProps {
   task: Task
   /** Whether this task has subtasks (shows chevron and allows expand) */
   hasSubtasks?: boolean
+  /** Number of subtasks that are not completed (for unresolved-items confirm modal) */
+  incompleteSubtaskCount?: number
   /** Checklist completed/total when task has checklists */
   checklistSummary?: { completed: number; total: number }
   /** Total time in minutes (task estimate + sum of subtask estimates) for tooltip display */
@@ -53,10 +61,22 @@ export interface FullTaskItemProps {
   expanded?: boolean
   /** Toggle expand/collapse when chevron is clicked */
   onToggleExpand?: () => void
+  /** Called when user expands to add a subtask (e.g. focus add-subtask input) */
+  onExpandForSubtask?: () => void
   /** Optional click on the row (e.g. open edit) */
   onClick?: () => void
+  /** Optional right-click context menu (e.g. show task options popover) */
+  onContextMenu?: (e: React.MouseEvent) => void
+  /** When set, show inline text input to edit task title (Rename from context menu); save on Enter/blur, cancel on Escape */
+  inlineEditTitle?: {
+    value: string
+    onSave: (newTitle: string) => void | Promise<void>
+    onCancel: () => void
+  }
   /** Function to update task status */
   onUpdateStatus?: (taskId: string, status: TaskStatus) => Promise<void>
+  /** Complete task and mark all subtasks and checklist items complete (for unresolved-items modal) */
+  onCompleteTaskAndResolveAll?: (taskId: string) => Promise<void>
   /** Function to update task (for time estimate and other fields) */
   onUpdateTask?: (taskId: string, input: UpdateTaskInput) => Promise<void>
   /** Called after tags are updated (e.g. to refetch task list) */
@@ -81,13 +101,22 @@ export interface FullTaskItemProps {
 /** Map TaskStatus to display status for the status circle */
 function getDisplayStatus(status: TaskStatus): DisplayStatus {
   if (status === 'completed') return 'complete'
+  if (status === 'in_progress') return 'in_progress'
   return 'open'
 }
 
 /** Map DisplayStatus back to TaskStatus for database updates */
 function getTaskStatus(displayStatus: DisplayStatus): TaskStatus {
   if (displayStatus === 'complete') return 'completed'
+  if (displayStatus === 'in_progress') return 'in_progress'
   return 'active'
+}
+
+/** Human-readable label for status circle tooltip */
+function getStatusLabel(status: DisplayStatus): string {
+  if (status === 'complete') return 'Complete'
+  if (status === 'in_progress') return 'In progress'
+  return 'Open'
 }
 
 /**
@@ -147,8 +176,8 @@ function TaskStatusIndicator({ status }: { status: DisplayStatus }) {
   )
 }
 
-/** Format due_date or start_date as "Jan 22 at 3:00pm" or "Jan 22" when no time. Date-only (YYYY-MM-DD) parsed as local to avoid timezone shift. */
-function formatDateWithOptionalTime(isoString: string | null): string | null {
+/** Format ISO date string as "Jan 1, 2025" for tooltip display. Date-only (YYYY-MM-DD) parsed as local. */
+function formatDateForTooltip(isoString: string | null): string | null {
   if (!isoString) return null
   const isDateOnly = !isoString.includes('T')
   const d = isDateOnly
@@ -158,18 +187,7 @@ function formatDateWithOptionalTime(isoString: string | null): string | null {
       })()
     : new Date(isoString)
   if (isNaN(d.getTime())) return null
-  const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  if (isDateOnly) return dateStr
-  const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0
-  if (hasTime) {
-    const timeStr = d.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
-    return `${dateStr} at ${timeStr}`
-  }
-  return dateStr
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 /** Priority flag color classes: none, low, normal (medium), high, urgent */
@@ -184,6 +202,18 @@ function getPriorityFlagClasses(priority: TaskPriority): string {
   return map[priority] ?? map.none
 }
 
+/** Human-readable priority label for display next to the flag (full task view) */
+function getPriorityLabel(priority: TaskPriority): string {
+  const map: Record<TaskPriority, string> = {
+    none: 'None',
+    low: 'Low',
+    medium: 'Normal',
+    high: 'High',
+    urgent: 'Urgent',
+  }
+  return map[priority] ?? 'None'
+}
+
 
 /**
  * Full task item for desktop task section: single full-width row with left-aligned
@@ -193,6 +223,7 @@ function getPriorityFlagClasses(priority: TaskPriority): string {
 export function FullTaskItem({
   task,
   hasSubtasks = false,
+  incompleteSubtaskCount = 0,
   checklistSummary,
   totalTimeWithSubtasks,
   isBlocked = false,
@@ -200,10 +231,14 @@ export function FullTaskItem({
   isShared = false,
   expanded = false,
   onToggleExpand,
+  onExpandForSubtask,
   onClick,
+  onContextMenu,
+  inlineEditTitle,
   blockingCount = 0,
   blockedByCount = 0,
   onUpdateStatus,
+  onCompleteTaskAndResolveAll,
   onUpdateTask,
   onTagsUpdated,
   tablet = false,
@@ -216,6 +251,8 @@ export function FullTaskItem({
   const displayStatus = getDisplayStatus(task.status)
   /* Modal state: Track whether status picker modal is open */
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
+  /* Modal state: Track whether unresolved-items confirm modal is open (when completing with open subtasks/checklist) */
+  const [isUnresolvedModalOpen, setIsUnresolvedModalOpen] = useState(false)
   /* Modal state: Track whether time estimate modal is open */
   const [isTimeEstimateModalOpen, setIsTimeEstimateModalOpen] = useState(false)
   /* Modal state: Track whether priority picker modal is open */
@@ -240,7 +277,8 @@ export function FullTaskItem({
   const timeEstimateButtonRef = useRef<HTMLButtonElement>(null)
   /* Date button ref: Used to position the date picker popover */
   const dateButtonRef = useRef<HTMLButtonElement>(null)
-  const dateDisplay = formatDateWithOptionalTime(task.due_date) ?? formatDateWithOptionalTime(task.start_date)
+  const dateDisplay = formatStartDueDisplay(task.start_date, task.due_date)
+  const isDueOverdue = Boolean(task.due_date && isOverdue(task.due_date))
   const isRecurring = Boolean(task.recurrence_pattern)
   /* medium = "normal" for display; ensure priority is valid for flag classes */
   const priority: TaskPriority = task.priority ?? 'medium'
@@ -317,9 +355,16 @@ export function FullTaskItem({
         blockedByCount={blockedByCount}
         isShared={isShared}
         onClick={onClick}
-        formatDueDate={formatDateWithOptionalTime}
+        onContextMenu={onContextMenu}
+        inlineEditTitle={inlineEditTitle}
       />
     )
+  }
+
+  /* Row click: Open edit modal unless the click was on the subtask expand button */
+  const handleRowClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('[data-subtask-expand]')) return
+    onClick?.()
   }
 
   return (
@@ -327,7 +372,8 @@ export function FullTaskItem({
       ref={containerRef}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
-      onClick={onClick}
+      onClick={handleRowClick}
+      onContextMenu={onContextMenu}
       onKeyDown={
         onClick
           ? (e) => {
@@ -338,55 +384,89 @@ export function FullTaskItem({
             }
           : undefined
       }
-      className="flex items-center justify-between gap-4 rounded-lg border border-bonsai-slate-200 bg-white px-4 py-3 transition-colors hover:bg-bonsai-slate-50"
+      className="group flex items-center justify-between gap-4 rounded-lg border border-bonsai-slate-200 bg-white px-4 py-3 transition-colors hover:bg-bonsai-slate-50"
     >
-      {/* Left section: chevron, status, task name, then other icons (description, checklist, tag, blocked, blocking, shared) */}
+      {/* Left section: subtask arrow (desktop hover) or chevron, status, task name, then other icons */}
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {/* Left icons before task name: Chevron and status circle */}
+        {/* Left icons before task name: Subtask arrow (desktop hover) and status circle */}
         <div ref={leftIconsBeforeRef} className="flex shrink-0 items-center gap-2">
-          {/* Chevron: show when task has subtasks */}
-          {hasSubtasks && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onToggleExpand?.()
-              }}
-              className="shrink-0 flex items-center justify-center w-6 h-6 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-800 transition-colors"
-              aria-expanded={expanded}
-              aria-label={expanded ? 'Collapse subtasks' : 'Expand subtasks'}
-            >
-              <ChevronDownIcon
-                className={`w-5 h-5 transition-transform ${expanded ? 'rotate-180' : ''}`}
-              />
-            </button>
-          )}
-          {/* Status circle: Clickable to open status picker popover */}
-          <button
-            ref={statusButtonRef}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              /* Open status picker popover */
-              if (onUpdateStatus) {
-                setIsStatusModalOpen(true)
+          {/* Subtask arrow: Tooltip = Expand/Collapse when task has subtasks, "Create subtask" when it doesn't; click expands and may focus add-subtask input */}
+          {onToggleExpand && (
+            <Tooltip
+              content={
+                hasSubtasks
+                  ? (expanded ? 'Collapse subtasks' : 'Expand subtasks')
+                  : 'Create subtask'
               }
-            }}
-            className="shrink-0 flex items-center justify-center rounded hover:bg-bonsai-slate-100 transition-colors p-1"
-            aria-label="Change task status"
-            disabled={!onUpdateStatus}
-          >
-            <TaskStatusIndicator status={displayStatus} />
-          </button>
+              position="top"
+              size="sm"
+            >
+              <span
+                className={`shrink-0 inline-flex ${!hasSubtasks && !expanded ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}
+              >
+                <button
+                  type="button"
+                  data-subtask-expand
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    const wasExpanded = expanded
+                    onToggleExpand()
+                    /* When task has no subtasks, expanding reveals add-subtask line; focus it so user can type immediately */
+                    if (!wasExpanded && !hasSubtasks) onExpandForSubtask?.()
+                  }}
+                  className="shrink-0 flex items-center justify-center w-6 h-6 rounded-full text-bonsai-slate-600 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-800 transition-colors"
+                  aria-expanded={expanded}
+                  aria-label={expanded ? 'Collapse subtasks' : 'Create subtask'}
+                >
+                  {expanded ? (
+                    <ChevronDownIcon className="w-4 h-4 rotate-0" />
+                  ) : (
+                    <ChevronRightIcon className="w-4 h-4" />
+                  )}
+                </button>
+              </span>
+            </Tooltip>
+          )}
+          {/* Status circle: Tooltip on hover shows status; click opens status picker popover */}
+          <Tooltip content={getStatusLabel(displayStatus)} position="top" size="sm">
+            <span className="shrink-0 inline-flex">
+              <button
+                ref={statusButtonRef}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  /* Open status picker popover */
+                  if (onUpdateStatus) {
+                    setIsStatusModalOpen(true)
+                  }
+                }}
+                className="shrink-0 flex items-center justify-center rounded hover:bg-bonsai-slate-100 transition-colors p-1"
+                aria-label="Change task status"
+                disabled={!onUpdateStatus}
+              >
+              <TaskStatusIndicator status={displayStatus} />
+              </button>
+            </span>
+          </Tooltip>
         </div>
         
-        {/* Task name and dependency icons: Grouped together to keep dependency icons next to name */}
+        {/* Task name and dependency icons: Grouped together to keep dependency icons next to name; or inline edit input when renaming */}
         <div className="flex min-w-0 items-center gap-1.5">
-          <TaskNameHover 
-            title={task.title} 
-            status={task.status} 
-            maxWidth={availableWidth}
-          />
+          {inlineEditTitle ? (
+            <InlineTitleInput
+              value={inlineEditTitle.value}
+              onSave={inlineEditTitle.onSave}
+              onCancel={inlineEditTitle.onCancel}
+              className="min-w-0 flex-1 text-body text-bonsai-slate-800 border border-bonsai-sage-400 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500"
+            />
+          ) : (
+            <TaskNameHover 
+              title={task.title} 
+              status={task.status} 
+              maxWidth={availableWidth}
+            />
+          )}
           
           {/* Dependency icons: Clickable to open Task Dependencies popover */}
           {(isBlocked || isBlocking) && (
@@ -534,28 +614,55 @@ export function FullTaskItem({
           </TimeEstimateTooltip>
         )}
         {(dateDisplay || onUpdateTask) && (
-          <button
-            ref={dateButtonRef}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              if (onUpdateTask) setIsDatePickerModalOpen(true)
-            }}
-            className="flex items-center gap-1 text-sm text-bonsai-slate-600 hover:text-bonsai-slate-800 transition-colors shrink-0 min-w-0"
-            aria-label={dateDisplay ? 'Edit start/due date' : 'Add start/due date'}
-            disabled={!onUpdateTask}
-          >
-            {isRecurring ? (
-              <RepeatIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" aria-hidden />
+          (() => {
+            /* Tooltip content: For recurring, show frequency; otherwise start/due dates */
+            const recurrenceLabel = isRecurring ? formatRecurrenceForTooltip(parseRecurrencePattern(task.recurrence_pattern)) : ''
+            const startFormatted = formatDateForTooltip(task.start_date)
+            const dueFormatted = formatDateForTooltip(task.due_date)
+            const dateTooltipContent = recurrenceLabel ? (
+              <div className="text-center text-secondary text-bonsai-slate-800">{recurrenceLabel}</div>
+            ) : startFormatted || dueFormatted ? (
+              <div className="text-center text-secondary text-bonsai-slate-800">
+                {startFormatted && (
+                  <div>{isPastStartDate(task.start_date) ? 'Started' : 'Starts'} {startFormatted}</div>
+                )}
+                {dueFormatted && <div>Due on {dueFormatted}</div>}
+              </div>
+            ) : null
+            const dateButton = (
+              <button
+                ref={dateButtonRef}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (onUpdateTask) setIsDatePickerModalOpen(true)
+                }}
+                className="flex items-center gap-1 text-sm text-bonsai-slate-600 hover:text-bonsai-slate-800 transition-colors shrink-0 min-w-0"
+                aria-label={dateDisplay ? 'Edit start/due date' : 'Add start/due date'}
+                disabled={!onUpdateTask}
+              >
+                {isRecurring ? (
+                  <RepeatIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" aria-hidden />
+                ) : (
+                  <CalendarIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" aria-hidden />
+                )}
+                {dateDisplay ? (
+                  <span className={`truncate ${isDueOverdue ? 'text-red-600 font-medium' : ''}`}>
+                    {dateDisplay}
+                  </span>
+                ) : (
+                  <span>Add date</span>
+                )}
+              </button>
+            )
+            return dateTooltipContent ? (
+              <Tooltip content={dateTooltipContent} position="top" size="sm">
+                <span className="shrink-0 inline-flex min-w-0">{dateButton}</span>
+              </Tooltip>
             ) : (
-              <CalendarIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" aria-hidden />
-            )}
-            {dateDisplay ? (
-              <span className="truncate">{dateDisplay}</span>
-            ) : (
-              <span>Add date</span>
-            )}
-          </button>
+              dateButton
+            )
+          })()
         )}
         <button
           ref={priorityButtonRef}
@@ -567,11 +674,12 @@ export function FullTaskItem({
               setIsPriorityModalOpen(true)
             }
           }}
-          className={getPriorityFlagClasses(priority)}
+          className={`flex items-center gap-1.5 rounded p-1 text-sm transition-colors hover:bg-bonsai-slate-100 ${getPriorityFlagClasses(priority)}`}
           aria-label="Edit priority"
           disabled={!onUpdateTask}
         >
-          <FlagIcon className="w-4 h-4 md:w-5 md:h-5" />
+          <FlagIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" />
+          <span className="shrink-0 text-sm text-bonsai-slate-600">{getPriorityLabel(priority)}</span>
         </button>
       </div>
 
@@ -585,6 +693,16 @@ export function FullTaskItem({
           onSelect={async (newDisplayStatus) => {
             try {
               const newTaskStatus = getTaskStatus(newDisplayStatus)
+              /* When completing: show unresolved-items modal if there are open subtasks or checklist items */
+              if (newDisplayStatus === 'complete') {
+                const unresolvedChecklist = (checklistSummary?.total ?? 0) - (checklistSummary?.completed ?? 0)
+                const unresolvedSubtasks = incompleteSubtaskCount
+                if (unresolvedChecklist + unresolvedSubtasks > 0) {
+                  setIsStatusModalOpen(false)
+                  setIsUnresolvedModalOpen(true)
+                  return
+                }
+              }
               await onUpdateStatus(task.id, newTaskStatus)
             } catch (error) {
               console.error('Failed to update task status:', error)
@@ -593,6 +711,29 @@ export function FullTaskItem({
           }}
         />
       )}
+      {/* Unresolved items confirm: Shown when user tries to complete task with open subtasks or checklist items */}
+      <UnresolvedItemsConfirmModal
+        isOpen={isUnresolvedModalOpen}
+        onClose={() => setIsUnresolvedModalOpen(false)}
+        unresolvedSubtaskCount={incompleteSubtaskCount}
+        unresolvedChecklistItemCount={(checklistSummary?.total ?? 0) - (checklistSummary?.completed ?? 0)}
+        onCompleteWithoutResolving={async () => {
+          try {
+            await onUpdateStatus?.(task.id, 'completed')
+            setIsUnresolvedModalOpen(false)
+          } catch (error) {
+            console.error('Failed to complete task:', error)
+          }
+        }}
+        onCompleteAndResolveAll={async () => {
+          try {
+            await onCompleteTaskAndResolveAll?.(task.id)
+            setIsUnresolvedModalOpen(false)
+          } catch (error) {
+            console.error('Failed to complete task and resolve items:', error)
+          }
+        }}
+      />
       {/* Time estimate popover: Opens when time estimate icon is clicked */}
       {onUpdateTask && (
         <TimeEstimateModal
@@ -653,11 +794,12 @@ export function FullTaskItem({
           onClose={() => setIsDatePickerModalOpen(false)}
           startDate={task.start_date}
           dueDate={task.due_date}
-          onSave={async (start, due) => {
+          onSave={async (start, due, recurrencePattern) => {
             try {
               await onUpdateTask(task.id, {
                 start_date: start,
                 due_date: due,
+                recurrence_pattern: recurrencePattern ?? null,
               })
             } catch (error) {
               console.error('Failed to update dates:', error)
@@ -665,6 +807,8 @@ export function FullTaskItem({
             }
           }}
           triggerRef={dateButtonRef}
+          recurrencePattern={task.recurrence_pattern}
+          hasChecklists={(checklistSummary?.total ?? 0) > 0}
         />
       )}
       {/* Task dependencies popover: Opens when dependency icon is clicked, separate from edit modal */}

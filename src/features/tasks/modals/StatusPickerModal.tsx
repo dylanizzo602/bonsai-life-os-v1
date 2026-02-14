@@ -1,6 +1,7 @@
 /* StatusPickerModal: Compact popover for selecting task status (OPEN, IN PROGRESS, COMPLETE) */
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE */
 type DisplayStatus = 'open' | 'in_progress' | 'complete'
@@ -141,87 +142,88 @@ export function StatusPickerModal({ isOpen, onClose, value, onSelect, triggerRef
     }
   }, [isOpen, triggerRef])
 
-  /* Close popover when clicking outside */
-  useEffect(() => {
-    if (!isOpen) return
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        popoverRef.current &&
-        !popoverRef.current.contains(e.target as Node) &&
-        triggerRef.current &&
-        !triggerRef.current.contains(e.target as Node)
-      ) {
-        onClose()
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isOpen, onClose, triggerRef])
-
   /* Handle status selection: Call onSelect (await if async) and close popover after save completes */
   const handleSelect = async (status: DisplayStatus) => {
     try {
       await onSelect(status)
-      /* Close popover only after save completes successfully */
       onClose()
     } catch (error) {
-      /* Keep popover open on error so user can try again */
       console.error('Error selecting status:', error)
     }
   }
 
   if (!isOpen) return null
 
-  return (
-    <>
-      {/* Popover: Compact dropdown positioned below status circle */}
-      <div
-        ref={popoverRef}
-        className="fixed z-50 rounded-lg border border-bonsai-slate-200 bg-white shadow-lg"
-        style={{
-          top: `${position.top}px`,
-          left: `${position.left}px`,
-        }}
-        role="menu"
-      >
-        {/* Status options: Compact vertical list with icon and label */}
-        <div className="flex flex-col p-1.5 min-w-[180px]">
-          {OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => handleSelect(opt.value)}
-              className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                value === opt.value
-                  ? 'bg-bonsai-sage-50 text-bonsai-slate-800'
-                  : 'bg-white text-bonsai-slate-800 hover:bg-bonsai-slate-50'
-              }`}
-            >
-              {/* Status circle icon: Shows visual representation of status */}
-              <StatusCircle status={opt.value} size={16} />
-              {/* Status label: Text label for the status */}
-              <span className="uppercase text-xs">{opt.label}</span>
-              {/* Checkmark: Show checkmark for selected status */}
-              {value === opt.value && (
-                <svg
-                  className="ml-auto w-4 h-4 text-bonsai-slate-800"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-              )}
-            </button>
-          ))}
-        </div>
+  /* Full-screen overlay (below popover) blocks all clicks from reaching the page;
+   * clicking the overlay closes the modal so the task row never receives a click. */
+  const overlay = (
+    <div
+      className="fixed inset-0 z-[9999]"
+      aria-hidden
+      onClick={onClose}
+    />
+  )
+
+  /* Popover above overlay; only overlay or popover receive clicks when open. */
+  const popover = (
+    <div
+      ref={popoverRef}
+      className="fixed z-[10000] rounded-lg border border-bonsai-slate-200 bg-white shadow-lg"
+      style={{
+        top: `${position.top}px`,
+        left: `${position.left}px`,
+      }}
+      role="menu"
+    >
+      {/* Status options: Compact vertical list with icon and label */}
+      <div className="flex flex-col p-1.5 min-w-[180px]">
+        {OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              void handleSelect(opt.value)
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+              value === opt.value
+                ? 'bg-bonsai-sage-50 text-bonsai-slate-800'
+                : 'bg-white text-bonsai-slate-800 hover:bg-bonsai-slate-50'
+            }`}
+          >
+            {/* Status circle icon: Shows visual representation of status */}
+            <StatusCircle status={opt.value} size={16} />
+            {/* Status label: Text label for the status */}
+            <span className="uppercase text-xs">{opt.label}</span>
+            {/* Checkmark: Show checkmark for selected status */}
+            {value === opt.value && (
+              <svg
+                className="ml-auto w-4 h-4 text-bonsai-slate-800"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+            )}
+          </button>
+        ))}
       </div>
-    </>
+    </div>
+  )
+
+  return createPortal(
+    <>
+      {overlay}
+      {popover}
+    </>,
+    document.body,
   )
 }

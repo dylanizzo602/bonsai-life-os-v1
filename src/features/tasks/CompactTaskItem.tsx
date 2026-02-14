@@ -12,6 +12,10 @@ import {
   ChevronDownIcon,
   HourglassIcon,
 } from '../../components/icons'
+import { InlineTitleInput } from '../../components/InlineTitleInput'
+import { Tooltip } from '../../components/Tooltip'
+import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
+import { isOverdue, formatStartDueDisplay } from './utils/date'
 import type { Task, TaskPriority, TaskStatus } from './types'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
@@ -32,6 +36,14 @@ export interface CompactTaskItemProps {
   isBlocking?: boolean
   /** Optional click handler for the entire item */
   onClick?: () => void
+  /** Optional right-click context menu (e.g. show task options popover) */
+  onContextMenu?: (e: React.MouseEvent) => void
+  /** When set, show inline text input to edit task title (Rename from context menu) */
+  inlineEditTitle?: {
+    value: string
+    onSave: (newTitle: string) => void | Promise<void>
+    onCancel: () => void
+  }
   /** Optional remove handler (shows × button) */
   onRemove?: () => void
   /** Optional handler for dependency icon click */
@@ -43,6 +55,7 @@ export interface CompactTaskItemProps {
 /** Map TaskStatus to display status for the status circle */
 function getDisplayStatus(status: TaskStatus): DisplayStatus {
   if (status === 'completed') return 'complete'
+  if (status === 'in_progress') return 'in_progress'
   return 'open'
 }
 
@@ -129,47 +142,27 @@ export function CompactTaskItem({
   isBlocked = false,
   isBlocking = false,
   onClick,
+  onContextMenu,
+  inlineEditTitle,
   onRemove,
   onDependencyClick,
-  formatDueDate,
+  formatDueDate: _formatDueDate,
 }: CompactTaskItemProps) {
   const displayStatus = getDisplayStatus(task.status)
-  /* Format date for display: use provided formatter or default. Date-only (YYYY-MM-DD) parsed as local. */
-  const defaultFormatDueDate = (iso: string | null | undefined): string | null => {
-    if (!iso) return null
-    const isDateOnly = !iso.includes('T')
-    const d = isDateOnly
-      ? (() => {
-          const [y, m, day] = iso.split('-').map(Number)
-          return new Date(y, (m ?? 1) - 1, day ?? 1)
-        })()
-      : new Date(iso)
-    if (isNaN(d.getTime())) return null
-    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    if (isDateOnly) return dateStr
-    const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0
-    if (hasTime) {
-      const timeStr = d.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-      })
-      return `${dateStr} at ${timeStr}`
-    }
-    return dateStr
-  }
-  const formatDate = formatDueDate ?? defaultFormatDueDate
-  const dateDisplay = formatDate(task.due_date ?? task.start_date)
+  /* Date display: single line for start/due (Starts Jan 1, Due Jan 3 at 5pm, Jan 1 - Jan 3 at 5pm, etc.) */
+  const dateDisplay = formatStartDueDisplay(task.start_date, task.due_date)
+  const isDueOverdue = Boolean(task.due_date && isOverdue(task.due_date))
   const isRecurring = Boolean(task.recurrence_pattern)
   const priority: TaskPriority = task.priority ?? 'medium'
   const tagDisplay = task.tags?.[0] ?? null
 
   return (
     <div
-      className="compact-task-item rounded-lg border border-dashed border-amber-200 bg-white px-3 py-2 shadow-sm"
+      className="compact-task-item rounded-lg border border-dashed border-bonsai-slate-200 bg-white px-3 py-2 shadow-sm"
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
+      onContextMenu={onContextMenu}
       onKeyDown={
         onClick
           ? (e) => {
@@ -204,10 +197,19 @@ export function CompactTaskItem({
         <div className="shrink-0">
           <TaskStatusIndicator status={displayStatus} />
         </div>
-        {/* Task name */}
-        <span className="text-sm font-medium text-bonsai-slate-800 truncate flex-1">
-          {task.title}
-        </span>
+        {/* Task name: or inline edit input when renaming */}
+        {inlineEditTitle ? (
+          <InlineTitleInput
+            value={inlineEditTitle.value}
+            onSave={inlineEditTitle.onSave}
+            onCancel={inlineEditTitle.onCancel}
+            className="min-w-0 flex-1 text-sm font-medium text-bonsai-slate-800 border border-bonsai-sage-400 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500"
+          />
+        ) : (
+          <span className="text-sm font-medium text-bonsai-slate-800 truncate flex-1">
+            {task.title}
+          </span>
+        )}
         {/* Remove button */}
         {onRemove && (
           <button
@@ -287,16 +289,29 @@ export function CompactTaskItem({
               : `${Math.floor(task.time_estimate / 60)}h${task.time_estimate % 60 ? ` ${task.time_estimate % 60}m` : ''}`}
           </span>
         )}
-        {/* Start/due date */}
+        {/* Start/due date: tooltip with frequency when recurring */}
         {dateDisplay && (
-          <span className="flex items-center gap-1 text-bonsai-slate-600 shrink-0 min-w-0 max-w-full">
-            {isRecurring ? (
-              <RepeatIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
-            ) : (
+          isRecurring ? (
+            <Tooltip
+              content={
+                <span className="text-secondary text-bonsai-slate-800">
+                  {formatRecurrenceForTooltip(parseRecurrencePattern(task.recurrence_pattern))}
+                </span>
+              }
+              position="top"
+              size="sm"
+            >
+              <span className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${isDueOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-600'}`}>
+                <RepeatIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                <span className="truncate">{dateDisplay}</span>
+              </span>
+            </Tooltip>
+          ) : (
+            <span className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${isDueOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-600'}`}>
               <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
-            )}
-            <span className="truncate">{dateDisplay}</span>
-          </span>
+              <span className="truncate">{dateDisplay}</span>
+            </span>
+          )
         )}
         {/* Priority flag */}
         <span className={`shrink-0 ${getPriorityFlagClasses(priority)}`}>

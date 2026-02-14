@@ -42,12 +42,14 @@ type DisplayStatus = 'open' | 'in_progress' | 'complete'
 /** Map TaskStatus to display status for the status circle */
 function getDisplayStatus(status: TaskStatus): DisplayStatus {
   if (status === 'completed') return 'complete'
+  if (status === 'in_progress') return 'in_progress'
   return 'open'
 }
 
 /** Map DisplayStatus back to TaskStatus for database updates */
 function getTaskStatus(displayStatus: DisplayStatus): TaskStatus {
   if (displayStatus === 'complete') return 'completed'
+  if (displayStatus === 'in_progress') return 'in_progress'
   return 'active'
 }
 
@@ -170,6 +172,7 @@ export function AddEditTaskModal({
   const [description, setDescription] = useState('')
   const [start_date, setStartDate] = useState<string | null>(null)
   const [due_date, setDueDate] = useState<string | null>(null)
+  const [recurrence_pattern, setRecurrencePattern] = useState<string | null>(null)
   const [priority, setPriority] = useState<TaskPriority>('medium')
   const [tags, setTags] = useState<Tag[]>([])
   const [time_estimate, setTimeEstimate] = useState<number | null>(null)
@@ -217,6 +220,7 @@ export function AddEditTaskModal({
       setDescription(task.description ?? '')
       setStartDate(task.start_date ?? null)
       setDueDate(task.due_date ?? null)
+      setRecurrencePattern(task.recurrence_pattern ?? null)
       setPriority(task.priority ?? 'medium')
       setTags(Array.isArray(task.tags) ? task.tags : [])
       setTimeEstimate(task.time_estimate ?? null)
@@ -227,6 +231,7 @@ export function AddEditTaskModal({
       setDescription('')
       setStartDate(null)
       setDueDate(null)
+      setRecurrencePattern(null)
       setPriority('medium')
       setTags([])
       setTimeEstimate(null)
@@ -246,6 +251,7 @@ export function AddEditTaskModal({
           description: description.trim() || null,
           start_date: start_date || null,
           due_date: due_date || null,
+          recurrence_pattern: recurrence_pattern ?? null,
           priority,
           time_estimate,
           attachments: attachments.length ? attachments : undefined,
@@ -268,6 +274,7 @@ export function AddEditTaskModal({
         description: description.trim() || null,
         start_date: start_date || null,
         due_date: due_date || null,
+        recurrence_pattern: recurrence_pattern ?? null,
         priority,
         time_estimate,
         attachments: attachments.length ? attachments : undefined,
@@ -279,18 +286,18 @@ export function AddEditTaskModal({
         await setTagsForTask(createdTask.id, tags.map((t) => t.id))
         if (onCreatedTask) {
           onCreatedTask({ ...createdTask, tags })
-          /* Modal stays open in edit mode; parent sets task to result */
-        } else {
-          setTitle('')
-          setDescription('')
-          setStartDate(null)
-          setDueDate(null)
-          setPriority('medium')
-          setTags([])
-          setTimeEstimate(null)
-          setAttachments([])
-          onClose()
         }
+        /* Always close modal and reset form after creating a task */
+        setTitle('')
+        setDescription('')
+        setStartDate(null)
+        setDueDate(null)
+        setRecurrencePattern(null)
+        setPriority('medium')
+        setTags([])
+        setTimeEstimate(null)
+        setAttachments([])
+        onClose()
       }
     } catch {
       // Error handled by parent
@@ -433,18 +440,31 @@ export function AddEditTaskModal({
         onClose={() => setDatePickerOpen(false)}
         startDate={start_date}
         dueDate={due_date}
-        onSave={(start, due) => {
+        onSave={(start, due, rec) => {
           setStartDate(start)
           setDueDate(due)
+          setRecurrencePattern(rec ?? null)
         }}
         triggerRef={datePickerButtonRef}
+        recurrencePattern={recurrence_pattern}
+        hasChecklists={(checklists?.length ?? 0) > 0}
       />
       <StatusPickerModal
         isOpen={statusPickerOpen}
         onClose={() => setStatusPickerOpen(false)}
         value={status}
         triggerRef={statusButtonRef}
-        onSelect={setStatus}
+        onSelect={async (newStatus) => {
+          setStatus(newStatus)
+          /* In edit mode, persist status immediately so the change is saved without requiring Save */
+          if (isEditMode && task?.id && onUpdateTask) {
+            try {
+              await onUpdateTask(task.id, { status: getTaskStatus(newStatus) })
+            } catch {
+              // Error handled by parent; keep local state so user can try Save or pick again
+            }
+          }
+        }}
       />
       <PriorityPickerModal
         isOpen={priorityOpen}

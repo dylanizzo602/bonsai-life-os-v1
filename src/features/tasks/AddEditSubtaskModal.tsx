@@ -41,12 +41,14 @@ type DisplayStatus = 'open' | 'in_progress' | 'complete'
 /** Map TaskStatus to display status for the status circle */
 function getDisplayStatus(status: TaskStatus): DisplayStatus {
   if (status === 'completed') return 'complete'
+  if (status === 'in_progress') return 'in_progress'
   return 'open'
 }
 
 /** Map DisplayStatus back to TaskStatus for database updates */
 function getTaskStatus(displayStatus: DisplayStatus): TaskStatus {
   if (displayStatus === 'complete') return 'completed'
+  if (displayStatus === 'in_progress') return 'in_progress'
   return 'active'
 }
 
@@ -158,6 +160,7 @@ export function AddEditSubtaskModal({
   const [description, setDescription] = useState('')
   const [start_date, setStartDate] = useState<string | null>(null)
   const [due_date, setDueDate] = useState<string | null>(null)
+  const [recurrence_pattern, setRecurrencePattern] = useState<string | null>(null)
   const [priority, setPriority] = useState<TaskPriority>('medium')
   const [tags, setTags] = useState<Tag[]>([])
   const [time_estimate, setTimeEstimate] = useState<number | null>(null)
@@ -205,6 +208,7 @@ export function AddEditSubtaskModal({
       setDescription(subtask.description ?? '')
       setStartDate(subtask.start_date ?? null)
       setDueDate(subtask.due_date ?? null)
+      setRecurrencePattern(subtask.recurrence_pattern ?? null)
       setPriority(subtask.priority ?? 'medium')
       setTags(Array.isArray(subtask.tags) ? subtask.tags : [])
       setTimeEstimate(subtask.time_estimate ?? null)
@@ -215,6 +219,7 @@ export function AddEditSubtaskModal({
       setDescription('')
       setStartDate(null)
       setDueDate(null)
+      setRecurrencePattern(null)
       setPriority('medium')
       setTags([])
       setTimeEstimate(null)
@@ -234,6 +239,7 @@ export function AddEditSubtaskModal({
           description: description.trim() || null,
           start_date: start_date || null,
           due_date: due_date || null,
+          recurrence_pattern: recurrence_pattern ?? null,
           priority,
           time_estimate,
           attachments: attachments.length ? attachments : undefined,
@@ -256,6 +262,7 @@ export function AddEditSubtaskModal({
         description: description.trim() || null,
         start_date: start_date || null,
         due_date: due_date || null,
+        recurrence_pattern: recurrence_pattern ?? null,
         priority,
         time_estimate,
         attachments: attachments.length ? attachments : undefined,
@@ -421,18 +428,31 @@ export function AddEditSubtaskModal({
         onClose={() => setStatusPickerOpen(false)}
         value={status}
         triggerRef={statusButtonRef}
-        onSelect={setStatus}
+        onSelect={async (newStatus) => {
+          setStatus(newStatus)
+          /* In edit mode, persist status immediately so the change is saved without requiring Save */
+          if (isEditMode && subtask?.id && onUpdateTask) {
+            try {
+              await onUpdateTask(subtask.id, { status: getTaskStatus(newStatus) })
+            } catch {
+              // Error handled by parent; keep local state so user can try Save or pick again
+            }
+          }
+        }}
       />
       <DatePickerModal
         isOpen={datePickerOpen}
         onClose={() => setDatePickerOpen(false)}
         startDate={start_date}
         dueDate={due_date}
-        onSave={(start, due) => {
+        onSave={(start, due, rec) => {
           setStartDate(start)
           setDueDate(due)
+          setRecurrencePattern(rec ?? null)
         }}
         triggerRef={datePickerButtonRef}
+        recurrencePattern={recurrence_pattern}
+        hasChecklists={(checklists?.length ?? 0) > 0}
       />
       <PriorityPickerModal
         isOpen={priorityOpen}

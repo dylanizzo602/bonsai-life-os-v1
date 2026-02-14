@@ -142,29 +142,27 @@ export function Tooltip({
   }
 
   /* Helper function: Check if content is valid and non-empty */
-  const hasValidContent = () => {
+  const hasValidContent = (): boolean => {
     if (!content) return false
     if (typeof content === 'string') {
       return content.trim().length > 0
     }
-    /* For ReactNode (JSX elements), check if it's null, undefined, false, or empty */
-    if (content === null || content === undefined || content === false) {
-      return false
-    }
+    /* For ReactNode: null and undefined are considered empty (!content already caught false, 0, '') */
+    if (content == null) return false
     /* If it's a React element, check if it has children or props that indicate content */
     if (React.isValidElement(content)) {
-      const element = content as React.ReactElement
-      /* Check if element has children */
-      if (element.props?.children) {
+      const element = content as React.ReactElement<{ children?: ReactNode }>
+      const propsChildren = element.props?.children
+      if (propsChildren != null) {
         /* If children is an array, check if it has any non-empty items */
-        if (Array.isArray(element.props.children)) {
-          return element.props.children.some((child: any) => 
-            child !== null && child !== undefined && child !== false && child !== ''
+        if (Array.isArray(propsChildren)) {
+          return propsChildren.some(
+            (child: ReactNode) =>
+              child != null && child !== false && child !== ''
           )
         }
         /* If children is a single item, check if it's not empty */
-        const children = element.props.children
-        return children !== null && children !== undefined && children !== false && children !== ''
+        return propsChildren !== false && propsChildren !== ''
       }
       /* If no children but element exists, consider it valid (might be self-closing with content) */
       return true
