@@ -172,6 +172,7 @@ export function AddEditTaskModal({
   const [description, setDescription] = useState('')
   const [start_date, setStartDate] = useState<string | null>(null)
   const [due_date, setDueDate] = useState<string | null>(null)
+  const [recurrence_pattern, setRecurrencePattern] = useState<string | null>(null)
   const [priority, setPriority] = useState<TaskPriority>('medium')
   const [tags, setTags] = useState<Tag[]>([])
   const [time_estimate, setTimeEstimate] = useState<number | null>(null)
@@ -219,6 +220,7 @@ export function AddEditTaskModal({
       setDescription(task.description ?? '')
       setStartDate(task.start_date ?? null)
       setDueDate(task.due_date ?? null)
+      setRecurrencePattern(task.recurrence_pattern ?? null)
       setPriority(task.priority ?? 'medium')
       setTags(Array.isArray(task.tags) ? task.tags : [])
       setTimeEstimate(task.time_estimate ?? null)
@@ -229,6 +231,7 @@ export function AddEditTaskModal({
       setDescription('')
       setStartDate(null)
       setDueDate(null)
+      setRecurrencePattern(null)
       setPriority('medium')
       setTags([])
       setTimeEstimate(null)
@@ -248,6 +251,7 @@ export function AddEditTaskModal({
           description: description.trim() || null,
           start_date: start_date || null,
           due_date: due_date || null,
+          recurrence_pattern: recurrence_pattern ?? null,
           priority,
           time_estimate,
           attachments: attachments.length ? attachments : undefined,
@@ -270,6 +274,7 @@ export function AddEditTaskModal({
         description: description.trim() || null,
         start_date: start_date || null,
         due_date: due_date || null,
+        recurrence_pattern: recurrence_pattern ?? null,
         priority,
         time_estimate,
         attachments: attachments.length ? attachments : undefined,
@@ -287,6 +292,7 @@ export function AddEditTaskModal({
         setDescription('')
         setStartDate(null)
         setDueDate(null)
+        setRecurrencePattern(null)
         setPriority('medium')
         setTags([])
         setTimeEstimate(null)
@@ -434,11 +440,14 @@ export function AddEditTaskModal({
         onClose={() => setDatePickerOpen(false)}
         startDate={start_date}
         dueDate={due_date}
-        onSave={(start, due) => {
+        onSave={(start, due, rec) => {
           setStartDate(start)
           setDueDate(due)
+          setRecurrencePattern(rec ?? null)
         }}
         triggerRef={datePickerButtonRef}
+        recurrencePattern={recurrence_pattern}
+        hasChecklists={(checklists?.length ?? 0) > 0}
       />
       <StatusPickerModal
         isOpen={statusPickerOpen}

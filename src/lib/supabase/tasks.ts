@@ -1,6 +1,7 @@
 /* Task data access layer: Supabase queries for CRUD on tasks, checklists, and dependencies */
 import { supabase } from './client'
 import { getTagsForTask } from './tags'
+import { parseRecurrencePattern, getNextOccurrence } from '../recurrence'
 import type {
   Task,
   Tag,
@@ -136,6 +137,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     attachments: input.attachments ?? [],
     parent_id: input.parent_id ?? null,
     user_id: input.user_id ?? null,
+    recurrence_pattern: input.recurrence_pattern ?? null,
   }
 
   const { data, error } = await supabase
@@ -213,13 +215,123 @@ export async function deleteTask(id: string): Promise<void> {
   }
 }
 
+/** Parse YYYY-MM-DD or ISO string to date-only for recurrence */
+function toDateOnly(iso: string | null): string | null {
+  if (!iso) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso
+  const d = new Date(iso)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** Add days to YYYY-MM-DD, return YYYY-MM-DD */
+function addDays(ymd: string, n: number): string {
+  const d = new Date(ymd + 'T12:00:00')
+  d.setDate(d.getDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
 /**
- * Toggle task completion status
+ * Toggle task completion status.
+ * When completing a recurring task: advance dates, set status back to active, optionally reopen checklist items.
  */
 export async function toggleTaskComplete(id: string, completed: boolean): Promise<Task> {
+  if (!completed) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ status: 'active', completed_at: null })
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) {
+      console.error('Error toggling task completion:', error)
+      throw error
+    }
+    const task = data as Task
+    const tags = await getTagsForTask(id)
+    return { ...task, tags, attachments: Array.isArray(task.attachments) ? task.attachments : [] }
+  }
+
+  /* Fetch task to check recurrence */
+  const { data: existing, error: fetchError } = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (fetchError || !existing) {
+    console.error('Error fetching task:', fetchError)
+    throw fetchError ?? new Error('Task not found')
+  }
+
+  const task = existing as Task
+  const pattern = parseRecurrencePattern(task.recurrence_pattern)
+
+  if (!pattern) {
+    /* Non-recurring: mark completed */
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ status: 'completed', completed_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) {
+      console.error('Error toggling task completion:', error)
+      throw error
+    }
+    const updated = data as Task
+    const tags = await getTagsForTask(id)
+    return { ...updated, tags, attachments: Array.isArray(updated.attachments) ? updated.attachments : [] }
+  }
+
+  /* Recurring: advance due_date, maintain start_date offset, set status=active */
+  const dueYMD = toDateOnly(task.due_date)
+  if (!dueYMD) {
+    /* No due date: just mark completed (fallback) */
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ status: 'completed', completed_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) throw error
+    const updated = data as Task
+    const tags = await getTagsForTask(id)
+    return { ...updated, tags, attachments: Array.isArray(updated.attachments) ? updated.attachments : [] }
+  }
+
+  const nextDueYMD = getNextOccurrence(pattern, dueYMD)
+  if (!nextDueYMD) {
+    /* No next occurrence (e.g. past until): mark completed */
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ status: 'completed', completed_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) throw error
+    const updated = data as Task
+    const tags = await getTagsForTask(id)
+    return { ...updated, tags, attachments: Array.isArray(updated.attachments) ? updated.attachments : [] }
+  }
+
+  /* Compute start offset: days from start to due */
+  const startYMD = toDateOnly(task.start_date)
+  let nextStartYMD: string | null = null
+  if (startYMD) {
+    const startDate = new Date(startYMD + 'T12:00:00')
+    const dueDate = new Date(dueYMD + 'T12:00:00')
+    const offsetDays = Math.round((dueDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000))
+    nextStartYMD = addDays(nextDueYMD, -offsetDays)
+  }
+
   const updateData: Record<string, unknown> = {
-    status: completed ? 'completed' : 'active',
-    completed_at: completed ? new Date().toISOString() : null,
+    status: 'active',
+    completed_at: null,
+    due_date: nextDueYMD,
+    start_date: nextStartYMD,
   }
 
   const { data, error } = await supabase
@@ -230,17 +342,26 @@ export async function toggleTaskComplete(id: string, completed: boolean): Promis
     .single()
 
   if (error) {
-    console.error('Error toggling task completion:', error)
+    console.error('Error advancing recurring task:', error)
     throw error
   }
 
-  const task = data as Task
-  const tags = await getTagsForTask(id)
-  return {
-    ...task,
-    tags,
-    attachments: Array.isArray(task.attachments) ? task.attachments : [],
+  /* Reopen checklist items if option is set */
+  if (pattern.reopenChecklist) {
+    const checklists = await getTaskChecklists(id)
+    for (const cl of checklists) {
+      const items = await getTaskChecklistItems(cl.id)
+      for (const item of items) {
+        if (item.completed) {
+          await toggleChecklistItemComplete(item.id, false)
+        }
+      }
+    }
   }
+
+  const updated = data as Task
+  const tags = await getTagsForTask(id)
+  return { ...updated, tags, attachments: Array.isArray(updated.attachments) ? updated.attachments : [] }
 }
 
 /**

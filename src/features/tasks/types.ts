@@ -92,6 +92,7 @@ export interface CreateTaskInput {
   time_estimate?: number | null
   attachments?: TaskAttachment[]
   status?: TaskStatus
+  recurrence_pattern?: string | null
 }
 
 /** Input for updating an existing task (all optional). Tags are managed via addTagToTask/removeTagFromTask. */

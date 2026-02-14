@@ -1,5 +1,6 @@
 /* Reminder data access layer: Supabase CRUD for reminders */
 import { supabase } from './client'
+import { parseRecurrencePattern, getNextOccurrence } from '../recurrence'
 import type { Reminder, CreateReminderInput, UpdateReminderInput } from '../../features/reminders/types'
 
 /**
@@ -18,10 +19,11 @@ export async function getReminders(): Promise<Reminder[]> {
     throw error
   }
 
-  /* Ensure deleted is always boolean (default false for pre-migration rows) */
-  return ((data ?? []) as (Reminder & { deleted?: boolean })[]).map((r) => ({
+  /* Ensure deleted and recurrence_pattern for pre-migration rows */
+  return ((data ?? []) as (Reminder & { deleted?: boolean; recurrence_pattern?: string | null })[]).map((r) => ({
     ...r,
     deleted: r.deleted ?? false,
+    recurrence_pattern: r.recurrence_pattern ?? null,
   })) as Reminder[]
 }
 
@@ -33,6 +35,7 @@ export async function createReminder(input: CreateReminderInput): Promise<Remind
     name: input.name,
     user_id: input.user_id ?? null,
     remind_at: input.remind_at ?? null,
+    recurrence_pattern: input.recurrence_pattern ?? null,
   }
 
   const { data, error } = await supabase
@@ -56,6 +59,7 @@ export async function updateReminder(id: string, input: UpdateReminderInput): Pr
   const updateData: Record<string, unknown> = {}
   if (input.name !== undefined) updateData.name = input.name
   if (input.remind_at !== undefined) updateData.remind_at = input.remind_at
+  if (input.recurrence_pattern !== undefined) updateData.recurrence_pattern = input.recurrence_pattern
   if (input.completed !== undefined) updateData.completed = input.completed
   if (input.deleted !== undefined) updateData.deleted = input.deleted
 
@@ -86,9 +90,57 @@ export async function deleteReminder(id: string): Promise<void> {
   }
 }
 
+/** Parse ISO or date string to YYYY-MM-DD for recurrence */
+function toDateOnly(iso: string | null): string | null {
+  if (!iso) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso
+  const d = new Date(iso)
+  return d.toISOString().slice(0, 10)
+}
+
 /**
  * Toggle reminder completion status.
+ * When completing a recurring reminder: advance remind_at, set completed=false (reopens for next occurrence).
  */
 export async function toggleReminderComplete(id: string, completed: boolean): Promise<Reminder> {
-  return updateReminder(id, { completed })
+  if (!completed) {
+    return updateReminder(id, { completed: false })
+  }
+
+  /* Fetch reminder to check recurrence */
+  const { data: existing, error: fetchError } = await supabase
+    .from('reminders')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (fetchError || !existing) {
+    console.error('Error fetching reminder:', fetchError)
+    throw fetchError ?? new Error('Reminder not found')
+  }
+
+  const reminder = existing as Reminder
+  const pattern = parseRecurrencePattern(reminder.recurrence_pattern ?? null)
+
+  if (!pattern) {
+    return updateReminder(id, { completed: true })
+  }
+
+  /* Recurring: advance remind_at to next occurrence, keep completed=false */
+  const dueYMD = toDateOnly(reminder.remind_at)
+  if (!dueYMD) {
+    return updateReminder(id, { completed: true })
+  }
+
+  const nextDueYMD = getNextOccurrence(pattern, dueYMD)
+  if (!nextDueYMD) {
+    return updateReminder(id, { completed: true })
+  }
+
+  /* Preserve time from original remind_at; use noon if date-only */
+  const orig = reminder.remind_at
+  const timePart = orig && orig.includes('T') ? orig.slice(11, 19) : '12:00:00'
+  const nextRemindAt = `${nextDueYMD}T${timePart}`
+
+  return updateReminder(id, { remind_at: nextRemindAt, completed: false })
 }

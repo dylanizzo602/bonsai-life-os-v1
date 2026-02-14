@@ -1,17 +1,25 @@
-/* SingleDatePickerModal: Popover for one date and time (quick options + calendar), for reminders */
+/* SingleDatePickerModal: Popover for one date, time, and recurring settings; for reminders */
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Button } from '../../../components/Button'
 import { TimePickerModal } from '../../tasks/modals/TimePickerModal'
+import { RecurringSettingsSection } from '../../tasks/modals/RecurringSettingsSection'
+import {
+  parseRecurrencePattern,
+  serializeRecurrencePattern,
+  getFutureOccurrences,
+} from '../../../lib/recurrence'
 
 export interface SingleDatePickerModalProps {
   isOpen: boolean
   onClose: () => void
   /** Current value as ISO datetime string (or null) */
   value: string | null
-  onSave: (iso: string | null) => void | Promise<void>
+  onSave: (iso: string | null, recurrencePattern: string | null) => void | Promise<void>
   /** Reference to the trigger element for popover positioning */
   triggerRef: React.RefObject<HTMLElement | null>
+  /** Current recurrence pattern (JSON string); optional */
+  recurrencePattern?: string | null
 }
 
 /** Parse ISO string to YYYY-MM-DD */
@@ -266,10 +274,16 @@ export function SingleDatePickerModal({
   value,
   onSave,
   triggerRef,
+  recurrencePattern: recurrencePatternProp,
 }: SingleDatePickerModalProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
   const timeTriggerRef = useRef<HTMLButtonElement>(null)
   const [position, setPosition] = useState({ top: 0, left: 0 })
+
+  /* Recurrence: parsed pattern for RecurringSettingsSection */
+  const [recurrencePattern, setRecurrencePattern] = useState(parseRecurrencePattern(recurrencePatternProp ?? null))
+  /* Toggle: show suggested dates (default) vs recurring settings in left column */
+  const [showRecurringSection, setShowRecurringSection] = useState(false)
 
   const [date, setDate] = useState('')
   const [time, setTime] = useState('')
@@ -338,9 +352,11 @@ export function SingleDatePickerModal({
       setDateEdit(d ? formatDateDisplay(d) : '')
       setTimeEdit(t ? formatTimeDisplay(t) : '')
       setShowTime(!!t)
+      setRecurrencePattern(parseRecurrencePattern(recurrencePatternProp ?? null))
+      setShowRecurringSection(Boolean(recurrencePatternProp))
       setViewMonth(value ? new Date(value) : new Date())
     }
-  }, [isOpen, value])
+  }, [isOpen, value, recurrencePatternProp])
 
   useEffect(() => {
     setDateEdit(date ? formatDateDisplay(date) : '')
@@ -350,15 +366,28 @@ export function SingleDatePickerModal({
   const calendarCells = useMemo(() => getCalendarCells(viewMonth), [viewMonth])
   const viewMonthLabel = `${MONTH_NAMES[viewMonth.getMonth()]} ${viewMonth.getFullYear()}`
 
+  /* Future recurrence occurrences for calendar shading; exclude past dates */
+  const futureOccurrencesSet = useMemo(() => {
+    if (!recurrencePattern || !date) return new Set<string>()
+    const cells = calendarCells
+    if (cells.length === 0) return new Set<string>()
+    const firstDate = new Date(cells[0].date)
+    const lastDate = new Date(cells[cells.length - 1].date)
+    const occurrences = getFutureOccurrences(recurrencePattern, date, firstDate, lastDate)
+    const today = todayYMD()
+    return new Set(occurrences.filter((ymd) => ymd >= today))
+  }, [recurrencePattern, date, calendarCells])
+
   const handleSave = async () => {
+    const recurrenceStr = serializeRecurrencePattern(recurrencePattern)
     if (!date) {
-      const result = onSave(null)
+      const result = onSave(null, recurrenceStr)
       if (result instanceof Promise) await result
       onClose()
       return
     }
     const iso = toISO(date, showTime ? time : '09:00')
-    const result = onSave(iso)
+    const result = onSave(iso, recurrenceStr)
     if (result instanceof Promise) {
       try {
         await result
@@ -372,14 +401,15 @@ export function SingleDatePickerModal({
   }
 
   const applyDate = (ymd: string | null, isLater = false) => {
-    if (isLater) {
-      const { date: d, time: t } = getOneHourFromNow()
-      setDate(d)
-      setTime(t)
-      setShowTime(true)
-    } else if (ymd) {
+    if (ymd) {
       setDate(ymd)
-      if (!showTime) setTime('09:00')
+      if (isLater) {
+        const { time: t } = getOneHourFromNow()
+        setTime(t)
+        setShowTime(true)
+      } else if (!showTime) {
+        setTime('09:00')
+      }
     } else {
       setDate('')
       setTime('')
@@ -399,7 +429,9 @@ export function SingleDatePickerModal({
   const getCellClass = (ymd: string) => {
     const isToday = ymd === todayYMD()
     const isSelected = ymd === date
+    const isRecurrenceOccurrence = futureOccurrencesSet.has(ymd)
     if (isSelected) return 'bg-bonsai-sage-600 text-white hover:bg-bonsai-sage-700'
+    if (isRecurrenceOccurrence) return 'bg-bonsai-sage-100 text-bonsai-slate-700 hover:bg-bonsai-sage-200'
     if (isToday) return 'bg-bonsai-slate-200 text-bonsai-slate-800 hover:bg-bonsai-slate-300'
     return 'text-bonsai-slate-700 hover:bg-bonsai-slate-100'
   }
@@ -506,36 +538,45 @@ export function SingleDatePickerModal({
         )}
       </div>
 
-      {/* Quick options (left) and calendar (right) */}
-      <div className="grid grid-cols-1 md:grid-cols-[11rem_1fr] gap-6 md:gap-8">
-        <div className="hidden md:flex flex-col">
-          {QUICK_OPTIONS.map((opt) => {
-            const optDate = opt.getDate()
-            const suffix = getQuickOptionSuffix(optDate, opt.isLater)
-            return (
+      {/* Left column: suggested dates (default) or recurring settings */}
+      <div className="grid grid-cols-1 md:grid-cols-[14rem_1fr] gap-6 md:gap-8">
+        <div className="flex flex-col min-w-0 gap-2">
+          {showRecurringSection ? (
+            <RecurringSettingsSection
+              value={recurrencePattern}
+              onChange={setRecurrencePattern}
+              hasChecklists={false}
+              anchorDueDate={date || undefined}
+            />
+          ) : (
+            <>
+              {QUICK_OPTIONS.map((opt) => {
+                const ymd = opt.getDate()
+                const suffix = getQuickOptionSuffix(ymd, opt.isLater)
+                return (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onClick={() => applyDate(ymd ?? null, opt.isLater)}
+                    className="text-left text-secondary text-bonsai-slate-700 hover:text-bonsai-sage-700 hover:bg-bonsai-slate-100 rounded px-2 py-1.5 transition-colors"
+                  >
+                    {opt.label}
+                    {suffix && <span className="text-bonsai-slate-500 ml-1">{suffix}</span>}
+                  </button>
+                )
+              })}
               <button
-                key={opt.label}
                 type="button"
-                onClick={() => applyDate(optDate, opt.isLater)}
-                className="flex items-center justify-between gap-3 rounded px-2 py-2 text-left text-secondary text-bonsai-slate-700 hover:bg-bonsai-slate-100 w-full"
+                onClick={() => setShowRecurringSection(true)}
+                className="text-secondary text-bonsai-sage-600 hover:text-bonsai-sage-700 flex items-center gap-1.5 mt-1 px-2 py-1.5 rounded hover:bg-bonsai-slate-100 transition-colors self-start"
               >
-                <span>{opt.label}</span>
-                <span className="text-secondary text-bonsai-slate-500 shrink-0 min-w-[3.25rem] text-right">{suffix}</span>
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Set Recurring
               </button>
-            )
-          })}
-          {/* Recurring: at bottom of suggested dates, same as task start/due date picker */}
-          <button
-            type="button"
-            onClick={() => {}}
-            className="mt-2 flex items-center justify-between gap-2 rounded px-2 py-2 text-secondary text-bonsai-slate-600 hover:bg-bonsai-slate-100 w-full border-0 bg-transparent"
-            aria-label="Set recurring (not yet implemented)"
-          >
-            <span>Set Recurring</span>
-            <svg className="w-4 h-4 text-bonsai-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
+            </>
+          )}
         </div>
 
         <div className="min-w-0 flex flex-col">

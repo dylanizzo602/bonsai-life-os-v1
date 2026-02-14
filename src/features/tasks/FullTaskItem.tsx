@@ -30,6 +30,7 @@ import { TaskDependenciesPopover } from './modals/TaskDependenciesPopover'
 import { TabletTaskItem } from './TabletTaskItem'
 import { useTags } from './hooks/useTags'
 import { isOverdue, formatStartDueDisplay, isPastStartDate } from './utils/date'
+import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
 import type { Task, TaskPriority, TaskStatus, UpdateTaskInput } from './types'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
@@ -614,18 +615,20 @@ export function FullTaskItem({
         )}
         {(dateDisplay || onUpdateTask) && (
           (() => {
-            /* Tooltip content: Start and/or due date lines when task has dates (full task view only) */
+            /* Tooltip content: For recurring, show frequency; otherwise start/due dates */
+            const recurrenceLabel = isRecurring ? formatRecurrenceForTooltip(parseRecurrencePattern(task.recurrence_pattern)) : ''
             const startFormatted = formatDateForTooltip(task.start_date)
             const dueFormatted = formatDateForTooltip(task.due_date)
-            const dateTooltipContent =
-              startFormatted || dueFormatted ? (
-                <div className="text-center text-secondary text-bonsai-slate-800">
-                  {startFormatted && (
-                    <div>{isPastStartDate(task.start_date) ? 'Started' : 'Starts'} {startFormatted}</div>
-                  )}
-                  {dueFormatted && <div>Due on {dueFormatted}</div>}
-                </div>
-              ) : null
+            const dateTooltipContent = recurrenceLabel ? (
+              <div className="text-center text-secondary text-bonsai-slate-800">{recurrenceLabel}</div>
+            ) : startFormatted || dueFormatted ? (
+              <div className="text-center text-secondary text-bonsai-slate-800">
+                {startFormatted && (
+                  <div>{isPastStartDate(task.start_date) ? 'Started' : 'Starts'} {startFormatted}</div>
+                )}
+                {dueFormatted && <div>Due on {dueFormatted}</div>}
+              </div>
+            ) : null
             const dateButton = (
               <button
                 ref={dateButtonRef}
@@ -791,11 +794,12 @@ export function FullTaskItem({
           onClose={() => setIsDatePickerModalOpen(false)}
           startDate={task.start_date}
           dueDate={task.due_date}
-          onSave={async (start, due) => {
+          onSave={async (start, due, recurrencePattern) => {
             try {
               await onUpdateTask(task.id, {
                 start_date: start,
                 due_date: due,
+                recurrence_pattern: recurrencePattern ?? null,
               })
             } catch (error) {
               console.error('Failed to update dates:', error)
@@ -803,6 +807,8 @@ export function FullTaskItem({
             }
           }}
           triggerRef={dateButtonRef}
+          recurrencePattern={task.recurrence_pattern}
+          hasChecklists={(checklistSummary?.total ?? 0) > 0}
         />
       )}
       {/* Task dependencies popover: Opens when dependency icon is clicked, separate from edit modal */}

@@ -1,17 +1,27 @@
-/* DatePickerModal: Popover for start/due date and optional time (quick options + calendar), positioned at trigger */
+/* DatePickerModal: Popover for start/due date, recurring settings, and calendar; positioned at trigger */
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Button } from '../../../components/Button'
 import { TimePickerModal } from './TimePickerModal'
+import { RecurringSettingsSection } from './RecurringSettingsSection'
+import {
+  parseRecurrencePattern,
+  serializeRecurrencePattern,
+  getFutureOccurrences,
+} from '../../../lib/recurrence'
 
 export interface DatePickerModalProps {
   isOpen: boolean
   onClose: () => void
   startDate: string | null
   dueDate: string | null
-  onSave: (start: string | null, due: string | null) => void | Promise<void>
+  onSave: (start: string | null, due: string | null, recurrencePattern: string | null) => void | Promise<void>
   /** Reference to the trigger element (e.g. date button) for popover positioning */
   triggerRef: React.RefObject<HTMLElement | null>
+  /** Current recurrence pattern (JSON string); optional */
+  recurrencePattern?: string | null
+  /** Whether the task has checklists (shows "Reopen checklist items" when true) */
+  hasChecklists?: boolean
 }
 
 /** Parse ISO string to date input value (YYYY-MM-DD) */
@@ -183,6 +193,15 @@ function getOneHourFromNow(): { date: string; time: string } {
   }
 }
 
+function addDays(d: Date, n: number): Date {
+  const out = new Date(d)
+  out.setDate(out.getDate() + n)
+  return out
+}
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTH_NAMES_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
 /** Quick option presets: label and optional date (null = clears date) */
 const QUICK_OPTIONS: { label: string; getDate: () => string | null; isLater?: boolean }[] = [
   { label: 'Today', getDate: () => todayYMD() },
@@ -194,12 +213,6 @@ const QUICK_OPTIONS: { label: string; getDate: () => string | null; isLater?: bo
   { label: '2 weeks', getDate: () => toYMD(addDays(new Date(), 14)) },
   { label: '4 weeks', getDate: () => toYMD(addDays(new Date(), 28)) },
 ]
-
-function addDays(d: Date, n: number): Date {
-  const out = new Date(d)
-  out.setDate(out.getDate() + n)
-  return out
-}
 
 function getSaturdayThisWeek(): string {
   const d = new Date()
@@ -222,34 +235,9 @@ function getSaturdayNextWeek(): string {
   return toYMD(addDays(d, sat))
 }
 
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const MONTH_NAMES_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-/** Format YYYY-MM-DD for display: Yesterday, Today, Tomorrow, day of week (within next 7 days), or "Mon d" */
-function formatDateDisplay(ymd: string): string {
-  const today = todayYMD()
-  const yesterday = toYMD(addDays(new Date(), -1))
-  const tomorrow = toYMD(addDays(new Date(), 1))
-  if (ymd === yesterday) return 'Yesterday'
-  if (ymd === today) return 'Today'
-  if (ymd === tomorrow) return 'Tomorrow'
-  const [y, m, d] = ymd.split('-').map(Number)
-  const date = new Date(y, m - 1, d)
-  const dayName = DAY_NAMES[date.getDay()]
-  const monthName = MONTH_NAMES_SHORT[date.getMonth()]
-  /* Within the next 7 days (today+2 through today+7): show day of week */
-  const todayDate = new Date()
-  todayDate.setHours(0, 0, 0, 0)
-  const diffMs = date.getTime() - todayDate.getTime()
-  const diffDays = Math.round(diffMs / (24 * 60 * 60 * 1000))
-  if (diffDays >= 2 && diffDays <= 7) return dayName
-  return `${monthName} ${d}`
-}
-
-/** Get display suffix for quick option list: time for "Later", day name for yesterday/today/tomorrow, else formatDateDisplay */
+/** Get display suffix for quick option list */
 function getQuickOptionSuffix(ymd: string | null, isLater = false): string {
   if (isLater) {
-    /* Later: show time one hour from now */
     const { time } = getOneHourFromNow()
     const [h, m] = time.split(':').map(Number)
     const hour12 = h % 12 || 12
@@ -272,6 +260,27 @@ function getQuickOptionSuffix(ymd: string | null, isLater = false): string {
     return DAY_NAMES[new Date(y, m - 1, d).getDay()]
   }
   return formatDateDisplay(ymd)
+}
+
+/** Format YYYY-MM-DD for display: Yesterday, Today, Tomorrow, day of week (within next 7 days), or "Mon d" */
+function formatDateDisplay(ymd: string): string {
+  const today = todayYMD()
+  const yesterday = toYMD(addDays(new Date(), -1))
+  const tomorrow = toYMD(addDays(new Date(), 1))
+  if (ymd === yesterday) return 'Yesterday'
+  if (ymd === today) return 'Today'
+  if (ymd === tomorrow) return 'Tomorrow'
+  const [y, m, d] = ymd.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  const dayName = DAY_NAMES[date.getDay()]
+  const monthName = MONTH_NAMES_SHORT[date.getMonth()]
+  /* Within the next 7 days (today+2 through today+7): show day of week */
+  const todayDate = new Date()
+  todayDate.setHours(0, 0, 0, 0)
+  const diffMs = date.getTime() - todayDate.getTime()
+  const diffDays = Math.round(diffMs / (24 * 60 * 60 * 1000))
+  if (diffDays >= 2 && diffDays <= 7) return dayName
+  return `${monthName} ${d}`
 }
 
 /** Calendar cell: date and whether it belongs to the viewed month */
@@ -336,6 +345,8 @@ export function DatePickerModal({
   dueDate,
   onSave,
   triggerRef,
+  recurrencePattern: recurrencePatternProp,
+  hasChecklists = false,
 }: DatePickerModalProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
   const startTimeTriggerRef = useRef<HTMLButtonElement>(null)
@@ -344,6 +355,11 @@ export function DatePickerModal({
 
   /* Time picker: which field's time picker is open ('start' | 'due' | null) */
   const [timePickerOpen, setTimePickerOpen] = useState<'start' | 'due' | null>(null)
+
+  /* Recurrence: parsed pattern for RecurringSettingsSection; synced when modal opens */
+  const [recurrencePattern, setRecurrencePattern] = useState(parseRecurrencePattern(recurrencePatternProp ?? null))
+  /* Left column: show suggested dates by default; show recurring settings when user clicks "Set Recurring" */
+  const [showRecurringSection, setShowRecurringSection] = useState(false)
 
   /* Date/time state: YYYY-MM-DD and optional HH:mm for start and due */
   const [start, setStart] = useState('')
@@ -433,9 +449,11 @@ export function DatePickerModal({
       setDueTimeEdit(dt ? formatTimeDisplay(dt) : '')
       setShowStartTime(!!st)
       setShowDueTime(!!dt)
+      setRecurrencePattern(parseRecurrencePattern(recurrencePatternProp ?? null))
+      setShowRecurringSection(Boolean(recurrencePatternProp))
       setViewMonth(startDate ? new Date(startDate) : dueDate ? new Date(dueDate) : new Date())
     }
-  }, [isOpen, startDate, dueDate])
+  }, [isOpen, startDate, dueDate, recurrencePatternProp])
 
   /* Sync edit buffers: display formatDateDisplay when valid (Today, Tomorrow, day name, etc.) */
   useEffect(() => {
@@ -459,6 +477,18 @@ export function DatePickerModal({
   const calendarCells = useMemo(() => getCalendarCells(viewMonth), [viewMonth])
   const viewMonthLabel = `${MONTH_NAMES[viewMonth.getMonth()]} ${viewMonth.getFullYear()}`
 
+  /* Future recurrence occurrences for calendar shading: from first to last cell; exclude past dates */
+  const futureOccurrencesSet = useMemo(() => {
+    if (!recurrencePattern || !due) return new Set<string>()
+    const cells = calendarCells
+    if (cells.length === 0) return new Set<string>()
+    const firstDate = new Date(cells[0].date)
+    const lastDate = new Date(cells[cells.length - 1].date)
+    const occurrences = getFutureOccurrences(recurrencePattern, due, firstDate, lastDate)
+    const today = todayYMD()
+    return new Set(occurrences.filter((ymd) => ymd >= today))
+  }, [recurrencePattern, due, calendarCells])
+
   /* Handle save: build ISO from date + optional time; ensure start <= due before saving */
   const handleSave = async () => {
     let startISO = start ? toISO(start, showStartTime ? startTime || undefined : undefined) : null
@@ -467,7 +497,8 @@ export function DatePickerModal({
     if (startISO && dueISO && isStartAfterDue(start, due, startTime, dueTime, showStartTime, showDueTime)) {
       dueISO = startISO
     }
-    const result = onSave(startISO, dueISO)
+    const recurrenceStr = serializeRecurrencePattern(recurrencePattern)
+    const result = onSave(startISO, dueISO, recurrenceStr)
     if (result instanceof Promise) {
       try {
         await result
@@ -526,14 +557,16 @@ export function DatePickerModal({
     applyDate(todayYMD())
   }
 
-  /* Resolve cell shading: today, start, due, or range */
+  /* Resolve cell shading: today, start, due, range, or recurrence occurrence */
   const getCellClass = (ymd: string) => {
     const isToday = ymd === todayYMD()
     const isStart = ymd === start
     const isDue = ymd === due
     const inRange = isBetween(ymd, start, due)
+    const isRecurrenceOccurrence = futureOccurrencesSet.has(ymd)
     if (isStart || isDue) return 'bg-bonsai-sage-600 text-white hover:bg-bonsai-sage-700'
     if (inRange) return 'bg-bonsai-sage-100 text-bonsai-slate-800 hover:bg-bonsai-sage-200'
+    if (isRecurrenceOccurrence) return 'bg-bonsai-sage-100 text-bonsai-slate-700 hover:bg-bonsai-sage-200'
     if (isToday) return 'bg-bonsai-slate-200 text-bonsai-slate-800 hover:bg-bonsai-slate-300'
     return 'text-bonsai-slate-700 hover:bg-bonsai-slate-100'
   }
@@ -716,35 +749,46 @@ export function DatePickerModal({
           </div>
         </div>
 
-        {/* Quick options (left) and calendar (right): hidden on mobile, shown on md+ */}
-        <div className="grid grid-cols-1 md:grid-cols-[11rem_1fr] gap-6 md:gap-8">
-          <div className="hidden md:flex flex-col">
-            {QUICK_OPTIONS.map((opt) => {
-              const date = opt.getDate()
-              const suffix = getQuickOptionSuffix(date, opt.isLater)
-              return (
+        {/* Suggested dates (left) or recurring settings when "Set Recurring" clicked; calendar (right) */}
+        <div className="grid grid-cols-1 md:grid-cols-[14rem_1fr] gap-6 md:gap-8">
+          <div className="flex flex-col min-w-0">
+            {showRecurringSection ? (
+              <RecurringSettingsSection
+                value={recurrencePattern}
+                onChange={setRecurrencePattern}
+                hasChecklists={hasChecklists}
+                anchorDueDate={due || undefined}
+              />
+            ) : (
+              <>
+                {QUICK_OPTIONS.map((opt) => {
+                  const date = opt.getDate()
+                  const suffix = getQuickOptionSuffix(date, opt.isLater)
+                  return (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      onClick={() => applyDate(date, opt.isLater)}
+                      className="flex items-center justify-between gap-3 rounded px-2 py-2 text-left text-secondary text-bonsai-slate-700 hover:bg-bonsai-slate-100 w-full"
+                    >
+                      <span>{opt.label}</span>
+                      <span className="text-secondary text-bonsai-slate-500 shrink-0 min-w-[3.25rem] text-right">{suffix}</span>
+                    </button>
+                  )
+                })}
                 <button
-                  key={opt.label}
                   type="button"
-                  onClick={() => applyDate(date, opt.isLater)}
-                  className="flex items-center justify-between gap-3 rounded px-2 py-2 text-left text-secondary text-bonsai-slate-700 hover:bg-bonsai-slate-100 w-full"
+                  onClick={() => setShowRecurringSection(true)}
+                  className="mt-2 flex items-center justify-between gap-2 rounded px-2 py-2 text-secondary text-bonsai-slate-600 hover:bg-bonsai-slate-100 w-full border-0 bg-transparent"
+                  aria-label="Set recurring"
                 >
-                  <span>{opt.label}</span>
-                  <span className="text-secondary text-bonsai-slate-500 shrink-0 min-w-[3.25rem] text-right">{suffix}</span>
+                  <span>Set Recurring</span>
+                  <svg className="w-4 h-4 text-bonsai-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
                 </button>
-              )
-            })}
-            <button
-              type="button"
-              onClick={() => {}}
-              className="mt-2 flex items-center justify-between gap-2 rounded px-2 py-2 text-secondary text-bonsai-slate-600 hover:bg-bonsai-slate-100 w-full border-0 bg-transparent"
-              aria-label="Set recurring (not yet implemented)"
-            >
-              <span>Set Recurring</span>
-              <svg className="w-4 h-4 text-bonsai-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
+              </>
+            )}
           </div>
 
           <div className="min-w-0 flex flex-col">

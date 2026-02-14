@@ -3,7 +3,10 @@
 import { useRef, useState } from 'react'
 import { Checkbox } from '../../components/Checkbox'
 import { InlineTitleInput } from '../../components/InlineTitleInput'
+import { Tooltip } from '../../components/Tooltip'
+import { RepeatIcon } from '../../components/icons'
 import { SingleDatePickerModal } from './modals/SingleDatePickerModal'
+import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
 import type { Reminder, UpdateReminderInput } from './types'
 
 /** Format remind_at for list display */
@@ -97,36 +100,65 @@ export function ReminderItem({
           </span>
         )}
       </div>
-      {/* Remind date: clickable when onUpdateReminder provided; opens single-date picker popover */}
+      {/* Remind date: clickable when onUpdateReminder provided; shows repeat icon + tooltip when recurring */}
       {onUpdateReminder ? (
-        <button
-          ref={dateButtonRef}
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            setIsDatePickerOpen(true)
-          }}
-          className="text-secondary text-bonsai-slate-500 shrink-0 ml-2 hover:text-bonsai-slate-700 hover:underline transition-colors rounded px-1 -mx-1"
-          aria-label={reminder.remind_at ? 'Edit reminder date' : 'Set reminder date'}
-        >
-          {formatRemindDate(reminder.remind_at)}
-        </button>
+        <>
+          {reminder.recurrence_pattern ? (
+            <Tooltip
+              content={
+                <span className="text-secondary text-bonsai-slate-800">
+                  {formatRecurrenceForTooltip(parseRecurrencePattern(reminder.recurrence_pattern))}
+                </span>
+              }
+              position="top"
+              size="sm"
+            >
+              <button
+                ref={dateButtonRef}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setIsDatePickerOpen(true)
+                }}
+                className="flex items-center gap-1 text-secondary text-bonsai-slate-500 shrink-0 ml-2 hover:text-bonsai-slate-700 hover:underline transition-colors rounded px-1 -mx-1"
+                aria-label={reminder.remind_at ? 'Edit reminder date' : 'Set reminder date'}
+              >
+                <RepeatIcon className="w-4 h-4 shrink-0" aria-hidden />
+                {formatRemindDate(reminder.remind_at)}
+              </button>
+            </Tooltip>
+          ) : (
+            <button
+              ref={dateButtonRef}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsDatePickerOpen(true)
+              }}
+              className="flex items-center gap-1 text-secondary text-bonsai-slate-500 shrink-0 ml-2 hover:text-bonsai-slate-700 hover:underline transition-colors rounded px-1 -mx-1"
+              aria-label={reminder.remind_at ? 'Edit reminder date' : 'Set reminder date'}
+            >
+              {formatRemindDate(reminder.remind_at)}
+            </button>
+          )}
+          <SingleDatePickerModal
+            isOpen={isDatePickerOpen}
+            onClose={() => setIsDatePickerOpen(false)}
+            value={reminder.remind_at}
+            onSave={async (iso, recurrencePattern) => {
+              await onUpdateReminder(reminder.id, { remind_at: iso, recurrence_pattern: recurrencePattern ?? null })
+            }}
+            triggerRef={dateButtonRef}
+            recurrencePattern={reminder.recurrence_pattern}
+          />
+        </>
       ) : (
-        <span className="text-secondary text-bonsai-slate-500 shrink-0 ml-2">
+        <span className="flex items-center gap-1 text-secondary text-bonsai-slate-500 shrink-0 ml-2">
+          {reminder.recurrence_pattern ? (
+            <RepeatIcon className="w-4 h-4 shrink-0" aria-hidden />
+          ) : null}
           {formatRemindDate(reminder.remind_at)}
         </span>
-      )}
-      {/* Single-date picker popover: edit reminder date without opening full edit modal */}
-      {onUpdateReminder && (
-        <SingleDatePickerModal
-          isOpen={isDatePickerOpen}
-          onClose={() => setIsDatePickerOpen(false)}
-          value={reminder.remind_at}
-          onSave={async (iso) => {
-            await onUpdateReminder(reminder.id, { remind_at: iso })
-          }}
-          triggerRef={dateButtonRef}
-        />
       )}
     </div>
   )

@@ -57,6 +57,7 @@ export function AddEditReminderModal({
 }: AddEditReminderModalProps) {
   const [name, setName] = useState('')
   const [remind_at, setRemindAt] = useState<string | null>(null)
+  const [recurrence_pattern, setRecurrencePattern] = useState<string | null>(null)
   const [datePickerOpen, setDatePickerOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const datePickerButtonRef = useRef<HTMLButtonElement>(null)
@@ -69,9 +70,11 @@ export function AddEditReminderModal({
       if (reminder) {
         setName(reminder.name)
         setRemindAt(reminder.remind_at)
+        setRecurrencePattern(reminder.recurrence_pattern ?? null)
       } else {
         setName('')
         setRemindAt(null)
+        setRecurrencePattern(null)
       }
     }
   }, [isOpen, reminder])
@@ -82,7 +85,7 @@ export function AddEditReminderModal({
     if (isEditMode && onUpdateReminder) {
       try {
         setSubmitting(true)
-        await onUpdateReminder(reminder.id, { name: name.trim(), remind_at })
+        await onUpdateReminder(reminder.id, { name: name.trim(), remind_at, recurrence_pattern: recurrence_pattern ?? null })
         /* State is updated optimistically by useReminders hook */
         onClose()
       } catch {
@@ -93,7 +96,7 @@ export function AddEditReminderModal({
     } else if (!isEditMode && onCreateReminder) {
       try {
         setSubmitting(true)
-        await onCreateReminder({ name: name.trim(), remind_at })
+        await onCreateReminder({ name: name.trim(), remind_at, recurrence_pattern: recurrence_pattern ?? null })
         /* State is updated optimistically by useReminders hook */
         onClose()
       } catch {
@@ -157,11 +160,13 @@ export function AddEditReminderModal({
         isOpen={datePickerOpen}
         onClose={() => setDatePickerOpen(false)}
         value={remind_at}
-        onSave={(iso) => {
+        onSave={(iso, rec) => {
           setRemindAt(iso)
+          setRecurrencePattern(rec ?? null)
           setDatePickerOpen(false)
         }}
         triggerRef={datePickerButtonRef}
+        recurrencePattern={recurrence_pattern}
       />
     </>
   )

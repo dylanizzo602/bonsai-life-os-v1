@@ -13,6 +13,8 @@ import {
   HourglassIcon,
 } from '../../components/icons'
 import { InlineTitleInput } from '../../components/InlineTitleInput'
+import { Tooltip } from '../../components/Tooltip'
+import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
 import { isOverdue, formatStartDueDisplay } from './utils/date'
 import type { Task, TaskPriority, TaskStatus } from './types'
 
@@ -156,7 +158,7 @@ export function CompactTaskItem({
 
   return (
     <div
-      className="compact-task-item rounded-lg border border-dashed border-amber-200 bg-white px-3 py-2 shadow-sm"
+      className="compact-task-item rounded-lg border border-dashed border-bonsai-slate-200 bg-white px-3 py-2 shadow-sm"
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
@@ -287,16 +289,29 @@ export function CompactTaskItem({
               : `${Math.floor(task.time_estimate / 60)}h${task.time_estimate % 60 ? ` ${task.time_estimate % 60}m` : ''}`}
           </span>
         )}
-        {/* Start/due date */}
+        {/* Start/due date: tooltip with frequency when recurring */}
         {dateDisplay && (
-          <span className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${isDueOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-600'}`}>
-            {isRecurring ? (
-              <RepeatIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
-            ) : (
+          isRecurring ? (
+            <Tooltip
+              content={
+                <span className="text-secondary text-bonsai-slate-800">
+                  {formatRecurrenceForTooltip(parseRecurrencePattern(task.recurrence_pattern))}
+                </span>
+              }
+              position="top"
+              size="sm"
+            >
+              <span className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${isDueOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-600'}`}>
+                <RepeatIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                <span className="truncate">{dateDisplay}</span>
+              </span>
+            </Tooltip>
+          ) : (
+            <span className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${isDueOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-600'}`}>
               <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
-            )}
-            <span className="truncate">{dateDisplay}</span>
-          </span>
+              <span className="truncate">{dateDisplay}</span>
+            </span>
+          )
         )}
         {/* Priority flag */}
         <span className={`shrink-0 ${getPriorityFlagClasses(priority)}`}>
