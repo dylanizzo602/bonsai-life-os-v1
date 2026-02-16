@@ -9,6 +9,8 @@ export interface FilterCondition {
   field: string
   operator: string
   value: string
+  /** How this condition combines with the previous one (first condition has none; default 'and'). */
+  combineWithPrevious?: 'and' | 'or'
 }
 
 export interface FilterModalProps {
@@ -25,56 +27,65 @@ export interface FilterModalProps {
   availableTagNames?: string[]
 }
 
-/* Plan: Status – Open, In Progress, Closed. Operators: Is, Is not */
+/* Plan: Status – Open, In Progress, Complete. Operators: Is, Is not */
 const STATUS_OPTIONS = [
   { value: 'Open', label: 'Open' },
   { value: 'In Progress', label: 'In Progress' },
-  { value: 'Closed', label: 'Closed' },
+  { value: 'Complete', label: 'Complete' },
 ]
 
-/* Plan: Priority – High, Medium, Low, None. Codebase also has Urgent. Operators: Is, Is not */
+/* Plan: Priority – None, Low, Normal (store as medium), High, Urgent. Operators: Is Set, Is Not Set, Is, Is not */
 const PRIORITY_OPTIONS = [
   { value: 'None', label: 'None' },
   { value: 'Low', label: 'Low' },
-  { value: 'Medium', label: 'Medium' },
+  { value: 'medium', label: 'Normal' },
   { value: 'High', label: 'High' },
   { value: 'Urgent', label: 'Urgent' },
 ]
 
-/* Plan: Task dependencies – Is blocking, Blocked, None. Operators: Is, Is not */
+/* Plan: Task dependencies – Has / Doesn't Have. Values: Waiting on, Blocking, Any */
 const DEPENDENCIES_OPTIONS = [
-  { value: 'Blocked', label: 'Blocked' },
-  { value: 'Is blocking', label: 'Is blocking' },
-  { value: 'None', label: 'None' },
+  { value: 'Waiting on', label: 'Waiting on' },
+  { value: 'Blocking', label: 'Blocking' },
+  { value: 'Any', label: 'Any' },
 ]
 
-/* Plan: Recurring – Recurring / non-recurring */
-const RECURRING_OPTIONS = [
-  { value: 'Recurring', label: 'Recurring' },
-  { value: 'Non-recurring', label: 'Non-recurring' },
-]
-
-/* Plan: Start date – Now or earlier, Later, Today, This week, Next week, Before/After date, Date range. Operators: Is, Is not, Before, After, Between, Is set, Is not set */
-const START_DATE_OPTIONS = [
-  { value: 'Now or earlier', label: 'Now or earlier' },
-  { value: 'Later', label: 'Later' },
+/* Shared date preset and picker options; start_date uses all except Overdue, due_date uses all */
+const DATE_PRESET_OPTIONS: { value: string; label: string; dueOnly?: boolean }[] = [
   { value: 'Today', label: 'Today' },
-  { value: 'This week', label: 'This week' },
-  { value: 'Next week', label: 'Next week' },
-  { value: 'Is set', label: 'Is set' },
-  { value: 'Is not set', label: 'Is not set' },
-]
-
-/* Plan: Due date – Today, Tomorrow, This week, Next week, Overdue, Before/After, Date range. Same operators as Start date */
-const DUE_DATE_OPTIONS = [
-  { value: 'Today', label: 'Today' },
+  { value: 'Yesterday', label: 'Yesterday' },
   { value: 'Tomorrow', label: 'Tomorrow' },
+  { value: 'Next 7 days', label: 'Next 7 days' },
+  { value: 'Last 7 days', label: 'Last 7 days' },
   { value: 'This week', label: 'This week' },
   { value: 'Next week', label: 'Next week' },
-  { value: 'Overdue', label: 'Overdue' },
-  { value: 'Is set', label: 'Is set' },
-  { value: 'Is not set', label: 'Is not set' },
+  { value: 'Last week', label: 'Last week' },
+  { value: 'Last month', label: 'Last month' },
+  { value: 'This month', label: 'This month' },
+  { value: 'Next year', label: 'Next year' },
+  { value: 'Last year', label: 'Last year' },
+  { value: 'Today & earlier', label: 'Today & earlier' },
+  { value: 'Now & earlier', label: 'Now & earlier' },
+  { value: 'Later than now', label: 'Later than now' },
+  { value: 'Last quarter', label: 'Last quarter' },
+  { value: 'This quarter', label: 'This quarter' },
+  { value: 'Next quarter', label: 'Next quarter' },
+  { value: 'Overdue', label: 'Overdue', dueOnly: true },
+  { value: 'Any date', label: 'Any date' },
+  { value: 'No date', label: 'No date' },
+  { value: 'exact:', label: 'Exact date' },
+  { value: 'before:', label: 'Before date' },
+  { value: 'after:', label: 'After date' },
+  { value: 'range:', label: 'Date range' },
 ]
+
+function getStartDateOptions() {
+  return DATE_PRESET_OPTIONS.filter((o) => !o.dueOnly)
+}
+
+function getDueDateOptions() {
+  return DATE_PRESET_OPTIONS
+}
 
 /* Field definitions with plan operators per field */
 const FILTER_FIELDS: { id: string; label: string; operators: { id: string; label: string }[] }[] = [
@@ -85,9 +96,6 @@ const FILTER_FIELDS: { id: string; label: string; operators: { id: string; label
     operators: [
       { id: 'contains', label: 'Contains' },
       { id: 'does_not_contain', label: 'Does not contain' },
-      { id: 'starts_with', label: 'Starts with' },
-      { id: 'ends_with', label: 'Ends with' },
-      { id: 'is_exactly', label: 'Is exactly' },
     ],
   },
   {
@@ -116,32 +124,48 @@ const FILTER_FIELDS: { id: string; label: string; operators: { id: string; label
       { id: 'is_not_set', label: 'Is not set' },
     ],
   },
-  { id: 'priority', label: 'Priority', operators: [{ id: 'is', label: 'Is' }, { id: 'is_not', label: 'Is not' }] },
+  {
+    id: 'priority',
+    label: 'Priority',
+    operators: [
+      { id: 'is_set', label: 'Is set' },
+      { id: 'is_not_set', label: 'Is not set' },
+      { id: 'is', label: 'Is' },
+      { id: 'is_not', label: 'Is not' },
+    ],
+  },
   {
     id: 'tags',
     label: 'Tags',
     operators: [
-      { id: 'contains', label: 'Contains' },
-      { id: 'does_not_contain', label: 'Does not contain' },
-      { id: 'has_any_of', label: 'Has any of' },
-      { id: 'has_all_of', label: 'Has all of' },
-      { id: 'has_none', label: 'Has none' },
+      { id: 'is_set', label: 'Is set' },
+      { id: 'is_not_set', label: 'Is not set' },
+      { id: 'is', label: 'Is' },
+      { id: 'is_not', label: 'Is not' },
     ],
   },
   {
     id: 'dependencies',
     label: 'Task dependencies',
-    operators: [{ id: 'is', label: 'Is' }, { id: 'is_not', label: 'Is not' }],
+    operators: [
+      { id: 'has', label: 'Has' },
+      { id: 'doesnt_have', label: "Doesn't have" },
+    ],
   },
   {
     id: 'recurring',
     label: 'Recurring',
-    operators: [{ id: 'is', label: 'Is' }],
+    operators: [
+      { id: 'is_recurring', label: 'Is recurring' },
+      { id: 'is_not_recurring', label: 'Is not recurring' },
+    ],
   },
   {
     id: 'time_estimate',
     label: 'Time estimates',
     operators: [
+      { id: 'is_set', label: 'Is set' },
+      { id: 'is_not_set', label: 'Is not set' },
       { id: 'greater_than', label: 'Greater than' },
       { id: 'less_than', label: 'Less than' },
       { id: 'equal_to', label: 'Equal to' },
@@ -160,16 +184,29 @@ function getDefaultOperator(fieldId: string): string {
 
 function getDefaultValue(fieldId: string, operator?: string): string {
   if (fieldId === 'status') return STATUS_OPTIONS[0].value
-  if (fieldId === 'priority') return PRIORITY_OPTIONS[0].value
+  if (fieldId === 'priority') {
+    if (operator === 'is_set' || operator === 'is_not_set') return ''
+    return PRIORITY_OPTIONS[0].value
+  }
+  if (fieldId === 'time_estimate') {
+    if (operator === 'is_set' || operator === 'is_not_set') return ''
+    return ''
+  }
+  if (fieldId === 'tags') {
+    if (operator === 'is_set' || operator === 'is_not_set') return ''
+    return ''
+  }
   if (fieldId === 'dependencies') return DEPENDENCIES_OPTIONS[0].value
-  if (fieldId === 'recurring') return RECURRING_OPTIONS[0].value
+  if (fieldId === 'recurring') return ''
   if (fieldId === 'start_date') {
-    if (operator === 'before' || operator === 'after') return new Date().toISOString().slice(0, 10)
-    return START_DATE_OPTIONS[0].value
+    const today = new Date().toISOString().slice(0, 10)
+    if (operator === 'before' || operator === 'after') return today
+    return getStartDateOptions()[0].value
   }
   if (fieldId === 'due_date') {
-    if (operator === 'before' || operator === 'after') return new Date().toISOString().slice(0, 10)
-    return DUE_DATE_OPTIONS[0].value
+    const today = new Date().toISOString().slice(0, 10)
+    if (operator === 'before' || operator === 'after') return today
+    return getDueDateOptions()[0].value
   }
   return ''
 }
@@ -205,6 +242,7 @@ export function FilterModal({
       field: 'status',
       operator: 'is',
       value: 'Open',
+      ...(localConditions.length > 0 ? { combineWithPrevious: 'and' as const } : {}),
     }
     const nextList = [...localConditions, next]
     setLocalConditions(nextList)
@@ -287,6 +325,9 @@ export function FilterModal({
       )
     }
     if (field === 'priority') {
+      if (operator === 'is_set' || operator === 'is_not_set') {
+        return <span className="text-secondary text-bonsai-slate-500">—</span>
+      }
       return (
         <select
           className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white min-w-[10rem]"
@@ -319,78 +360,144 @@ export function FilterModal({
       )
     }
     if (field === 'recurring') {
-      return (
-        <select
-          className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white min-w-[10rem]"
-          value={value}
-          onChange={(e) => updateCondition(cond.id, { value: e.target.value })}
-          aria-label="Recurring value"
-        >
-          {RECURRING_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      )
+      return <span className="text-secondary text-bonsai-slate-500">—</span>
     }
+    /* start_date: one dropdown (presets + Exact/Before/After/Range); date input(s) when picker type selected */
     if (field === 'start_date') {
-      if (operator === 'before' || operator === 'after') {
-        const dateValue = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : new Date().toISOString().slice(0, 10)
+      const options = getStartDateOptions()
+      const selectedKey =
+        value.startsWith('exact:') ? 'exact:' : value.startsWith('before:') ? 'before:' : value.startsWith('after:') ? 'after:' : value.startsWith('range:') ? 'range:' : value
+      const today = new Date().toISOString().slice(0, 10)
+      const handlePresetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const v = e.target.value
+        if (v === 'exact:' || v === 'before:' || v === 'after:') updateCondition(cond.id, { value: `${v}${today}` })
+        else if (v === 'range:') updateCondition(cond.id, { value: `range:${today}:${today}` })
+        else updateCondition(cond.id, { value: v })
+      }
+      const dateInput = (prefix: string, ariaLabel: string) => {
+        const datePart = value.startsWith(prefix) ? value.slice(prefix.length).split(':')[0] || today : today
         return (
           <input
             type="date"
             className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white min-w-[10rem]"
-            value={dateValue}
-            onChange={(e) => updateCondition(cond.id, { value: e.target.value })}
-            aria-label="Start date"
+            value={/^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : today}
+            onChange={(e) => updateCondition(cond.id, { value: `${prefix}${e.target.value}` })}
+            aria-label={ariaLabel}
           />
         )
       }
+      const rangeInputs = () => {
+        const parts = value.startsWith('range:') ? value.slice(6).split(':') : []
+        const startPart = parts[0] && /^\d{4}-\d{2}-\d{2}$/.test(parts[0]) ? parts[0] : today
+        const endPart = parts[1] && /^\d{4}-\d{2}-\d{2}$/.test(parts[1]) ? parts[1] : today
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="date"
+              className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white min-w-[10rem]"
+              value={startPart}
+              onChange={(e) => updateCondition(cond.id, { value: `range:${e.target.value}:${endPart}` })}
+              aria-label="Range start"
+            />
+            <input
+              type="date"
+              className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white min-w-[10rem]"
+              value={endPart}
+              onChange={(e) => updateCondition(cond.id, { value: `range:${startPart}:${e.target.value}` })}
+              aria-label="Range end"
+            />
+          </div>
+        )
+      }
       return (
-        <select
-          className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white min-w-[10rem]"
-          value={value}
-          onChange={(e) => updateCondition(cond.id, { value: e.target.value })}
-          aria-label="Start date value"
-        >
-          {START_DATE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+        <div className="flex flex-col gap-2">
+          <select
+            className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white min-w-[10rem]"
+            value={options.some((o) => o.value === selectedKey) ? selectedKey : options[0].value}
+            onChange={handlePresetChange}
+            aria-label="Start date preset or type"
+          >
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          {(selectedKey === 'exact:' || selectedKey === 'before:' || selectedKey === 'after:') && dateInput(selectedKey, 'Start date')}
+          {selectedKey === 'range:' && rangeInputs()}
+        </div>
       )
     }
+    /* due_date: same as start_date but with Overdue option */
     if (field === 'due_date') {
-      if (operator === 'before' || operator === 'after') {
-        const dateValue = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : new Date().toISOString().slice(0, 10)
+      const options = getDueDateOptions()
+      const selectedKey =
+        value.startsWith('exact:') ? 'exact:' : value.startsWith('before:') ? 'before:' : value.startsWith('after:') ? 'after:' : value.startsWith('range:') ? 'range:' : value
+      const today = new Date().toISOString().slice(0, 10)
+      const handlePresetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const v = e.target.value
+        if (v === 'exact:' || v === 'before:' || v === 'after:') updateCondition(cond.id, { value: `${v}${today}` })
+        else if (v === 'range:') updateCondition(cond.id, { value: `range:${today}:${today}` })
+        else updateCondition(cond.id, { value: v })
+      }
+      const dateInput = (prefix: string, ariaLabel: string) => {
+        const datePart = value.startsWith(prefix) ? value.slice(prefix.length).split(':')[0] || today : today
         return (
           <input
             type="date"
             className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white min-w-[10rem]"
-            value={dateValue}
-            onChange={(e) => updateCondition(cond.id, { value: e.target.value })}
-            aria-label="Due date"
+            value={/^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : today}
+            onChange={(e) => updateCondition(cond.id, { value: `${prefix}${e.target.value}` })}
+            aria-label={ariaLabel}
           />
         )
       }
+      const rangeInputs = () => {
+        const parts = value.startsWith('range:') ? value.slice(6).split(':') : []
+        const startPart = parts[0] && /^\d{4}-\d{2}-\d{2}$/.test(parts[0]) ? parts[0] : today
+        const endPart = parts[1] && /^\d{4}-\d{2}-\d{2}$/.test(parts[1]) ? parts[1] : today
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="date"
+              className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white min-w-[10rem]"
+              value={startPart}
+              onChange={(e) => updateCondition(cond.id, { value: `range:${e.target.value}:${endPart}` })}
+              aria-label="Range start"
+            />
+            <input
+              type="date"
+              className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white min-w-[10rem]"
+              value={endPart}
+              onChange={(e) => updateCondition(cond.id, { value: `range:${startPart}:${e.target.value}` })}
+              aria-label="Range end"
+            />
+          </div>
+        )
+      }
       return (
-        <select
-          className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white min-w-[10rem]"
-          value={value}
-          onChange={(e) => updateCondition(cond.id, { value: e.target.value })}
-          aria-label="Due date value"
-        >
-          {DUE_DATE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+        <div className="flex flex-col gap-2">
+          <select
+            className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white min-w-[10rem]"
+            value={options.some((o) => o.value === selectedKey) ? selectedKey : options[0].value}
+            onChange={handlePresetChange}
+            aria-label="Due date preset or type"
+          >
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          {(selectedKey === 'exact:' || selectedKey === 'before:' || selectedKey === 'after:') && dateInput(selectedKey, 'Due date')}
+          {selectedKey === 'range:' && rangeInputs()}
+        </div>
       )
     }
     if (field === 'time_estimate') {
+      if (operator === 'is_set' || operator === 'is_not_set') {
+        return <span className="text-secondary text-bonsai-slate-500">—</span>
+      }
       return (
         <input
           type="number"
@@ -404,7 +511,7 @@ export function FilterModal({
       )
     }
     if (field === 'tags') {
-      if (operator === 'has_none') {
+      if (operator === 'is_set' || operator === 'is_not_set') {
         return <span className="text-secondary text-bonsai-slate-500">—</span>
       }
       const options = ['No tags', ...(availableTagNames ?? [])]
@@ -490,8 +597,23 @@ export function FilterModal({
         {localConditions.length === 0 ? (
           <p className="text-secondary text-bonsai-slate-500">No filters. Add a filter below.</p>
         ) : (
-          localConditions.map((cond) => (
+          localConditions.map((cond, index) => (
             <div key={cond.id} className="flex flex-wrap items-center gap-2">
+              {index > 0 && (
+                <select
+                  className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body font-medium text-bonsai-slate-700 bg-white"
+                  value={cond.combineWithPrevious ?? 'and'}
+                  onChange={(e) =>
+                    updateCondition(cond.id, {
+                      combineWithPrevious: e.target.value === 'or' ? 'or' : 'and',
+                    })
+                  }
+                  aria-label="Combine with previous filter"
+                >
+                  <option value="and">AND</option>
+                  <option value="or">OR</option>
+                </select>
+              )}
               <select
                 className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white"
                 value={cond.field}

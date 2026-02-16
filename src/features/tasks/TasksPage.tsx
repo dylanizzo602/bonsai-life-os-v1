@@ -58,9 +58,9 @@ const PRIORITY_ORDER: Record<Task['priority'], number> = {
 
 /** Available view default filter (for display in Filter modal when in Available view); plan-aligned values */
 const AVAILABLE_DEFAULT_FILTER_CONDITIONS: FilterCondition[] = [
-  { id: 'av-status', field: 'status', operator: 'is_not', value: 'Closed' },
-  { id: 'av-deps', field: 'dependencies', operator: 'is_not', value: 'Blocked' },
-  { id: 'av-start', field: 'start_date', operator: 'is', value: 'Now or earlier' },
+  { id: 'av-status', field: 'status', operator: 'is_not', value: 'Complete' },
+  { id: 'av-deps', field: 'dependencies', operator: 'doesnt_have', value: 'Waiting on' },
+  { id: 'av-start', field: 'start_date', operator: 'is', value: 'Now & earlier' },
 ]
 
 /** Available view default sort (for display in Sort modal when in Available view): due date, priority, status */
@@ -91,10 +91,40 @@ function getDateRangeForPreset(
   const nextWeekEnd = new Date(nextWeekStart)
   nextWeekEnd.setDate(nextWeekEnd.getDate() + 6)
   nextWeekEnd.setHours(23, 59, 59, 999)
+  const lastWeekStart = new Date(weekStart)
+  lastWeekStart.setDate(lastWeekStart.getDate() - 7)
+  const lastWeekEnd = new Date(lastWeekStart)
+  lastWeekEnd.setDate(lastWeekEnd.getDate() + 6)
+  lastWeekEnd.setHours(23, 59, 59, 999)
+
+  const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1)
+  const monthEnd = new Date(todayStart.getFullYear(), todayStart.getMonth() + 1, 0, 23, 59, 59, 999)
+  const lastMonthStart = new Date(todayStart.getFullYear(), todayStart.getMonth() - 1, 1)
+  const lastMonthEnd = new Date(todayStart.getFullYear(), todayStart.getMonth(), 0, 23, 59, 59, 999)
+
+  const lastYearStart = new Date(todayStart.getFullYear() - 1, 0, 1)
+  const lastYearEnd = new Date(todayStart.getFullYear() - 1, 11, 31, 23, 59, 59, 999)
+  const nextYearStart = new Date(todayStart.getFullYear() + 1, 0, 1)
+  const nextYearEnd = new Date(todayStart.getFullYear() + 1, 11, 31, 23, 59, 59, 999)
+
+  const quarter = Math.floor(todayStart.getMonth() / 3) + 1
+  const thisQuarterStart = new Date(todayStart.getFullYear(), (quarter - 1) * 3, 1)
+  const thisQuarterEnd = new Date(todayStart.getFullYear(), quarter * 3, 0, 23, 59, 59, 999)
+  const lastQuarterStart = new Date(todayStart.getFullYear(), (quarter - 2) * 3, 1)
+  const lastQuarterEnd = new Date(todayStart.getFullYear(), (quarter - 1) * 3, 0, 23, 59, 59, 999)
+  const nextQuarterStart = new Date(todayStart.getFullYear(), quarter * 3, 1)
+  const nextQuarterEnd = new Date(todayStart.getFullYear(), (quarter + 1) * 3, 0, 23, 59, 59, 999)
 
   switch (preset) {
     case 'Today':
       return { start: todayStart.getTime(), end: todayEnd.getTime() }
+    case 'Yesterday': {
+      const y = new Date(todayStart)
+      y.setDate(y.getDate() - 1)
+      const yEnd = new Date(y)
+      yEnd.setHours(23, 59, 59, 999)
+      return { start: y.getTime(), end: yEnd.getTime() }
+    }
     case 'Tomorrow': {
       const t = new Date(todayStart)
       t.setDate(t.getDate() + 1)
@@ -102,19 +132,86 @@ function getDateRangeForPreset(
       tEnd.setHours(23, 59, 59, 999)
       return { start: t.getTime(), end: tEnd.getTime() }
     }
+    case 'Next 7 days': {
+      const end = new Date(todayStart)
+      end.setDate(end.getDate() + 7)
+      end.setHours(23, 59, 59, 999)
+      return { start: todayStart.getTime(), end: end.getTime() }
+    }
+    case 'Last 7 days': {
+      const start = new Date(todayStart)
+      start.setDate(start.getDate() - 6)
+      return { start: start.getTime(), end: todayEnd.getTime() }
+    }
     case 'This week':
       return { start: weekStart.getTime(), end: weekEnd.getTime() }
     case 'Next week':
       return { start: nextWeekStart.getTime(), end: nextWeekEnd.getTime() }
+    case 'Last week':
+      return { start: lastWeekStart.getTime(), end: lastWeekEnd.getTime() }
+    case 'Last month':
+      return { start: lastMonthStart.getTime(), end: lastMonthEnd.getTime() }
+    case 'This month':
+      return { start: monthStart.getTime(), end: monthEnd.getTime() }
+    case 'Next year':
+      return { start: nextYearStart.getTime(), end: nextYearEnd.getTime() }
+    case 'Last year':
+      return { start: lastYearStart.getTime(), end: lastYearEnd.getTime() }
+    case 'Today & earlier':
+      return { start: 0, end: todayEnd.getTime() }
+    case 'Now & earlier':
     case 'Now or earlier':
       return kind === 'start' ? { start: 0, end: now.getTime() } : null
+    case 'Later than now':
     case 'Later':
       return kind === 'start' ? { start: now.getTime() + dayMs, end: Number.MAX_SAFE_INTEGER } : null
+    case 'Last quarter':
+      return { start: lastQuarterStart.getTime(), end: lastQuarterEnd.getTime() }
+    case 'This quarter':
+      return { start: thisQuarterStart.getTime(), end: thisQuarterEnd.getTime() }
+    case 'Next quarter':
+      return { start: nextQuarterStart.getTime(), end: nextQuarterEnd.getTime() }
     case 'Overdue':
       return kind === 'due' ? { start: 0, end: todayStart.getTime() - 1 } : null
+    case 'Any date':
+      return { start: 0, end: Number.MAX_SAFE_INTEGER }
     default:
       return null
   }
+}
+
+/** Parse encoded date value (exact:YYYY-MM-DD, before:YYYY-MM-DD, after:YYYY-MM-DD, range:start:end) into range and mode */
+function parseDateValue(
+  val: string,
+): { start: number; end: number; mode: 'exact' | 'before' | 'after' | 'range' } | null {
+  const dayMs = 24 * 60 * 60 * 1000
+  const toRange = (d: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null
+    const start = new Date(d + 'T00:00:00').getTime()
+    if (Number.isNaN(start)) return null
+    return { start, end: start + dayMs - 1 }
+  }
+  if (val.startsWith('exact:')) {
+    const r = toRange(val.slice(6))
+    return r ? { ...r, mode: 'exact' } : null
+  }
+  if (val.startsWith('before:')) {
+    const r = toRange(val.slice(7))
+    return r ? { ...r, mode: 'before' } : null
+  }
+  if (val.startsWith('after:')) {
+    const r = toRange(val.slice(6))
+    return r ? { ...r, mode: 'after' } : null
+  }
+  if (val.startsWith('range:')) {
+    const parts = val.slice(6).split(':')
+    if (parts.length < 2) return null
+    const r1 = toRange(parts[0])
+    const r2 = toRange(parts[1])
+    if (!r1 || !r2) return null
+    return { start: r1.start, end: r2.end, mode: 'range' }
+  }
+  return null
 }
 
 /** Evaluate one filter condition against a task; returns true if task matches. */
@@ -131,11 +228,13 @@ function evaluateFilterCondition(
     open: 'active',
     'in progress': 'in_progress',
     closed: 'completed',
+    complete: 'completed',
   }
   const priorityMap: Record<string, Task['priority']> = {
     none: 'none',
     low: 'low',
     medium: 'medium',
+    normal: 'medium',
     high: 'high',
     urgent: 'urgent',
   }
@@ -150,40 +249,49 @@ function evaluateFilterCondition(
   if (c.field === 'task_name') {
     if (c.operator === 'contains') return title.includes(valLower)
     if (c.operator === 'does_not_contain') return !title.includes(valLower)
-    if (c.operator === 'starts_with') return title.startsWith(valLower)
-    if (c.operator === 'ends_with') return title.endsWith(valLower)
-    if (c.operator === 'is_exactly' || c.operator === 'is') return title === valLower
     return true
   }
 
   if (c.field === 'priority') {
+    const effectivePriority = t.priority ?? 'medium'
+    if (c.operator === 'is_set') return t.priority != null
+    if (c.operator === 'is_not_set') return t.priority == null
     const match = priorityMap[valLower] ?? (c.value as Task['priority'])
-    if (c.operator === 'is') return (t.priority ?? 'medium') === match
-    if (c.operator === 'is_not') return (t.priority ?? 'medium') !== match
+    if (c.operator === 'is') return effectivePriority === match
+    if (c.operator === 'is_not') return effectivePriority !== match
     return true
   }
 
-  /* Parse YYYY-MM-DD as start/end of that day (for Before/After date picker). */
-  const parseDatePickerValue = (v: string): { start: number; end: number } | null => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null
-    const d = new Date(v + 'T00:00:00')
-    if (Number.isNaN(d.getTime())) return null
-    const start = d.getTime()
-    const end = d.getTime() + 24 * 60 * 60 * 1000 - 1
-    return { start, end }
+  /* Resolve date range from preset name or encoded value (exact/before/after/range). */
+  const getRangeForDateValue = (v: string, kind: 'start' | 'due') => {
+    const parsed = parseDateValue(v)
+    if (parsed) return parsed
+    const presetRange = getDateRangeForPreset(v, kind)
+    if (presetRange) return { ...presetRange, mode: 'exact' as const }
+    return null
   }
 
   if (c.field === 'start_date') {
     const iso = t.start_date ? new Date(t.start_date).getTime() : null
     if (c.operator === 'is_set') return iso != null
     if (c.operator === 'is_not_set') return iso == null
-    const range = getDateRangeForPreset(val, 'start') ?? parseDatePickerValue(val)
+    if (valLower === 'no date' && (c.operator === 'is' || c.operator === 'is_not')) {
+      return c.operator === 'is' ? iso == null : iso != null
+    }
+    if (valLower === 'any date' && (c.operator === 'is' || c.operator === 'is_not')) {
+      return c.operator === 'is' ? iso != null : iso == null
+    }
+    const range = getRangeForDateValue(val, 'start')
     if (range && c.operator === 'is') {
       if (iso == null) return false
+      if (range.mode === 'before') return iso < range.start
+      if (range.mode === 'after') return iso > range.end
       return iso >= range.start && iso <= range.end
     }
     if (range && c.operator === 'is_not') {
       if (iso == null) return true
+      if (range.mode === 'before') return iso >= range.start
+      if (range.mode === 'after') return iso <= range.end
       return iso < range.start || iso > range.end
     }
     if (iso != null && range && c.operator === 'before') return iso < range.start
@@ -195,13 +303,23 @@ function evaluateFilterCondition(
     const iso = t.due_date ? new Date(t.due_date).getTime() : null
     if (c.operator === 'is_set') return iso != null
     if (c.operator === 'is_not_set') return iso == null
-    const range = getDateRangeForPreset(val, 'due') ?? parseDatePickerValue(val)
+    if (valLower === 'no date' && (c.operator === 'is' || c.operator === 'is_not')) {
+      return c.operator === 'is' ? iso == null : iso != null
+    }
+    if (valLower === 'any date' && (c.operator === 'is' || c.operator === 'is_not')) {
+      return c.operator === 'is' ? iso != null : iso == null
+    }
+    const range = getRangeForDateValue(val, 'due')
     if (range && c.operator === 'is') {
       if (iso == null) return false
+      if (range.mode === 'before') return iso < range.start
+      if (range.mode === 'after') return iso > range.end
       return iso >= range.start && iso <= range.end
     }
     if (range && c.operator === 'is_not') {
       if (iso == null) return true
+      if (range.mode === 'before') return iso >= range.start
+      if (range.mode === 'after') return iso <= range.end
       return iso < range.start || iso > range.end
     }
     if (iso != null && range && c.operator === 'before') return iso < range.start
@@ -212,58 +330,57 @@ function evaluateFilterCondition(
   if (c.field === 'tags') {
     const taskTagNames = (t.tags ?? []).map((tag) => (tag.name ?? '').toLowerCase())
     const hasNoTags = taskTagNames.length === 0
-    if (c.operator === 'has_none') return hasNoTags
+    if (c.operator === 'is_set') return !hasNoTags
+    if (c.operator === 'is_not_set') return hasNoTags
     const selected = (c.value ?? '')
       .split(',')
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean)
     const noTagsSelected = selected.includes('no tags')
     const tagNamesSelected = selected.filter((s) => s !== 'no tags')
-    if (c.operator === 'has_any_of' || c.operator === 'contains') {
+    /* Is: task has at least one of the selected tags, or has no tags when "No tags" is selected */
+    if (c.operator === 'is') {
       if (noTagsSelected && hasNoTags) return true
       if (tagNamesSelected.length === 0) return noTagsSelected ? hasNoTags : true
-      return tagNamesSelected.some((name) => taskTagNames.some((n) => n === name || n.includes(name) || name.includes(n)))
+      return tagNamesSelected.some((name) => taskTagNames.includes(name))
     }
-    if (c.operator === 'does_not_contain') {
-      if (tagNamesSelected.length === 0) return true
+    /* Is Not: task has none of the selected tags; if "No tags" selected, task must have at least one tag */
+    if (c.operator === 'is_not') {
       if (noTagsSelected && hasNoTags) return false
-      return !tagNamesSelected.some((name) => taskTagNames.some((n) => n === name || n.includes(name)))
-    }
-    if (c.operator === 'has_all_of') {
-      if (noTagsSelected && tagNamesSelected.length === 0) return hasNoTags
-      if (noTagsSelected && !hasNoTags) return false
+      if (noTagsSelected && !hasNoTags) return true
       if (tagNamesSelected.length === 0) return true
-      return tagNamesSelected.every((name) => taskTagNames.some((n) => n === name || n.includes(name)))
+      return !tagNamesSelected.some((name) => taskTagNames.includes(name))
     }
     return true
   }
 
   if (c.field === 'dependencies') {
-    if (valLower === 'blocked') return blockedIds.has(t.id)
-    if (valLower === 'is blocking') return blockingIds.has(t.id)
-    if (valLower === 'none') return !blockedIds.has(t.id) && !blockingIds.has(t.id)
-    if (c.operator === 'is') {
-      if (valLower === 'blocked') return blockedIds.has(t.id)
-      if (valLower === 'is blocking') return blockingIds.has(t.id)
-      if (valLower === 'none') return !blockedIds.has(t.id) && !blockingIds.has(t.id)
+    const waitingOn = blockedIds.has(t.id)
+    const blocking = blockingIds.has(t.id)
+    const hasAny = waitingOn || blocking
+    if (valLower === 'waiting on') {
+      return c.operator === 'has' ? waitingOn : !waitingOn
     }
-    if (c.operator === 'is_not') {
-      if (valLower === 'blocked') return !blockedIds.has(t.id)
-      if (valLower === 'is blocking') return !blockingIds.has(t.id)
-      if (valLower === 'none') return blockedIds.has(t.id) || blockingIds.has(t.id)
+    if (valLower === 'blocking') {
+      return c.operator === 'has' ? blocking : !blocking
+    }
+    if (valLower === 'any') {
+      return c.operator === 'has' ? hasAny : !hasAny
     }
     return true
   }
 
   if (c.field === 'recurring') {
     const isRecurring = Boolean(t.recurrence_pattern)
-    if (valLower === 'recurring') return isRecurring
-    if (valLower === 'non-recurring') return !isRecurring
+    if (c.operator === 'is_recurring') return isRecurring
+    if (c.operator === 'is_not_recurring') return !isRecurring
     return true
   }
 
   if (c.field === 'time_estimate') {
     const mins = t.time_estimate ?? 0
+    if (c.operator === 'is_set') return t.time_estimate != null && t.time_estimate > 0
+    if (c.operator === 'is_not_set') return t.time_estimate == null || t.time_estimate === 0
     const num = Number(c.value)
     if (Number.isNaN(num)) return true
     if (c.operator === 'greater_than') return mins > num
@@ -551,13 +668,19 @@ export function TasksPage() {
       case 'custom':
       default:
         viewTasks = [...tasks]
-        /* Apply filter conditions (flat AND): each condition must match (plan-aligned fields and operators). */
+        /* Apply filter conditions with AND/OR: left-to-right evaluation using each condition's combineWithPrevious (default 'and'). */
         if (filterConditions.length > 0) {
-          viewTasks = viewTasks.filter((t) =>
-            filterConditions.every((c) =>
-              evaluateFilterCondition(c, t, blockedTaskIds, blockingTaskIds),
-            ),
-          )
+          viewTasks = viewTasks.filter((t) => {
+            let result = false
+            for (let i = 0; i < filterConditions.length; i++) {
+              const c = filterConditions[i]
+              const match = evaluateFilterCondition(c, t, blockedTaskIds, blockingTaskIds)
+              const combine = i === 0 ? undefined : (c.combineWithPrevious ?? 'and')
+              if (i === 0) result = match
+              else result = combine === 'or' ? result || match : result && match
+            }
+            return result
+          })
         }
         /* Apply user sort when in custom and sortBy has entries. */
         if (sortBy.length > 0) {
