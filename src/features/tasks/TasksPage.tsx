@@ -63,6 +63,11 @@ const AVAILABLE_DEFAULT_FILTER_CONDITIONS: FilterCondition[] = [
   { id: 'av-start', field: 'start_date', operator: 'is', value: 'Now & earlier' },
 ]
 
+/** All Tasks view default filter (for display in Filter modal when in All Tasks view): only status is not Complete */
+const ALL_DEFAULT_FILTER_CONDITIONS: FilterCondition[] = [
+  { id: 'all-status', field: 'status', operator: 'is_not', value: 'Complete' },
+]
+
 /** Available view default sort (for display in Sort modal when in Available view): due date, priority, status */
 const AVAILABLE_DEFAULT_SORT: SortByEntry[] = [
   { field: 'due_date', direction: 'asc' },
@@ -283,6 +288,8 @@ function evaluateFilterCondition(
     }
     const range = getRangeForDateValue(val, 'start')
     if (range && c.operator === 'is') {
+      /* "Now & earlier" / "Today & earlier": no start date means task is available now, so include */
+      if (iso == null && (valLower === 'now & earlier' || valLower === 'today & earlier')) return true
       if (iso == null) return false
       if (range.mode === 'before') return iso < range.start
       if (range.mode === 'after') return iso > range.end
@@ -712,9 +719,8 @@ export function TasksPage() {
 
   /* Filter pipeline: Archive/Trash first, then by view, then by filter (custom), then by search, then by sort. */
   const { filteredTasks, filteredReminders } = useMemo(() => {
-    /* Reminders: hide completed and deleted by default (no toggles for reminders). */
-    const remindersFiltered = reminders.filter((r) => {
-      if (r.completed) return false
+    /* Reminders: hide soft-deleted by default; include completed unless filtered by view. */
+    let remindersFiltered = reminders.filter((r) => {
       if (r.deleted ?? false) return false
       return true
     })
@@ -735,30 +741,31 @@ export function TasksPage() {
       }
     }
 
-    /* Default filter: exclude Closed (completed) status for all views. */
-    let baseTasks = tasks.filter((t) => t.status !== 'completed')
+    /* Base tasks: include all statuses; Archive/Trash views filter by status explicitly below. */
+    let baseTasks = tasks
 
     /* By view: lineup, available, all, or custom base list. */
     let viewTasks: Task[]
     switch (viewMode) {
       case 'lineup':
         viewTasks = baseTasks.filter((t) => lineUpTaskIds.has(t.id))
+        /* Line Up shows only tasks in the lineup; no reminders */
+        remindersFiltered = []
         break
       case 'available': {
-        const todayStartMs = new Date()
-        todayStartMs.setHours(0, 0, 0, 0)
-        const todayStart = todayStartMs.getTime()
+        /* Available view: apply built-in default filter (status not Complete, no blocking deps, start <= now & earlier) via filter conditions. */
+        const conditions = AVAILABLE_DEFAULT_FILTER_CONDITIONS
         viewTasks = baseTasks.filter((t) => {
           if (t.status === 'archived' || t.status === 'deleted') return false
-          if (blockedTaskIds.has(t.id)) return false
-          if (t.start_date != null && String(t.start_date).trim() !== '') {
-            const startDate = new Date(t.start_date)
-            const startMs = startDate.getTime()
-            if (Number.isNaN(startMs)) return true
-            const startDayMs = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime()
-            if (startDayMs > todayStart) return false
+          let result = false
+          for (let i = 0; i < conditions.length; i++) {
+            const c = conditions[i]
+            const match = evaluateFilterCondition(c, t, blockedTaskIds, blockingTaskIds)
+            const combine = i === 0 ? undefined : (c.combineWithPrevious ?? 'and')
+            if (i === 0) result = match
+            else result = combine === 'or' ? result || match : result && match
           }
-          return true
+          return result
         })
         /* Sort Available: urgent first, then due date (earliest), priority (high to low), status (in progress before open). */
         viewTasks = [...viewTasks].sort((a, b) => {
@@ -774,11 +781,28 @@ export function TasksPage() {
           const statusOrder = (s: Task['status']) => (s === 'in_progress' ? 1 : s === 'active' ? 0 : -1)
           return statusOrder(b.status) - statusOrder(a.status)
         })
+        /* Available view: show only incomplete reminders (align with "status is not complete"). */
+        remindersFiltered = remindersFiltered.filter((r) => !r.completed)
         break
       }
-      case 'all':
-        viewTasks = [...baseTasks]
+      case 'all': {
+        /* All Tasks view: default filter is Status is not Complete. */
+        const conditions = ALL_DEFAULT_FILTER_CONDITIONS
+        viewTasks = baseTasks.filter((t) => {
+          let result = false
+          for (let i = 0; i < conditions.length; i++) {
+            const c = conditions[i]
+            const match = evaluateFilterCondition(c, t, blockedTaskIds, blockingTaskIds)
+            const combine = i === 0 ? undefined : (c.combineWithPrevious ?? 'and')
+            if (i === 0) result = match
+            else result = combine === 'or' ? result || match : result && match
+          }
+          return result
+        })
+        /* All Tasks view: show only incomplete reminders (align with "status is not complete"). */
+        remindersFiltered = remindersFiltered.filter((r) => !r.completed)
         break
+      }
       case 'custom':
       default:
         viewTasks = [...baseTasks]
@@ -1174,12 +1198,19 @@ export function TasksPage() {
       <FilterModal
         isOpen={filterOpen}
         onClose={() => setFilterOpen(false)}
-        conditions={viewMode === 'available' ? AVAILABLE_DEFAULT_FILTER_CONDITIONS : filterConditions}
+        conditions={
+          viewMode === 'available'
+            ? AVAILABLE_DEFAULT_FILTER_CONDITIONS
+            : viewMode === 'all'
+              ? ALL_DEFAULT_FILTER_CONDITIONS
+              : filterConditions
+        }
         onConditionsChange={(newConditions) => {
-          // If switching from available to custom and no custom filters exist yet, preserve available defaults
+          // If switching from available/all to custom and no custom filters exist yet, preserve defaults
           const wasAvailable = viewMode === 'available'
-          if (wasAvailable && filterConditions.length === 0 && newConditions.length > 0) {
-            // User modified filters from available view - use their modifications
+          const wasAll = viewMode === 'all'
+          if ((wasAvailable || wasAll) && filterConditions.length === 0 && newConditions.length > 0) {
+            // User modified filters from available/all view - use their modifications
             setFilterConditions(newConditions)
           } else {
             setFilterConditions(newConditions)
