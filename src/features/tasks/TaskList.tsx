@@ -718,11 +718,6 @@ export function TaskList({
           }}
           onArchive={onArchiveTask}
           onMarkDeleted={onMarkDeletedTask}
-          onDelete={async (t) => {
-            await deleteTask(t.id)
-            setContextTask(null)
-            refetch?.()
-          }}
           lineUpTaskIds={lineUpTaskIds}
           onAddToLineUp={onAddToLineUp}
           onRemoveFromLineUp={onRemoveFromLineUp}

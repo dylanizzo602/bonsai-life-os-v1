@@ -23,8 +23,6 @@ export interface TaskContextPopoverProps {
   onArchive?: (task: Task) => void
   /** Mark task as deleted (soft delete; sets status to deleted) */
   onMarkDeleted?: (task: Task) => void
-  /** Permanently delete the task from the database */
-  onDelete: (task: Task) => void
   /** Line Up task IDs (show "Add to Line Up" / "Remove from Line Up") */
   lineUpTaskIds?: Set<string>
   onAddToLineUp?: (taskId: string) => void
@@ -48,7 +46,6 @@ export function TaskContextPopover({
   onDuplicate,
   onArchive,
   onMarkDeleted,
-  onDelete,
   lineUpTaskIds,
   onAddToLineUp,
   onRemoveFromLineUp,
@@ -124,10 +121,6 @@ export function TaskContextPopover({
     onMarkDeleted?.(task)
     onClose()
   }
-  const handleDelete = () => {
-    onDelete(task)
-    onClose()
-  }
   const inLineUp = lineUpTaskIds?.has(task.id) ?? false
   const handleAddToLineUp = () => {
     onAddToLineUp?.(task.id)
@@ -188,7 +181,7 @@ export function TaskContextPopover({
           type="button"
           role="menuitem"
           onClick={handleArchive}
-          className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors"
+          className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors rounded-none last:rounded-b-xl"
         >
           {isArchived ? 'Unarchive' : 'Archive'}
         </button>
@@ -197,19 +190,11 @@ export function TaskContextPopover({
             type="button"
             role="menuitem"
             onClick={handleMarkDeleted}
-            className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors"
+            className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors rounded-none last:rounded-b-xl"
           >
             Mark deleted
           </button>
         )}
-        <button
-          type="button"
-          role="menuitem"
-          onClick={handleDelete}
-          className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors rounded-none last:rounded-b-xl"
-        >
-          Permanently delete
-        </button>
       </div>
     </div>
   )

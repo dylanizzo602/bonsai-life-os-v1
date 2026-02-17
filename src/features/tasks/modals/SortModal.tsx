@@ -72,8 +72,8 @@ export function SortModal({
     if (localSortBy.some((entry) => entry.field === field)) {
       return // Field already exists, don't add duplicate
     }
-    const direction = field === 'task_name' || field === 'start_date' || field === 'due_date' ? 'asc' : 'desc'
-    const newSortBy = [...localSortBy, { field, direction }]
+    const direction: 'asc' | 'desc' = field === 'task_name' || field === 'start_date' || field === 'due_date' ? 'asc' : 'desc'
+    const newSortBy: SortByEntry[] = [...localSortBy, { field, direction }]
     setLocalSortBy(newSortBy)
     onSortByChange(newSortBy)
     setIsPopoverOpen(false) // Close popover after adding

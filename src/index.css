@@ -91,4 +91,8 @@ body {
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+  /* Habit table: hover overlay only shows on completed cells */
+  td[data-status="completed"]:hover .completed-hover-overlay {
+    opacity: 1;
+  }
 }

@@ -1,8 +1,9 @@
 /* FilterModal: Modal for building task filters per plan (field, operator, criteria per field type) */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Modal } from '../../../components/Modal'
-import { CloseIcon } from '../../../components/icons'
+import { CloseIcon, PlusIcon } from '../../../components/icons'
 
 export interface FilterCondition {
   id: string
@@ -220,6 +221,11 @@ export function FilterModal({
   availableTagNames = [],
 }: FilterModalProps) {
   const [localConditions, setLocalConditions] = useState<FilterCondition[]>(conditions)
+  /* Add filter popover: open state, refs, and position (like Sort modal "Add sort" popover) */
+  const [isAddFilterPopoverOpen, setIsAddFilterPopoverOpen] = useState(false)
+  const addFilterButtonRef = useRef<HTMLButtonElement>(null)
+  const addFilterPopoverRef = useRef<HTMLDivElement>(null)
+  const [addFilterPopoverPosition, setAddFilterPopoverPosition] = useState({ top: 0, left: 0 })
 
   useEffect(() => {
     if (isOpen) setLocalConditions(conditions)
@@ -231,17 +237,21 @@ export function FilterModal({
     onConditionsChange?.(next)
   }
 
-  const handleAddFilter = () => {
+  /* Add a new filter condition for the chosen field; close popover after adding */
+  const handleAddFilterWithField = (fieldId: string) => {
+    const operator = getDefaultOperator(fieldId)
+    const value = getDefaultValue(fieldId, operator)
     const next: FilterCondition = {
       id: crypto.randomUUID?.() ?? `f-${Date.now()}`,
-      field: 'status',
-      operator: 'is',
-      value: 'Open',
+      field: fieldId,
+      operator,
+      value,
       ...(localConditions.length > 0 ? { combineWithPrevious: 'and' as const } : {}),
     }
     const nextList = [...localConditions, next]
     setLocalConditions(nextList)
     onConditionsChange?.(nextList)
+    setIsAddFilterPopoverOpen(false)
   }
 
   const handleRemove = (id: string) => {
@@ -267,15 +277,102 @@ export function FilterModal({
     onClose()
   }
 
+  /* Position add-filter popover: below button on desktop, centered on mobile (match Sort modal) */
+  useEffect(() => {
+    if (!isAddFilterPopoverOpen || !addFilterPopoverRef.current || !addFilterButtonRef.current) return
+    const updatePosition = () => {
+      if (!addFilterPopoverRef.current || !addFilterButtonRef.current) return
+      const popoverRect = addFilterPopoverRef.current.getBoundingClientRect()
+      const buttonRect = addFilterButtonRef.current.getBoundingClientRect()
+      const padding = 8
+      const viewportWidth = window.innerWidth
+      const viewportHeight = window.innerHeight
+      const DESKTOP_BREAKPOINT = 1024
+      let top: number
+      let left: number
+      if (viewportWidth < DESKTOP_BREAKPOINT) {
+        top = Math.max(padding, (viewportHeight - popoverRect.height) / 2)
+        left = Math.max(padding, (viewportWidth - popoverRect.width) / 2)
+      } else {
+        top = buttonRect.bottom + 4
+        left = buttonRect.left
+        if (left + popoverRect.width > viewportWidth - padding) left = viewportWidth - popoverRect.width - padding
+        if (left < padding) left = padding
+        if (top + popoverRect.height > viewportHeight - padding) top = buttonRect.top - popoverRect.height - 4
+        if (top < padding) top = padding
+      }
+      setAddFilterPopoverPosition({ top, left })
+    }
+    const t = setTimeout(updatePosition, 0)
+    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener('resize', updatePosition)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener('resize', updatePosition)
+    }
+  }, [isAddFilterPopoverOpen])
+
+  /* Close add-filter popover when clicking outside */
+  useEffect(() => {
+    if (!isAddFilterPopoverOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        addFilterPopoverRef.current && !addFilterPopoverRef.current.contains(e.target as Node) &&
+        addFilterButtonRef.current && !addFilterButtonRef.current.contains(e.target as Node)
+      ) {
+        setIsAddFilterPopoverOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isAddFilterPopoverOpen])
+
+  /* Close add-filter popover when modal closes */
+  useEffect(() => {
+    if (!isOpen) setIsAddFilterPopoverOpen(false)
+  }, [isOpen])
+
   const footer = (
     <>
-      <button
-        type="button"
-        onClick={handleAddFilter}
-        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-body font-medium text-bonsai-slate-700 bg-bonsai-slate-100 hover:bg-bonsai-slate-200"
-      >
-        + Add filter
-      </button>
+      <div className="relative">
+        <button
+          ref={addFilterButtonRef}
+          type="button"
+          onClick={() => setIsAddFilterPopoverOpen((prev) => !prev)}
+          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-body font-medium text-bonsai-sage-700 bg-bonsai-sage-100 hover:bg-bonsai-sage-200"
+          aria-expanded={isAddFilterPopoverOpen}
+          aria-haspopup="true"
+        >
+          <PlusIcon className="w-4 h-4" />
+          Add filter
+        </button>
+        {/* Add filter popover: list of filter fields (same pattern as Sort "Add sort" popover) */}
+        {isAddFilterPopoverOpen && createPortal(
+          <div
+            ref={addFilterPopoverRef}
+            className="fixed z-[10000] flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-lg border border-bonsai-slate-200 bg-white shadow-lg"
+            style={{ top: `${addFilterPopoverPosition.top}px`, left: `${addFilterPopoverPosition.left}px` }}
+            role="menu"
+            aria-label="Add filter field"
+          >
+            <div className="flex flex-col p-1.5 min-w-[200px] max-h-[320px] overflow-y-auto">
+              {FILTER_FIELDS.map((field) => (
+                <button
+                  key={field.id}
+                  type="button"
+                  onClick={() => handleAddFilterWithField(field.id)}
+                  className="flex items-center gap-2.5 rounded-md px-3 py-2 text-body font-medium transition-colors bg-white text-bonsai-slate-800 hover:bg-bonsai-slate-50 text-left"
+                  role="menuitem"
+                >
+                  {field.label}
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body
+        )}
+      </div>
       <button
         type="button"
         onClick={handleClearAll}

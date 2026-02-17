@@ -104,7 +104,7 @@ export function ReminderItem({
           </span>
         )}
       </div>
-      {/* Remind date: clickable when onUpdateReminder provided; shows repeat icon + tooltip when recurring */}
+      {/* Remind date: right-aligned like normal task reminders; clickable when onUpdateReminder provided; shows repeat icon + tooltip when recurring */}
       {onUpdateReminder ? (
         <>
           {reminder.recurrence_pattern ? (
@@ -124,7 +124,7 @@ export function ReminderItem({
                   e.stopPropagation()
                   setIsDatePickerOpen(true)
                 }}
-                className={`flex items-center gap-1 text-secondary shrink-0 ml-2 hover:underline transition-colors rounded px-1 -mx-1 ${isRemindOverdue ? 'text-red-600 font-medium hover:text-red-700' : 'text-bonsai-slate-500 hover:text-bonsai-slate-700'}`}
+                className={`flex items-center gap-1 text-secondary shrink-0 ml-auto hover:underline transition-colors rounded px-1 -mx-1 ${isRemindOverdue ? 'text-red-600 font-medium hover:text-red-700' : 'text-bonsai-slate-500 hover:text-bonsai-slate-700'}`}
                 aria-label={reminder.remind_at ? 'Edit reminder date' : 'Set reminder date'}
               >
                 <RepeatIcon className="w-4 h-4 shrink-0" aria-hidden />
@@ -139,7 +139,7 @@ export function ReminderItem({
                 e.stopPropagation()
                 setIsDatePickerOpen(true)
               }}
-              className={`flex items-center gap-1 text-secondary shrink-0 ml-2 hover:underline transition-colors rounded px-1 -mx-1 ${isRemindOverdue ? 'text-red-600 font-medium hover:text-red-700' : 'text-bonsai-slate-500 hover:text-bonsai-slate-700'}`}
+              className={`flex items-center gap-1 text-secondary shrink-0 ml-auto hover:underline transition-colors rounded px-1 -mx-1 ${isRemindOverdue ? 'text-red-600 font-medium hover:text-red-700' : 'text-bonsai-slate-500 hover:text-bonsai-slate-700'}`}
               aria-label={reminder.remind_at ? 'Edit reminder date' : 'Set reminder date'}
             >
               {formatRemindDate(reminder.remind_at)}
@@ -157,7 +157,7 @@ export function ReminderItem({
           />
         </>
       ) : (
-        <span className={`flex items-center gap-1 text-secondary shrink-0 ml-2 ${isRemindOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-500'}`}>
+        <span className={`flex items-center gap-1 text-secondary shrink-0 ml-auto ${isRemindOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-500'}`}>
           {reminder.recurrence_pattern ? (
             <RepeatIcon className="w-4 h-4 shrink-0" aria-hidden />
           ) : null}
