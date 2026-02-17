@@ -16,9 +16,6 @@ export interface FilterCondition {
 export interface FilterModalProps {
   isOpen: boolean
   onClose: () => void
-  /** Saved views dropdown: load a view */
-  savedViewIds?: { id: string; name: string }[]
-  onLoadSavedView?: (id: string) => void
   /** Current filter conditions (flat list for v1) */
   conditions?: FilterCondition[]
   onConditionsChange?: (conditions: FilterCondition[]) => void
@@ -217,8 +214,6 @@ function getDefaultValue(fieldId: string, operator?: string): string {
 export function FilterModal({
   isOpen,
   onClose,
-  savedViewIds = [],
-  onLoadSavedView,
   conditions = [],
   onConditionsChange,
   onApply,
@@ -571,27 +566,6 @@ export function FilterModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Filters" fullScreenOnMobile footer={footer}>
-      {savedViewIds.length > 0 && onLoadSavedView && (
-        <div className="mb-4">
-          <select
-            className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-secondary text-bonsai-slate-700 bg-white"
-            aria-label="Load saved view"
-            onChange={(e) => {
-              const id = e.target.value
-              if (id) onLoadSavedView(id)
-              e.target.value = ''
-            }}
-          >
-            <option value="">Saved views</option>
-            {savedViewIds.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
       <div className="flex flex-col gap-3">
         <div className="text-secondary font-medium text-bonsai-slate-600">Where</div>
         {localConditions.length === 0 ? (

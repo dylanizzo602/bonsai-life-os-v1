@@ -307,15 +307,27 @@ export function SingleDatePickerModal({
       let top: number
       let left: number
       if (viewportWidth < DESKTOP_BREAKPOINT) {
-        top = Math.max(padding, (viewportHeight - popoverRect.height) / 2)
+        /* Mobile/tablet: Center vertically, but ensure modal stays within viewport */
+        const centeredTop = (viewportHeight - popoverRect.height) / 2
+        top = Math.max(padding, centeredTop)
+        /* Ensure bottom doesn't go below viewport */
+        if (top + popoverRect.height > viewportHeight - padding) {
+          top = Math.max(padding, viewportHeight - popoverRect.height - padding)
+        }
         left = Math.max(padding, (viewportWidth - popoverRect.width) / 2)
       } else {
+        /* Desktop: Position below trigger, but ensure modal stays within viewport */
         if (!triggerRef.current) return
         const triggerRect = triggerRef.current.getBoundingClientRect()
         top = triggerRect.bottom + 4
         left = triggerRect.left
+        /* Ensure modal doesn't go off right edge */
         if (left + popoverRect.width > viewportWidth - padding) left = viewportWidth - popoverRect.width - padding
         if (left < padding) left = padding
+        /* Ensure modal doesn't go off bottom edge */
+        if (top + popoverRect.height > viewportHeight - padding) {
+          top = Math.max(padding, viewportHeight - popoverRect.height - padding)
+        }
       }
       setPosition({ top, left })
     }
@@ -550,7 +562,7 @@ export function SingleDatePickerModal({
 
       {/* Left column: suggested dates or recurring; right: calendar; flex-1 min-h-0 so content fits viewport */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden md:grid-cols-[14rem_1fr] md:gap-8">
-        <div className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-col gap-2 overflow-y-auto">
           {showRecurringSection ? (
             <RecurringSettingsSection
               value={recurrencePattern}
@@ -589,7 +601,7 @@ export function SingleDatePickerModal({
           )}
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-col overflow-y-auto">
           <div className="mb-2 flex shrink-0 items-center justify-between gap-2 md:mb-3">
             <span className="text-secondary font-medium text-bonsai-slate-800">{viewMonthLabel}</span>
             <div className="flex items-center gap-1">
@@ -618,7 +630,7 @@ export function SingleDatePickerModal({
               </button>
             </div>
           </div>
-          <div className="grid min-h-0 flex-1 grid-cols-7 gap-0.5 text-center sm:gap-1">
+          <div className="grid shrink-0 grid-cols-7 gap-0.5 text-center sm:gap-1">
             {WEEKDAYS.map((wd) => (
               <div key={wd} className="py-0.5 text-xs font-medium text-bonsai-slate-500 sm:py-1 sm:text-secondary">
                 {wd}

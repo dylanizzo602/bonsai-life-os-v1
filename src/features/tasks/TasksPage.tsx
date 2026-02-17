@@ -19,7 +19,7 @@ import { useTasks } from './hooks/useTasks'
 import { AddEditReminderModal } from '../reminders'
 import { useReminders } from '../reminders/hooks/useReminders'
 import { getDependenciesForTaskIds } from '../../lib/supabase/tasks'
-import { getSavedViews, createSavedView } from '../../lib/supabase/savedViews'
+import { getSavedViews, createSavedView, updateSavedView, deleteSavedView } from '../../lib/supabase/savedViews'
 import { useTags } from './hooks/useTags'
 import { FilterModal } from './modals/FilterModal'
 import { SortModal } from './modals/SortModal'
@@ -392,6 +392,61 @@ function evaluateFilterCondition(
   return true
 }
 
+/** Evaluate one filter condition against a reminder; returns true if reminder matches. Only supports due_date and task_name fields. */
+function evaluateFilterConditionForReminder(c: FilterCondition, r: Reminder): boolean {
+  const val = (c.value ?? '').trim()
+  const valLower = val.toLowerCase()
+  const name = (r.name ?? '').toLowerCase()
+
+  /* Resolve date range from preset name or encoded value (exact/before/after/range). */
+  const getRangeForDateValue = (v: string, kind: 'start' | 'due') => {
+    const parsed = parseDateValue(v)
+    if (parsed) return parsed
+    const presetRange = getDateRangeForPreset(v, kind)
+    if (presetRange) return { ...presetRange, mode: 'exact' as const }
+    return null
+  }
+
+  /* Task name filter: map to reminder name */
+  if (c.field === 'task_name') {
+    if (c.operator === 'contains') return name.includes(valLower)
+    if (c.operator === 'does_not_contain') return !name.includes(valLower)
+    return true
+  }
+
+  /* Due date filter: map to remind_at */
+  if (c.field === 'due_date') {
+    const iso = r.remind_at ? new Date(r.remind_at).getTime() : null
+    if (c.operator === 'is_set') return iso != null
+    if (c.operator === 'is_not_set') return iso == null
+    if (valLower === 'no date' && (c.operator === 'is' || c.operator === 'is_not')) {
+      return c.operator === 'is' ? iso == null : iso != null
+    }
+    if (valLower === 'any date' && (c.operator === 'is' || c.operator === 'is_not')) {
+      return c.operator === 'is' ? iso != null : iso == null
+    }
+    const range = getRangeForDateValue(val, 'due')
+    if (range && c.operator === 'is') {
+      if (iso == null) return false
+      if (range.mode === 'before') return iso < range.start
+      if (range.mode === 'after') return iso > range.end
+      return iso >= range.start && iso <= range.end
+    }
+    if (range && c.operator === 'is_not') {
+      if (iso == null) return true
+      if (range.mode === 'before') return iso >= range.start
+      if (range.mode === 'after') return iso <= range.end
+      return iso < range.start || iso > range.end
+    }
+    if (iso != null && range && c.operator === 'before') return iso < range.start
+    if (iso != null && range && c.operator === 'after') return iso > range.end
+    return true
+  }
+
+  /* Other fields don't apply to reminders, so return true (don't filter out) */
+  return true
+}
+
 /**
  * Tasks page component.
  * Toolbar: view buttons (Line Up, Available, All, Custom), Filter, Sort, Search, Add. Task list with Archive/Trash at bottom.
@@ -469,12 +524,13 @@ export function TasksPage() {
   /* Custom view: filter conditions (flat list) and sort order. */
   const [filterConditions, setFilterConditions] = useState<FilterCondition[]>([])
   const [sortBy, setSortBy] = useState<SortByEntry[]>([])
-  const [_selectedSavedViewId, setSelectedSavedViewId] = useState<string | null>(null)
+  const [selectedSavedViewId, setSelectedSavedViewId] = useState<string | null>(null)
   /* Saved views list for Custom dropdown (fetch on mount). */
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
   const [customDropdownOpen, setCustomDropdownOpen] = useState(false)
   const [saveViewName, setSaveViewName] = useState('')
   const [savingView, setSavingView] = useState(false)
+  const [updatingView, setUpdatingView] = useState(false)
   /* Blocked/blocking task IDs: for Available view and for Custom filter (Task dependencies). */
   const [blockedTaskIds, setBlockedTaskIds] = useState<Set<string>>(new Set())
   const [blockingTaskIds, setBlockingTaskIds] = useState<Set<string>>(new Set())
@@ -599,6 +655,61 @@ export function TasksPage() {
     }
   }, [saveViewName, filterConditions, sortBy])
 
+  /* Check if current filters/sorts differ from selected saved view: Used to show update button */
+  const hasViewChanges = useMemo(() => {
+    if (!selectedSavedViewId) return false
+    const selectedView = savedViews.find(v => v.id === selectedSavedViewId)
+    if (!selectedView) return false
+    
+    /* Compare filters: Deep equality check */
+    const savedFilters = (selectedView.filter_json as FilterCondition[]) ?? []
+    const filtersMatch = JSON.stringify(savedFilters.sort((a, b) => a.id.localeCompare(b.id))) === 
+                         JSON.stringify(filterConditions.sort((a, b) => a.id.localeCompare(b.id)))
+    
+    /* Compare sorts: Deep equality check */
+    const savedSorts = (selectedView.sort_json as SortByEntry[]) ?? []
+    const sortsMatch = JSON.stringify(savedSorts) === JSON.stringify(sortBy)
+    
+    return !filtersMatch || !sortsMatch
+  }, [selectedSavedViewId, savedViews, filterConditions, sortBy])
+
+  /* Update current saved view: Save current filter and sort settings to selected view */
+  const handleUpdateCurrentView = useCallback(async () => {
+    if (!selectedSavedViewId) return
+    
+    setUpdatingView(true)
+    try {
+      const updated = await updateSavedView(selectedSavedViewId, {
+        filter_json: filterConditions,
+        sort_json: sortBy,
+      })
+      /* Update the saved view in the list */
+      setSavedViews((prev) => prev.map(v => v.id === updated.id ? updated : v))
+    } catch {
+      // Error already logged in updateSavedView
+    } finally {
+      setUpdatingView(false)
+    }
+  }, [selectedSavedViewId, filterConditions, sortBy])
+
+  /* Delete saved view: Remove from database and update state */
+  const handleDeleteSavedView = useCallback(async (viewId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirm('Are you sure you want to delete this saved view?')) return
+    
+    try {
+      await deleteSavedView(viewId)
+      /* Remove from saved views list */
+      setSavedViews((prev) => prev.filter(v => v.id !== viewId))
+      /* If this was the selected view, clear selection */
+      if (selectedSavedViewId === viewId) {
+        setSelectedSavedViewId(null)
+      }
+    } catch {
+      // Error already logged in deleteSavedView
+    }
+  }, [selectedSavedViewId])
+
   /* Filter pipeline: Archive/Trash first, then by view, then by filter (custom), then by search, then by sort. */
   const { filteredTasks, filteredReminders } = useMemo(() => {
     /* Reminders: hide completed and deleted by default (no toggles for reminders). */
@@ -684,6 +795,23 @@ export function TasksPage() {
             }
             return result
           })
+          /* Apply filter conditions to reminders: only due_date and task_name fields apply */
+          const reminderRelevantConditions = filterConditions.filter(
+            (c) => c.field === 'due_date' || c.field === 'task_name',
+          )
+          if (reminderRelevantConditions.length > 0) {
+            remindersFiltered = remindersFiltered.filter((r) => {
+              let result = false
+              for (let i = 0; i < reminderRelevantConditions.length; i++) {
+                const c = reminderRelevantConditions[i]
+                const match = evaluateFilterConditionForReminder(c, r)
+                const combine = i === 0 ? undefined : (c.combineWithPrevious ?? 'and')
+                if (i === 0) result = match
+                else result = combine === 'or' ? result || match : result && match
+              }
+              return result
+            })
+          }
         }
         /* Apply user sort when in custom and sortBy has entries. */
         if (sortBy.length > 0) {
@@ -715,6 +843,23 @@ export function TasksPage() {
                 const av = a.time_estimate ?? 0
                 const bv = b.time_estimate ?? 0
                 cmp = av - bv
+              }
+              if (cmp !== 0) return direction === 'asc' ? cmp : -cmp
+            }
+            return 0
+          })
+          /* Apply sort to reminders: only due_date and task_name fields apply */
+          remindersFiltered.sort((a, b) => {
+            for (const { field, direction } of sortBy) {
+              /* Only apply sorts for fields that make sense for reminders */
+              if (field !== 'due_date' && field !== 'task_name') continue
+              let cmp = 0
+              if (field === 'due_date') {
+                const av = a.remind_at ? new Date(a.remind_at).getTime() : Number.MAX_SAFE_INTEGER
+                const bv = b.remind_at ? new Date(b.remind_at).getTime() : Number.MAX_SAFE_INTEGER
+                cmp = av - bv
+              } else if (field === 'task_name') {
+                cmp = (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
               }
               if (cmp !== 0) return direction === 'asc' ? cmp : -cmp
             }
@@ -794,7 +939,10 @@ export function TasksPage() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setViewMode('lineup')}
+            onClick={() => {
+              setViewMode('lineup')
+              setSelectedSavedViewId(null)
+            }}
             className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-secondary font-medium transition-colors ${viewMode === 'lineup' ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
             aria-pressed={viewMode === 'lineup'}
           >
@@ -803,7 +951,10 @@ export function TasksPage() {
           </button>
           <button
             type="button"
-            onClick={() => setViewMode('available')}
+            onClick={() => {
+              setViewMode('available')
+              setSelectedSavedViewId(null)
+            }}
             className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-secondary font-medium transition-colors ${viewMode === 'available' ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
             aria-pressed={viewMode === 'available'}
           >
@@ -812,7 +963,10 @@ export function TasksPage() {
           </button>
           <button
             type="button"
-            onClick={() => setViewMode('all')}
+            onClick={() => {
+              setViewMode('all')
+              setSelectedSavedViewId(null)
+            }}
             className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-secondary font-medium transition-colors ${viewMode === 'all' ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
             aria-pressed={viewMode === 'all'}
           >
@@ -821,20 +975,30 @@ export function TasksPage() {
           </button>
           {/* Custom: button with dropdown for save/load saved views */}
           <div className="relative inline-block">
-            <button
-              type="button"
-              onClick={() => {
-                setViewMode('custom')
-                setCustomDropdownOpen((v) => !v)
-              }}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-secondary font-medium transition-colors ${viewMode === 'custom' ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
-              aria-pressed={viewMode === 'custom'}
-              aria-haspopup="true"
-              aria-expanded={customDropdownOpen}
-            >
-              Custom
-              <ChevronDownIcon className="w-4 h-4" />
-            </button>
+            {(() => {
+              /* Get selected view name: Find view by ID or use "Custom" as default */
+              const selectedView = selectedSavedViewId 
+                ? savedViews.find(v => v.id === selectedSavedViewId)
+                : null
+              const buttonText = selectedView?.name || 'Custom'
+              
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('custom')
+                    setCustomDropdownOpen((v) => !v)
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-secondary font-medium transition-colors ${viewMode === 'custom' ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
+                  aria-pressed={viewMode === 'custom'}
+                  aria-haspopup="true"
+                  aria-expanded={customDropdownOpen}
+                >
+                  {buttonText}
+                  <ChevronDownIcon className="w-4 h-4" />
+                </button>
+              )
+            })()}
             {customDropdownOpen && (
               <>
                 <div
@@ -842,39 +1006,70 @@ export function TasksPage() {
                   aria-hidden
                   onClick={() => setCustomDropdownOpen(false)}
                 />
-                <div className="absolute left-0 top-full z-50 mt-1 min-w-[200px] rounded-lg border border-bonsai-slate-200 bg-white py-2 shadow-lg">
-                  <div className="px-3 py-2 border-b border-bonsai-slate-100">
-                    <input
-                      type="text"
-                      value={saveViewName}
-                      onChange={(e) => setSaveViewName(e.target.value)}
-                      placeholder="Name for new view"
-                      className="w-full rounded border border-bonsai-slate-300 px-2 py-1.5 text-body text-bonsai-slate-700"
-                      aria-label="View name"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSaveCurrentView}
-                      disabled={savingView}
-                      className="mt-2 w-full rounded-lg px-2 py-1.5 text-body font-medium text-bonsai-sage-700 bg-bonsai-sage-100 hover:bg-bonsai-sage-200 disabled:opacity-50"
-                    >
-                      {savingView ? 'Saving…' : 'Save current view'}
-                    </button>
-                  </div>
+                <div 
+                  className="absolute left-0 top-full z-50 mt-1 min-w-[200px] rounded-lg border border-bonsai-slate-200 bg-white py-2 shadow-lg"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Saved views list: Show at top */}
                   {savedViews.length > 0 && (
-                    <div className="max-h-48 overflow-y-auto">
+                    <div className="max-h-48 overflow-y-auto border-b border-bonsai-slate-100">
                       {savedViews.map((v) => (
-                        <button
+                        <div
                           key={v.id}
-                          type="button"
-                          onClick={() => handleLoadSavedView(v)}
-                          className="w-full text-left px-3 py-2 text-body text-bonsai-slate-700 hover:bg-bonsai-slate-100"
+                          className="group flex items-center gap-2 px-3 py-2 hover:bg-bonsai-slate-100"
                         >
-                          {v.name}
-                        </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleLoadSavedView(v)
+                            }}
+                            className="flex-1 text-left text-body text-bonsai-slate-700"
+                          >
+                            {v.name}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteSavedView(v.id, e)}
+                            className="shrink-0 p-1 rounded text-bonsai-slate-400 hover:text-bonsai-slate-700 hover:bg-bonsai-slate-200 opacity-0 group-hover:opacity-100 transition-opacity"
+                            aria-label={`Delete ${v.name}`}
+                          >
+                            <CloseIcon className="w-4 h-4" />
+                          </button>
+                        </div>
                       ))}
                     </div>
                   )}
+                  {/* Save new view: Input and button side by side */}
+                  <div className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={saveViewName}
+                        onChange={(e) => setSaveViewName(e.target.value)}
+                        placeholder="Name for new view"
+                        className="flex-1 rounded border border-bonsai-slate-300 px-2 py-1.5 text-body text-bonsai-slate-700"
+                        aria-label="View name"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !savingView) {
+                            e.stopPropagation()
+                            handleSaveCurrentView()
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleSaveCurrentView()
+                        }}
+                        disabled={savingView}
+                        className="shrink-0 rounded-lg px-3 py-1.5 text-body font-medium text-bonsai-sage-700 bg-bonsai-sage-100 hover:bg-bonsai-sage-200 disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {savingView ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </>
             )}
@@ -906,6 +1101,36 @@ export function TasksPage() {
             </div>
           ) : (
             <>
+              {/* Save view button: Show when in custom view with no saved view selected */}
+              {viewMode === 'custom' && !selectedSavedViewId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomDropdownOpen(true)
+                    /* Focus the input after dropdown opens */
+                    setTimeout(() => {
+                      const input = document.querySelector('[aria-label="View name"]') as HTMLInputElement
+                      input?.focus()
+                    }, 100)
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 md:px-3 text-secondary font-medium text-bonsai-sage-700 bg-bonsai-sage-100 hover:bg-bonsai-sage-200 transition-colors whitespace-nowrap"
+                  aria-label="Save view"
+                >
+                  Save view
+                </button>
+              )}
+              {/* Update current view button: Show when a saved view is selected and has been modified */}
+              {selectedSavedViewId && hasViewChanges && (
+                <button
+                  type="button"
+                  onClick={handleUpdateCurrentView}
+                  disabled={updatingView}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 md:px-3 text-secondary font-medium text-bonsai-sage-700 bg-bonsai-sage-100 hover:bg-bonsai-sage-200 disabled:opacity-50 transition-colors whitespace-nowrap"
+                  aria-label="Update current view"
+                >
+                  {updatingView ? 'Updating…' : 'Update current view'}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setFilterOpen(true)}
@@ -949,12 +1174,6 @@ export function TasksPage() {
       <FilterModal
         isOpen={filterOpen}
         onClose={() => setFilterOpen(false)}
-        savedViewIds={savedViews.map((v) => ({ id: v.id, name: v.name }))}
-        onLoadSavedView={(id) => {
-          const v = savedViews.find((s) => s.id === id)
-          if (v) handleLoadSavedView(v)
-          setFilterOpen(false)
-        }}
         conditions={viewMode === 'available' ? AVAILABLE_DEFAULT_FILTER_CONDITIONS : filterConditions}
         onConditionsChange={(newConditions) => {
           // If switching from available to custom and no custom filters exist yet, preserve available defaults
@@ -965,6 +1184,7 @@ export function TasksPage() {
           } else {
             setFilterConditions(newConditions)
           }
+          // Keep selectedSavedViewId so user can update the view if desired
           // Switch to custom mode immediately when user modifies filters
           if (viewMode !== 'custom') {
             setViewMode('custom')
@@ -981,6 +1201,7 @@ export function TasksPage() {
         sortBy={viewMode === 'available' ? AVAILABLE_DEFAULT_SORT : sortBy}
         onSortByChange={(newSortBy) => {
           setSortBy(newSortBy)
+          // Keep selectedSavedViewId so user can update the view if desired
           // Switch to custom mode immediately when user modifies sort
           // If switching from available and no custom filters exist yet, copy the available defaults
           if (viewMode === 'available' && filterConditions.length === 0) {

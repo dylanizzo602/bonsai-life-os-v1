@@ -7,6 +7,7 @@ import { Tooltip } from '../../components/Tooltip'
 import { RepeatIcon } from '../../components/icons'
 import { SingleDatePickerModal } from './modals/SingleDatePickerModal'
 import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
+import { isOverdue } from '../tasks/utils/date'
 import type { Reminder, UpdateReminderInput } from './types'
 
 /** Format remind_at for list display */
@@ -59,6 +60,9 @@ export function ReminderItem({
     e.stopPropagation()
     onToggleComplete(reminder.id, e.target.checked)
   }
+
+  /* Check if reminder due date is overdue: use remind_at field */
+  const isRemindOverdue = Boolean(reminder.remind_at && isOverdue(reminder.remind_at))
 
   return (
     <div
@@ -120,7 +124,7 @@ export function ReminderItem({
                   e.stopPropagation()
                   setIsDatePickerOpen(true)
                 }}
-                className="flex items-center gap-1 text-secondary text-bonsai-slate-500 shrink-0 ml-2 hover:text-bonsai-slate-700 hover:underline transition-colors rounded px-1 -mx-1"
+                className={`flex items-center gap-1 text-secondary shrink-0 ml-2 hover:underline transition-colors rounded px-1 -mx-1 ${isRemindOverdue ? 'text-red-600 font-medium hover:text-red-700' : 'text-bonsai-slate-500 hover:text-bonsai-slate-700'}`}
                 aria-label={reminder.remind_at ? 'Edit reminder date' : 'Set reminder date'}
               >
                 <RepeatIcon className="w-4 h-4 shrink-0" aria-hidden />
@@ -135,7 +139,7 @@ export function ReminderItem({
                 e.stopPropagation()
                 setIsDatePickerOpen(true)
               }}
-              className="flex items-center gap-1 text-secondary text-bonsai-slate-500 shrink-0 ml-2 hover:text-bonsai-slate-700 hover:underline transition-colors rounded px-1 -mx-1"
+              className={`flex items-center gap-1 text-secondary shrink-0 ml-2 hover:underline transition-colors rounded px-1 -mx-1 ${isRemindOverdue ? 'text-red-600 font-medium hover:text-red-700' : 'text-bonsai-slate-500 hover:text-bonsai-slate-700'}`}
               aria-label={reminder.remind_at ? 'Edit reminder date' : 'Set reminder date'}
             >
               {formatRemindDate(reminder.remind_at)}
@@ -153,7 +157,7 @@ export function ReminderItem({
           />
         </>
       ) : (
-        <span className="flex items-center gap-1 text-secondary text-bonsai-slate-500 shrink-0 ml-2">
+        <span className={`flex items-center gap-1 text-secondary shrink-0 ml-2 ${isRemindOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-500'}`}>
           {reminder.recurrence_pattern ? (
             <RepeatIcon className="w-4 h-4 shrink-0" aria-hidden />
           ) : null}
