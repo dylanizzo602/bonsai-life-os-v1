@@ -114,10 +114,12 @@ export function TaskContextPopover({
     onDuplicate(task)
     onClose()
   }
+  /* Archive/Unarchive handler: Archive if not archived, unarchive if archived */
   const handleArchive = () => {
     onArchive?.(task)
     onClose()
   }
+  const isArchived = task.status === 'archived'
   const handleMarkDeleted = () => {
     onMarkDeleted?.(task)
     onClose()
@@ -188,7 +190,7 @@ export function TaskContextPopover({
           onClick={handleArchive}
           className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors"
         >
-          Archive
+          {isArchived ? 'Unarchive' : 'Archive'}
         </button>
         {onMarkDeleted && (
           <button

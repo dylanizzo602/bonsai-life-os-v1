@@ -613,29 +613,32 @@ export function TasksPage() {
       const list = tasks.filter((t) => t.status === 'archived')
       return {
         filteredTasks: list,
-        filteredReminders: remindersFiltered,
+        filteredReminders: [], // Archive view shows only archived tasks, no reminders
       }
     }
     if (showDeleted) {
       const list = tasks.filter((t) => t.status === 'deleted')
       return {
         filteredTasks: list,
-        filteredReminders: remindersFiltered,
+        filteredReminders: [], // Trash view shows only deleted tasks, no reminders
       }
     }
+
+    /* Default filter: exclude Closed (completed) status for all views. */
+    let baseTasks = tasks.filter((t) => t.status !== 'completed')
 
     /* By view: lineup, available, all, or custom base list. */
     let viewTasks: Task[]
     switch (viewMode) {
       case 'lineup':
-        viewTasks = tasks.filter((t) => lineUpTaskIds.has(t.id))
+        viewTasks = baseTasks.filter((t) => lineUpTaskIds.has(t.id))
         break
       case 'available': {
         const todayStartMs = new Date()
         todayStartMs.setHours(0, 0, 0, 0)
         const todayStart = todayStartMs.getTime()
-        viewTasks = tasks.filter((t) => {
-          if (t.status === 'completed' || t.status === 'archived' || t.status === 'deleted') return false
+        viewTasks = baseTasks.filter((t) => {
+          if (t.status === 'archived' || t.status === 'deleted') return false
           if (blockedTaskIds.has(t.id)) return false
           if (t.start_date != null && String(t.start_date).trim() !== '') {
             const startDate = new Date(t.start_date)
@@ -663,11 +666,11 @@ export function TasksPage() {
         break
       }
       case 'all':
-        viewTasks = [...tasks]
+        viewTasks = [...baseTasks]
         break
       case 'custom':
       default:
-        viewTasks = [...tasks]
+        viewTasks = [...baseTasks]
         /* Apply filter conditions with AND/OR: left-to-right evaluation using each condition's combineWithPrevious (default 'and'). */
         if (filterConditions.length > 0) {
           viewTasks = viewTasks.filter((t) => {
@@ -953,7 +956,20 @@ export function TasksPage() {
           setFilterOpen(false)
         }}
         conditions={viewMode === 'available' ? AVAILABLE_DEFAULT_FILTER_CONDITIONS : filterConditions}
-        onConditionsChange={setFilterConditions}
+        onConditionsChange={(newConditions) => {
+          // If switching from available to custom and no custom filters exist yet, preserve available defaults
+          const wasAvailable = viewMode === 'available'
+          if (wasAvailable && filterConditions.length === 0 && newConditions.length > 0) {
+            // User modified filters from available view - use their modifications
+            setFilterConditions(newConditions)
+          } else {
+            setFilterConditions(newConditions)
+          }
+          // Switch to custom mode immediately when user modifies filters
+          if (viewMode !== 'custom') {
+            setViewMode('custom')
+          }
+        }}
         onApply={() => setViewMode('custom')}
         availableTagNames={availableTagNames}
       />
@@ -963,7 +979,17 @@ export function TasksPage() {
         isOpen={sortOpen}
         onClose={() => setSortOpen(false)}
         sortBy={viewMode === 'available' ? AVAILABLE_DEFAULT_SORT : sortBy}
-        onSortByChange={setSortBy}
+        onSortByChange={(newSortBy) => {
+          setSortBy(newSortBy)
+          // Switch to custom mode immediately when user modifies sort
+          // If switching from available and no custom filters exist yet, copy the available defaults
+          if (viewMode === 'available' && filterConditions.length === 0) {
+            setFilterConditions([...AVAILABLE_DEFAULT_FILTER_CONDITIONS])
+          }
+          if (viewMode !== 'custom') {
+            setViewMode('custom')
+          }
+        }}
         onApply={() => setViewMode('custom')}
         defaultSortLabel={viewMode === 'all' && sortBy.length === 0 ? 'Default order (newest first)' : undefined}
       />
@@ -989,7 +1015,12 @@ export function TasksPage() {
         onOpenEditModal={openEdit}
         onCreateTask={createTask}
         onArchiveTask={async (task) => {
-          await updateTask(task.id, { status: 'archived' })
+          /* Archive/Unarchive: If task is archived, unarchive it (set to active); otherwise archive it */
+          if (task.status === 'archived') {
+            await updateTask(task.id, { status: 'active' })
+          } else {
+            await updateTask(task.id, { status: 'archived' })
+          }
         }}
         onMarkDeletedTask={async (task) => {
           await updateTask(task.id, { status: 'deleted' })

@@ -659,13 +659,6 @@ export function FilterModal({
             </div>
           ))
         )}
-        <button
-          type="button"
-          onClick={handleAddFilter}
-          className="text-body font-medium text-bonsai-sage-700 hover:underline text-left"
-        >
-          Add nested filter
-        </button>
       </div>
     </Modal>
   )

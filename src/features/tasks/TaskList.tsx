@@ -244,11 +244,11 @@ export function TaskList({
     })
   }
 
-  /* Combine tasks and reminders into a single sorted list: sort by created_at (newest first) */
+  /* Combine tasks and reminders: preserve task order (already sorted by TasksPage) and append reminders at end */
   const combinedItems = useMemo(() => {
     const items: Array<{ type: 'task' | 'reminder'; id: string; created_at: string; task?: Task; reminder?: Reminder }> = []
     
-    /* Add tasks */
+    /* Add tasks in their current order (already sorted by TasksPage based on user's sort configuration) */
     tasks.forEach((task) => {
       items.push({
         type: 'task',
@@ -258,7 +258,7 @@ export function TaskList({
       })
     })
     
-    /* Add reminders */
+    /* Add reminders at the end (preserve task sort order; reminders don't have sortable fields like priority) */
     reminders.forEach((reminder) => {
       items.push({
         type: 'reminder',
@@ -268,12 +268,7 @@ export function TaskList({
       })
     })
     
-    /* Sort by created_at descending (newest first) */
-    return items.sort((a, b) => {
-      const aTime = new Date(a.created_at).getTime()
-      const bTime = new Date(b.created_at).getTime()
-      return bTime - aTime
-    })
+    return items
   }, [tasks, reminders])
 
   return (
