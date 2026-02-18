@@ -1,8 +1,7 @@
-/* HabitTable: Calendar grid with habit names, date cells (complete/skip/open), and streak column */
+/* HabitTable: HABIT (sticky) | scrollable date columns (past through today only) | STREAK at end */
 
 import type React from 'react'
-import { useCallback } from 'react'
-import { ChevronLeftIcon, ChevronRightIcon } from '../../components/icons'
+import { useCallback, useEffect, useRef } from 'react'
 import { isSelectedWeekday } from '../../lib/streaks'
 import type { HabitWithStreaks, HabitEntry, HabitColorId } from './types'
 
@@ -33,6 +32,20 @@ function formatHeader(ymd: string): string {
   return `${dayName} ${dateNum}`
 }
 
+/** Day number only (e.g. "18") */
+function formatHeaderDayOnly(ymd: string): string {
+  const d = new Date(ymd + 'T12:00:00')
+  return String(d.getDate())
+}
+
+/** Short month + day for date column header (e.g. "Feb" and "18") */
+function formatHeaderMonthDay(ymd: string): { month: string; day: string } {
+  const d = new Date(ymd + 'T12:00:00')
+  const month = d.toLocaleDateString('en-US', { month: 'short' })
+  const day = String(d.getDate())
+  return { month, day }
+}
+
 /** Gradient: 16 steps from light to dark; stays light longer then darkens slowly (Tailwind classes) */
 const SHADE_STEPS: Record<HabitColorId, string[]> = {
   orange: ['bg-orange-300', 'bg-orange-300', 'bg-orange-300', 'bg-orange-400', 'bg-orange-400', 'bg-orange-400', 'bg-orange-500', 'bg-orange-500', 'bg-orange-600', 'bg-orange-600', 'bg-orange-700', 'bg-orange-700', 'bg-orange-800', 'bg-orange-900', 'bg-orange-950', 'bg-orange-950'],
@@ -59,14 +72,15 @@ export interface HabitTableProps {
   todayYMD: string
   onCycleEntry: (habitId: string, date: string) => Promise<void>
   onEditHabit: (habit: HabitWithStreaks) => void
-  isDesktop?: boolean
-  onPrevWeek?: () => void
-  onNextWeek?: () => void
-  dateRangeText?: string
 }
 
+/** Fixed width for date columns so table extends and scrolls horizontally */
+const DATE_COLUMN_WIDTH_PX = 44
+const HABIT_COLUMN_WIDTH_PX = 140
+const STREAK_COLUMN_WIDTH_PX = 100
+
 /**
- * Table: HABIT | date columns | STREAK. Cells cycle complete -> skip -> open. Streak column shows flame + current, longest below.
+ * Table: HABIT (sticky left) | scrollable date columns | STREAK (sticky right). Full viewport width; scroll through past to tomorrow.
  */
 export function HabitTable({
   habits,
@@ -75,12 +89,20 @@ export function HabitTable({
   todayYMD,
   onCycleEntry,
   onEditHabit,
-  isDesktop = false,
-  onPrevWeek,
-  onNextWeek,
-  dateRangeText,
 }: HabitTableProps) {
   const dates = datesInRange(dateRange.start, dateRange.end)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  /* On mount and when dates load: scroll to the right so today (and streak) are in view */
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el || dates.length === 0) return
+    const scrollToEnd = () => {
+      el.scrollLeft = el.scrollWidth - el.clientWidth
+    }
+    scrollToEnd()
+    requestAnimationFrame(scrollToEnd)
+  }, [dates.length, dateRange.start, dateRange.end])
 
   const getEntry = (habitId: string, date: string): 'completed' | 'skipped' | null => {
     const entries = entriesByHabit[habitId] ?? []
@@ -100,78 +122,87 @@ export function HabitTable({
   )
 
   return (
-    <div className="rounded-lg border border-bonsai-slate-200 overflow-hidden bg-white">
-      {/* Date range selector: arrows and range text on all viewports (desktop = week, tablet/mobile = 3 days) */}
-      {dateRangeText && (
-        <div className="flex items-center justify-center gap-2 py-3 border-b border-bonsai-slate-200 bg-bonsai-slate-50">
-          {onPrevWeek && (
-            <button
-              type="button"
-              onClick={onPrevWeek}
-              className="p-1.5 md:p-1 text-bonsai-slate-600 hover:text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded touch-manipulation"
-              aria-label={isDesktop ? 'Previous week' : 'Previous dates'}
-            >
-              <ChevronLeftIcon className="w-5 h-5 md:w-4 md:h-4" />
-            </button>
-          )}
-          <span className="text-body font-medium text-bonsai-slate-600 min-w-[140px] md:min-w-[180px] text-center">
-            {dateRangeText}
-          </span>
-          {onNextWeek && (
-            <button
-              type="button"
-              onClick={onNextWeek}
-              className="p-1.5 md:p-1 text-bonsai-slate-600 hover:text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded touch-manipulation"
-              aria-label={isDesktop ? 'Next week' : 'Next dates'}
-            >
-              <ChevronRightIcon className="w-5 h-5 md:w-4 md:h-4" />
-            </button>
-          )}
+    <div className="w-full border-y border-bonsai-slate-200 overflow-hidden bg-white min-w-0 flex">
+      {/* Left: fixed habit column so dates scroll behind it (no overlap) */}
+      <div
+        className="shrink-0 border-r border-bonsai-slate-200 bg-white z-10 flex flex-col"
+        style={{ width: HABIT_COLUMN_WIDTH_PX }}
+      >
+        <div
+          className="bg-bonsai-slate-50 border-b border-bonsai-slate-200 py-2 px-3 flex items-center shrink-0"
+          style={{ height: DATE_COLUMN_WIDTH_PX }}
+        >
+          <span className="text-secondary font-semibold text-bonsai-slate-700">HABIT</span>
         </div>
-      )}
-      <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
-        <thead>
-          <tr className="border-b border-bonsai-slate-200 bg-bonsai-slate-50">
-            <th className="text-left text-secondary font-semibold text-bonsai-slate-700 py-2 px-3 md:py-3 md:px-4" style={{ width: '200px' }}>
-              HABIT
-            </th>
-            {dates.map((d) => {
-              const isToday = d === todayYMD
-              return (
-                <th
-                  key={d}
-                  className={`text-center text-secondary font-semibold py-2 px-2 md:py-3 md:px-3 ${
-                    isToday
-                      ? 'bg-bonsai-sage-100 text-bonsai-sage-700'
-                      : 'text-bonsai-slate-700'
-                  }`}
-                >
-                  {formatHeader(d)}
-                </th>
-              )
-            })}
-            <th className="text-center text-secondary font-semibold text-bonsai-slate-700 py-2 px-3 md:py-3 md:px-4" style={{ width: '120px' }}>
-              STREAK
-            </th>
-          </tr>
-        </thead>
-        <tbody>
+        {habits.map((habit) => (
+          <div
+            key={habit.id}
+            className="border-b border-bonsai-slate-100 py-2 px-3 hover:bg-bonsai-slate-50/50 group flex items-center shrink-0"
+            style={{ height: DATE_COLUMN_WIDTH_PX }}
+          >
+            <button
+              type="button"
+              onClick={() => onEditHabit(habit)}
+              className="text-sm font-bold text-bonsai-brown-700 hover:text-bonsai-brown-800 text-left truncate max-w-full block w-full"
+            >
+              {habit.name}
+            </button>
+          </div>
+        ))}
+      </div>
+      {/* Right: scrollable dates + streak; scrolls behind the habit column; starts scrolled to today */}
+      <div ref={scrollContainerRef} className="flex-1 min-w-0 overflow-x-auto">
+        <table
+          className="border-collapse"
+          style={{
+            tableLayout: 'fixed',
+            width: dates.length * DATE_COLUMN_WIDTH_PX + STREAK_COLUMN_WIDTH_PX,
+          }}
+        >
+          <thead>
+            <tr className="border-b border-bonsai-slate-200 bg-bonsai-slate-50" style={{ height: DATE_COLUMN_WIDTH_PX }}>
+              {dates.map((d) => {
+                const isToday = d === todayYMD
+                const { month, day } = formatHeaderMonthDay(d)
+                return (
+                  <th
+                    key={d}
+                    className={`text-center font-semibold py-0.5 px-0.5 text-xs text-bonsai-slate-700 overflow-hidden ${
+                      isToday ? 'bg-bonsai-sage-100 text-bonsai-sage-700' : 'bg-bonsai-slate-50'
+                    }`}
+                    style={{ width: DATE_COLUMN_WIDTH_PX, minWidth: DATE_COLUMN_WIDTH_PX, height: DATE_COLUMN_WIDTH_PX }}
+                    title={isToday ? `Today – ${formatHeader(d)}` : formatHeader(d)}
+                  >
+                    <span className="block leading-none text-[10px]">{month}</span>
+                    <span className="block font-semibold leading-tight mt-0.5">
+                      {isToday ? (
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-bonsai-sage-300 text-bonsai-sage-800 text-xs" aria-label="Today">
+                          {day}
+                        </span>
+                      ) : (
+                        day
+                      )}
+                    </span>
+                  </th>
+                )
+              })}
+              <th
+                className="text-center text-secondary font-semibold text-bonsai-slate-700 py-2 px-3 border-l border-bonsai-slate-200 bg-bonsai-slate-50"
+                style={{ width: STREAK_COLUMN_WIDTH_PX, minWidth: STREAK_COLUMN_WIDTH_PX }}
+              >
+                STREAK
+              </th>
+            </tr>
+          </thead>
+          <tbody>
           {habits.map((habit) => {
             const streakDates = habit.currentStreakDates
             return (
               <tr
                 key={habit.id}
-                className="border-b border-bonsai-slate-100 hover:bg-bonsai-slate-50/50"
+                className="group border-b border-bonsai-slate-100 hover:bg-bonsai-slate-50/50"
+                style={{ height: DATE_COLUMN_WIDTH_PX }}
               >
-                <td className="py-2 px-3 md:py-3 md:px-4">
-                  <button
-                    type="button"
-                    onClick={() => onEditHabit(habit)}
-                    className="text-body font-bold text-bonsai-brown-700 hover:text-bonsai-brown-800 text-left"
-                  >
-                    {habit.name}
-                  </button>
-                </td>
                 {dates.map((date) => {
                   /* Weekly habits: only selected weekdays are active; others are grayed out and not clickable */
                   const isWeekly =
@@ -194,7 +225,13 @@ export function HabitTable({
                   return (
                     <td
                       key={date}
-                      className={`p-0 align-top relative min-w-0 ${isToday ? 'bg-bonsai-sage-100' : ''} ${!isSelectedDay ? 'bg-bonsai-slate-100' : ''}`}
+                      className={`p-0 relative overflow-hidden ${isToday ? 'bg-bonsai-sage-100' : ''} ${!isSelectedDay ? 'bg-bonsai-slate-100' : ''}`}
+                      style={{
+                        width: DATE_COLUMN_WIDTH_PX,
+                        minWidth: DATE_COLUMN_WIDTH_PX,
+                        height: DATE_COLUMN_WIDTH_PX,
+                        padding: 0,
+                      }}
                       role="gridcell"
                       aria-label={`${date}: ${!isSelectedDay ? 'not scheduled' : status ?? 'open'}`}
                       data-status={!isSelectedDay ? 'disabled' : status ?? 'empty'}
@@ -233,45 +270,44 @@ export function HabitTable({
                           }
                         />
                       )}
-                      <div className="relative w-full pointer-events-none" style={{ paddingBottom: '100%' }}>
-                        <div className="absolute inset-0 overflow-hidden bg-white pointer-events-none">
-                          {!isSelectedDay && (
-                            <div className="w-full h-full bg-bonsai-slate-100" />
-                          )}
-                          {isSelectedDay && status === null && <div className="w-full h-full bg-white" />}
-                          {isSelectedDay && status === 'completed' && (
-                            <>
-                              <div className={`w-full h-full ${shadeClass} completed-cell`} />
-                              {/* Skip hover: next click cycles to skipped (triangle); weekly streak still requires no skip on selected days */}
-                              <div className="completed-hover-overlay absolute inset-0 flex items-center justify-center opacity-0 transition-opacity bg-black/10 pointer-events-none z-10">
-                                <span className="text-white text-xs font-medium drop-shadow">skip</span>
-                              </div>
-                            </>
-                          )}
-                          {isSelectedDay && status === 'skipped' && (
-                            <>
-                              <div className="absolute inset-0 bg-white" />
-                              <div
-                                className={`absolute inset-0 ${shadeClass}`}
-                                style={{ clipPath: 'polygon(0 100%, 0 0, 100% 100%)' }}
-                              />
-                            </>
-                          )}
-                        </div>
+                      {/* Perfect square cell; complete/skip fill entire box (inset-0, no padding) */}
+                      <div className="absolute inset-0 pointer-events-none">
+                        {!isSelectedDay && (
+                          <div className="w-full h-full bg-bonsai-slate-100" />
+                        )}
+                        {isSelectedDay && status === null && <div className="w-full h-full bg-white" />}
+                        {isSelectedDay && status === 'completed' && (
+                          <>
+                            <div className={`absolute inset-0 ${shadeClass} completed-cell`} />
+                            <div className="completed-hover-overlay absolute inset-0 flex items-center justify-center opacity-0 transition-opacity bg-black/10 pointer-events-none z-10">
+                              <span className="text-white text-xs font-medium drop-shadow">skip</span>
+                            </div>
+                          </>
+                        )}
+                        {isSelectedDay && status === 'skipped' && (
+                          <>
+                            <div className="absolute inset-0 bg-white" />
+                            <div
+                              className={`absolute inset-0 ${shadeClass}`}
+                              style={{ clipPath: 'polygon(0 100%, 0 0, 100% 100%)' }}
+                            />
+                          </>
+                        )}
                       </div>
                     </td>
                   )
                 })}
-                <td className="py-2 px-3 md:py-3 md:px-4 text-center">
-                  <div className="flex flex-col items-center gap-0.5">
-                    <span className="text-body font-medium text-bonsai-slate-600" role="img" aria-label="streak">
+                <td
+                  className="py-1 px-2 text-center border-l border-bonsai-slate-200 bg-white group-hover:bg-bonsai-slate-50/50 align-middle"
+                  style={{ width: STREAK_COLUMN_WIDTH_PX, minWidth: STREAK_COLUMN_WIDTH_PX, height: DATE_COLUMN_WIDTH_PX }}
+                >
+                  <div className="flex flex-col items-center justify-center gap-0 min-w-0 leading-tight">
+                    <span className="text-xs font-medium text-bonsai-slate-600 whitespace-nowrap" role="img" aria-label="streak">
                       🔥 {habit.currentStreak}
-                      {habit.frequency === 'weekly' && (
-                        <span className="text-secondary font-normal"> wk</span>
-                      )}
+                      {habit.frequency === 'weekly' && <span className="font-normal"> wk</span>}
                     </span>
-                    <span className="text-secondary text-bonsai-slate-500">
-                      longest {habit.longestStreak}
+                    <span className="text-[10px] text-bonsai-slate-500 whitespace-nowrap" title={`Longest streak: ${habit.longestStreak}${habit.frequency === 'weekly' ? ' wk' : ''}`}>
+                      max {habit.longestStreak}
                       {habit.frequency === 'weekly' && ' wk'}
                     </span>
                   </div>
@@ -280,7 +316,8 @@ export function HabitTable({
             )
           })}
         </tbody>
-      </table>
+        </table>
+      </div>
     </div>
   )
 }

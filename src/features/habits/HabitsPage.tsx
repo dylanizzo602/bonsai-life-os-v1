@@ -1,43 +1,23 @@
-/* Habits page: Header, New Habit button, date range (desktop), habit table, legend, add/edit modal */
+/* Habits page: Header, New Habit button, scrollable habit table (dates past to tomorrow, streak at end), add/edit modal */
 
 import { useState, useEffect } from 'react'
 import { AddButton } from '../../components/AddButton'
-import { ChevronLeftIcon, ChevronRightIcon, HabitsIcon, PlusIcon } from '../../components/icons'
-import { useViewportWidth } from '../../hooks/useViewportWidth'
+import { HabitsIcon, PlusIcon } from '../../components/icons'
 import { useHabits } from './hooks/useHabits'
 import { HabitTable } from './HabitTable'
 import { AddEditHabitModal } from './AddEditHabitModal'
 import type { HabitWithStreaks } from './types'
 
-const LG_BREAKPOINT = 1024
-
-/** Format date range for display: "Feb 8 - Feb 14, 2026" */
-function formatDateRange(start: string, end: string): string {
-  const s = new Date(start + 'T12:00:00')
-  const e = new Date(end + 'T12:00:00')
-  const sameYear = s.getFullYear() === e.getFullYear()
-  const startStr = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  const endStr = e.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: sameYear ? undefined : 'numeric',
-  })
-  const yearStr = sameYear ? `, ${s.getFullYear()}` : ''
-  return `${startStr} - ${endStr}${yearStr}`
-}
-
 /**
- * Habits section: title, subtitle, New Habit button, calendar table (week on desktop, 3 days on mobile), legend.
+ * Habits section: title, subtitle, New Habit button, scrollable table (endless dates in past, one day future, streak at end).
  */
 export function HabitsPage() {
-  const width = useViewportWidth()
-  const isDesktop = width >= LG_BREAKPOINT
   const {
     habitsWithStreaks,
     entriesByHabit,
     dateRange,
     setDateRange,
-    setWeekToToday,
+    scrollableDateRange,
     todayYMD,
     loading,
     error,
@@ -45,21 +25,12 @@ export function HabitsPage() {
     updateHabit,
     deleteHabit,
     cycleEntry,
-    goToPrevWeek,
-    goToNextWeek,
-    goToPrevRange,
-    goToNextRange,
-    nextThreeDaysRange,
   } = useHabits()
 
-  /* Sync date range with viewport: desktop = week with nav, mobile = always today + 2 days */
+  /* Use single scrollable range: many days in the past up to one day in the future */
   useEffect(() => {
-    if (isDesktop) {
-      setWeekToToday()
-    } else {
-      setDateRange(nextThreeDaysRange())
-    }
-  }, [isDesktop])
+    setDateRange(scrollableDateRange)
+  }, [scrollableDateRange, setDateRange])
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editingHabit, setEditingHabit] = useState<HabitWithStreaks | null>(null)
@@ -91,7 +62,7 @@ export function HabitsPage() {
           </p>
         </div>
         <div className="shrink-0">
-          <AddButton onClick={handleOpenCreate}>New Habit</AddButton>
+          <AddButton onClick={handleOpenCreate} hideChevron>New Habit</AddButton>
         </div>
       </div>
 
@@ -138,8 +109,10 @@ export function HabitsPage() {
           </div>
         </div>
       )}
+
+      {/* Table: full bleed to content edges (no horizontal padding between table and viewport) */}
       {!loading && habitsWithStreaks.length > 0 && (
-        <>
+        <div className="-mx-4 md:-mx-6">
           <HabitTable
             habits={habitsWithStreaks}
             entriesByHabit={entriesByHabit}
@@ -147,31 +120,8 @@ export function HabitsPage() {
             todayYMD={todayYMD}
             onCycleEntry={cycleEntry}
             onEditHabit={handleEditHabit}
-            isDesktop={isDesktop}
-            onPrevWeek={isDesktop ? goToPrevWeek : goToPrevRange}
-            onNextWeek={isDesktop ? goToNextWeek : goToNextRange}
-            dateRangeText={formatDateRange(dateRange.start, dateRange.end)}
           />
-
-          {/* Legend */}
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-secondary text-bonsai-slate-600">
-            <span className="flex items-center gap-2">
-              <span className="w-4 h-4 bg-white border border-bonsai-slate-300" />
-              Empty
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="w-4 h-4 bg-orange-500" />
-              Complete
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="w-4 h-4 relative">
-                <span className="absolute inset-0 bg-white" />
-                <span className="absolute inset-0 bg-orange-500" style={{ clipPath: 'polygon(0 100%, 0 0, 100% 100%)' }} />
-              </span>
-              Skipped
-            </span>
-          </div>
-        </>
+        </div>
       )}
 
       {/* Add/Edit habit modal */}

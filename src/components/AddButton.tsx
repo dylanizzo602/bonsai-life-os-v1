@@ -16,6 +16,11 @@ interface AddButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    * below the button (right-aligned). Chevron shows down when closed, up when open.
    */
   dropdownContent?: ReactNode
+  /**
+   * When true and no dropdownContent, render a single pill (no chevron/arrow section).
+   * Use for screens like Habits where the button has only one action.
+   */
+  hideChevron?: boolean
 }
 
 /**
@@ -28,6 +33,7 @@ export function AddButton({
   size,
   className = '',
   dropdownContent,
+  hideChevron = false,
   ...props
 }: AddButtonProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
@@ -138,7 +144,25 @@ export function AddButton({
     )
   }
 
-  /* Default: single button (no dropdown) */
+  /* No dropdown: either full pill with chevron (default) or single pill without chevron */
+  if (hideChevron) {
+    const singlePillClasses =
+      'inline-flex items-center justify-center gap-1.5 pl-3 pr-3 md:gap-2 md:pl-4 md:pr-4 lg:gap-2.5 lg:pl-6 lg:pr-6 rounded-full text-body bg-bonsai-sage-600 hover:bg-bonsai-sage-700 active:bg-bonsai-sage-700 transition-colors'
+    const singlePillFixed =
+      size === 'mobile'
+        ? 'inline-flex items-center justify-center gap-1.5 pl-3 pr-3 text-sm bg-bonsai-sage-600 hover:bg-bonsai-sage-700 active:bg-bonsai-sage-700 transition-colors rounded-full'
+        : size === 'tablet'
+          ? 'inline-flex items-center justify-center gap-2 pl-4 pr-4 text-base bg-bonsai-sage-600 hover:bg-bonsai-sage-700 active:bg-bonsai-sage-700 transition-colors rounded-full'
+          : 'inline-flex items-center justify-center gap-2.5 pl-6 pr-6 text-lg bg-bonsai-sage-600 hover:bg-bonsai-sage-700 active:bg-bonsai-sage-700 transition-colors rounded-full'
+    return (
+      <button className={baseClasses} {...props}>
+        <span className={size ? singlePillFixed : singlePillClasses}>
+          <PlusIcon className={iconClasses} />
+          <span>{children}</span>
+        </span>
+      </button>
+    )
+  }
   return (
     <button className={baseClasses} {...props}>
       <span className={mainClasses}>
