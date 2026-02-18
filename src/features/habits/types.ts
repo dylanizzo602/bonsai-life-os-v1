@@ -3,6 +3,11 @@
 /** Habit frequency: daily, weekly, times per day, or every N days */
 export type HabitFrequency = 'daily' | 'weekly' | 'times_per_day' | 'every_x_days'
 
+/**
+ * For frequency 'weekly', frequency_target is a day-of-week bitmask:
+ * bit 0 = Sunday, bit 1 = Monday, … bit 6 = Saturday (e.g. Monday = 2, Mon+Wed = 2|4 = 6).
+ */
+
 /** Habit color id for streak/cell swatch (matches modal palette) */
 export type HabitColorId =
   | 'orange'

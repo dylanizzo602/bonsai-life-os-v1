@@ -18,6 +18,7 @@ import { TaskList } from './TaskList'
 import { useTasks } from './hooks/useTasks'
 import { AddEditReminderModal } from '../reminders'
 import { useReminders } from '../reminders/hooks/useReminders'
+import { useHabits } from '../habits/hooks/useHabits'
 import { getDependenciesForTaskIds } from '../../lib/supabase/tasks'
 import { getSavedViews, createSavedView, updateSavedView, deleteSavedView } from '../../lib/supabase/savedViews'
 import { useTags } from './hooks/useTags'
@@ -399,7 +400,7 @@ function evaluateFilterCondition(
   return true
 }
 
-/** Evaluate one filter condition against a reminder; returns true if reminder matches. Only supports due_date and task_name fields. */
+/** Evaluate one filter condition against a reminder. remind_at is treated as both start_date and due_date. */
 function evaluateFilterConditionForReminder(c: FilterCondition, r: Reminder): boolean {
   const val = (c.value ?? '').trim()
   const valLower = val.toLowerCase()
@@ -421,9 +422,10 @@ function evaluateFilterConditionForReminder(c: FilterCondition, r: Reminder): bo
     return true
   }
 
-  /* Due date filter: map to remind_at */
-  if (c.field === 'due_date') {
+  /* Start date and due date: both map to remind_at (reminder date = start and due) */
+  if (c.field === 'start_date' || c.field === 'due_date') {
     const iso = r.remind_at ? new Date(r.remind_at).getTime() : null
+    const kind = c.field === 'start_date' ? 'start' : 'due'
     if (c.operator === 'is_set') return iso != null
     if (c.operator === 'is_not_set') return iso == null
     if (valLower === 'no date' && (c.operator === 'is' || c.operator === 'is_not')) {
@@ -432,7 +434,7 @@ function evaluateFilterConditionForReminder(c: FilterCondition, r: Reminder): bo
     if (valLower === 'any date' && (c.operator === 'is' || c.operator === 'is_not')) {
       return c.operator === 'is' ? iso != null : iso == null
     }
-    const range = getRangeForDateValue(val, 'due')
+    const range = getRangeForDateValue(val, kind)
     if (range && c.operator === 'is') {
       if (iso == null) return false
       if (range.mode === 'before') return iso < range.start
@@ -487,10 +489,44 @@ export function TasksPage() {
     updateReminder: updateReminderBase,
     deleteReminder: deleteReminderBase,
     toggleComplete: toggleReminderComplete,
+    advanceToNextOccurrence: advanceReminderToNextOccurrence,
   } = useReminders()
+
+  /* Habit reminders: habits with add_to_todos, for Tasks list (streak + Complete/Skip + notification time) */
+  const {
+    habitsWithStreaks,
+    todayYMD,
+    entriesByHabit,
+    cycleEntry: cycleHabitEntry,
+    setEntry: setHabitEntry,
+    refetch: refetchHabits,
+  } = useHabits()
+
+  /* Refetch habits when Tasks page becomes visible so recurring habit reminders stay in sync (e.g. after adding habit or switching tabs) */
+  useEffect(() => {
+    const onVisible = () => {
+      refetchHabits()
+    }
+    if (document.visibilityState === 'visible') onVisible()
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [refetchHabits])
 
   const { fetchTags } = useTags()
   const [availableTagNames, setAvailableTagNames] = useState<string[]>([])
+
+  /* Habit reminders: one row per habit with add_to_todos and a linked reminder; current occurrence = reminder.remind_at (recurring like recurring task). */
+  const habitReminders = useMemo(() => {
+    return habitsWithStreaks
+      .filter((h) => h.add_to_todos && h.reminder_id)
+      .map((habit) => {
+        const linked = reminders.find((r) => r.id === habit.reminder_id!)
+        const remindAt =
+          linked?.remind_at ??
+          (habit.reminder_time ? `${todayYMD}T${habit.reminder_time}` : null)
+        return { habit, remindAt }
+      })
+  }, [habitsWithStreaks, reminders, todayYMD])
 
   /* Wrapper to refetch reminders after create/update to ensure list stays in sync */
   const createReminder = async (input: import('../reminders/types').CreateReminderInput) => {
@@ -718,26 +754,35 @@ export function TasksPage() {
   }, [selectedSavedViewId])
 
   /* Filter pipeline: Archive/Trash first, then by view, then by filter (custom), then by search, then by sort. */
-  const { filteredTasks, filteredReminders } = useMemo(() => {
-    /* Reminders: hide soft-deleted by default; include completed unless filtered by view. */
+  const { filteredTasks, filteredReminders, filteredHabitReminders } = useMemo(() => {
+    /* Reminders: hide soft-deleted; exclude reminders that are linked to habits (we show those as recurring HabitReminderItem instead). */
+    const habitReminderIds = new Set(
+      habitsWithStreaks.map((h) => h.reminder_id).filter((id): id is string => id != null)
+    )
     let remindersFiltered = reminders.filter((r) => {
       if (r.deleted ?? false) return false
+      if (habitReminderIds.has(r.id)) return false
       return true
     })
+
+    /* Habit reminders filtered by view and (for available/custom) by start/due date; set in each view branch. */
+    let habitRemindersFiltered: typeof habitReminders = habitReminders
 
     /* Archive/Trash: show only archived or only deleted; no filter/sort applied. */
     if (showArchived) {
       const list = tasks.filter((t) => t.status === 'archived')
       return {
         filteredTasks: list,
-        filteredReminders: [], // Archive view shows only archived tasks, no reminders
+        filteredReminders: [],
+        filteredHabitReminders: [],
       }
     }
     if (showDeleted) {
       const list = tasks.filter((t) => t.status === 'deleted')
       return {
         filteredTasks: list,
-        filteredReminders: [], // Trash view shows only deleted tasks, no reminders
+        filteredReminders: [],
+        filteredHabitReminders: [],
       }
     }
 
@@ -749,8 +794,9 @@ export function TasksPage() {
     switch (viewMode) {
       case 'lineup':
         viewTasks = baseTasks.filter((t) => lineUpTaskIds.has(t.id))
-        /* Line Up shows only tasks in the lineup; no reminders */
+        /* Line Up shows only tasks in the lineup; no reminders or habit reminders */
         remindersFiltered = []
+        habitRemindersFiltered = []
         break
       case 'available': {
         /* Available view: apply built-in default filter (status not Complete, no blocking deps, start <= now & earlier) via filter conditions. */
@@ -781,8 +827,14 @@ export function TasksPage() {
           const statusOrder = (s: Task['status']) => (s === 'in_progress' ? 1 : s === 'active' ? 0 : -1)
           return statusOrder(b.status) - statusOrder(a.status)
         })
-        /* Available view: show only incomplete reminders (align with "status is not complete"). */
-        remindersFiltered = remindersFiltered.filter((r) => !r.completed)
+        /* Available view: show only incomplete reminders; treat remind_at as start date so exclude future reminders. */
+        const nowMs = Date.now()
+        remindersFiltered = remindersFiltered.filter(
+          (r) => !r.completed && (r.remind_at == null || new Date(r.remind_at).getTime() <= nowMs),
+        )
+        habitRemindersFiltered = habitReminders.filter(
+          ({ remindAt }) => remindAt == null || new Date(remindAt).getTime() <= nowMs,
+        )
         break
       }
       case 'all': {
@@ -801,6 +853,7 @@ export function TasksPage() {
         })
         /* All Tasks view: show only incomplete reminders (align with "status is not complete"). */
         remindersFiltered = remindersFiltered.filter((r) => !r.completed)
+        habitRemindersFiltered = habitReminders
         break
       }
       case 'custom':
@@ -819,9 +872,9 @@ export function TasksPage() {
             }
             return result
           })
-          /* Apply filter conditions to reminders: only due_date and task_name fields apply */
+          /* Apply filter conditions to reminders: start_date and due_date both use remind_at; task_name applies */
           const reminderRelevantConditions = filterConditions.filter(
-            (c) => c.field === 'due_date' || c.field === 'task_name',
+            (c) => c.field === 'start_date' || c.field === 'due_date' || c.field === 'task_name',
           )
           if (reminderRelevantConditions.length > 0) {
             remindersFiltered = remindersFiltered.filter((r) => {
@@ -829,6 +882,29 @@ export function TasksPage() {
               for (let i = 0; i < reminderRelevantConditions.length; i++) {
                 const c = reminderRelevantConditions[i]
                 const match = evaluateFilterConditionForReminder(c, r)
+                const combine = i === 0 ? undefined : (c.combineWithPrevious ?? 'and')
+                if (i === 0) result = match
+                else result = combine === 'or' ? result || match : result && match
+              }
+              return result
+            })
+            /* Apply same start_date/due_date/task_name conditions to habit reminders (remindAt = start and due). */
+            habitRemindersFiltered = habitReminders.filter(({ habit, remindAt }) => {
+              const syntheticReminder: Reminder = {
+                id: '',
+                name: habit.name,
+                remind_at: remindAt,
+                completed: false,
+                deleted: false,
+                recurrence_pattern: null,
+                user_id: null,
+                created_at: '',
+                updated_at: '',
+              }
+              let result = false
+              for (let i = 0; i < reminderRelevantConditions.length; i++) {
+                const c = reminderRelevantConditions[i]
+                const match = evaluateFilterConditionForReminder(c, syntheticReminder)
                 const combine = i === 0 ? undefined : (c.combineWithPrevious ?? 'and')
                 if (i === 0) result = match
                 else result = combine === 'or' ? result || match : result && match
@@ -872,13 +948,12 @@ export function TasksPage() {
             }
             return 0
           })
-          /* Apply sort to reminders: only due_date and task_name fields apply */
+          /* Apply sort to reminders: start_date and due_date both use remind_at; task_name applies */
           remindersFiltered.sort((a, b) => {
             for (const { field, direction } of sortBy) {
-              /* Only apply sorts for fields that make sense for reminders */
-              if (field !== 'due_date' && field !== 'task_name') continue
+              if (field !== 'start_date' && field !== 'due_date' && field !== 'task_name') continue
               let cmp = 0
-              if (field === 'due_date') {
+              if (field === 'start_date' || field === 'due_date') {
                 const av = a.remind_at ? new Date(a.remind_at).getTime() : Number.MAX_SAFE_INTEGER
                 const bv = b.remind_at ? new Date(b.remind_at).getTime() : Number.MAX_SAFE_INTEGER
                 cmp = av - bv
@@ -908,10 +983,13 @@ export function TasksPage() {
     return {
       filteredTasks: viewTasks,
       filteredReminders: remindersFiltered,
+      filteredHabitReminders: habitRemindersFiltered,
     }
   }, [
     tasks,
     reminders,
+    habitsWithStreaks,
+    habitReminders,
     showArchived,
     showDeleted,
     viewMode,
@@ -1280,6 +1358,25 @@ export function TasksPage() {
         reminders={filteredReminders}
         remindersLoading={remindersLoading}
         remindersError={remindersError}
+        habitReminders={filteredHabitReminders}
+        onHabitMarkComplete={async (habit, remindAt) => {
+          const occurrenceDate = remindAt ? remindAt.slice(0, 10) : todayYMD
+          await setHabitEntry(habit.id, occurrenceDate, 'completed')
+          if (habit.reminder_id) {
+            await advanceReminderToNextOccurrence(habit.reminder_id)
+            await refetchReminders()
+          }
+          await refetchHabits()
+        }}
+        onHabitSkip={async (habit, remindAt) => {
+          const occurrenceDate = remindAt ? remindAt.slice(0, 10) : todayYMD
+          await setHabitEntry(habit.id, occurrenceDate, 'skipped')
+          if (habit.reminder_id) {
+            await advanceReminderToNextOccurrence(habit.reminder_id)
+            await refetchReminders()
+          }
+          await refetchHabits()
+        }}
         onToggleReminderComplete={toggleReminderComplete}
         onEditReminder={openEditReminder}
         onUpdateReminder={updateReminder}

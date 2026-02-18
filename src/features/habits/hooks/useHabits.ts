@@ -8,7 +8,12 @@ import {
   setEntry as setEntryApi,
   getEntriesForHabits,
 } from '../../../lib/supabase/habits'
-import { getStreaks, getCurrentStreakDates } from '../../../lib/streaks'
+import {
+  getStreaks,
+  getCurrentStreakDates,
+  getStreaksWeekly,
+  getCurrentStreakDatesWeekly,
+} from '../../../lib/streaks'
 import type {
   Habit,
   HabitEntry,
@@ -50,7 +55,7 @@ function nextThreeDaysRange(): DateRange {
   return { start, end }
 }
 
-/** Cycle: empty -> completed -> skipped -> empty */
+/** Cycle for daily: empty -> completed -> skipped -> empty */
 function getNextStatus(current: 'completed' | 'skipped' | null): 'completed' | 'skipped' | null {
   if (current === null || current === undefined) return 'completed'
   if (current === 'completed') return 'skipped'
@@ -95,6 +100,8 @@ export function useHabits(initialDateRange?: DateRange) {
   const [entriesByHabit, setEntriesByHabit] = useState<Record<string, HabitEntry[]>>({})
   const entriesByHabitRef = useRef(entriesByHabit)
   entriesByHabitRef.current = entriesByHabit
+  const habitsRef = useRef(habits)
+  habitsRef.current = habits
 
   /* Initial fetch */
   useEffect(() => {
@@ -128,13 +135,23 @@ export function useHabits(initialDateRange?: DateRange) {
 
   const today = todayYMD()
 
-  /* Derive habits with current/longest streak, streak dates for shading, and entries in visible range */
+  /* Derive habits with current/longest streak and streak dates; weekly habits use week-based streak and selected days only */
   const habitsWithStreaks = useMemo((): HabitWithStreaks[] => {
     return habits.map((habit) => {
       const entries = entriesByHabit[habit.id] ?? []
       const streakEntries = entries.map((e) => ({ date: e.entry_date, status: e.status }))
-      const { currentStreak, longestStreak } = getStreaks(streakEntries, today)
-      const currentStreakDates = getCurrentStreakDates(streakEntries, today)
+      const isWeekly =
+        habit.frequency === 'weekly' &&
+        typeof habit.frequency_target === 'number' &&
+        habit.frequency_target >= 1 &&
+        habit.frequency_target <= 127
+      const mask = isWeekly ? habit.frequency_target : 0
+      const { currentStreak, longestStreak } = isWeekly
+        ? getStreaksWeekly(streakEntries, today, mask)
+        : getStreaks(streakEntries, today)
+      const currentStreakDates = isWeekly
+        ? getCurrentStreakDatesWeekly(streakEntries, today, mask)
+        : getCurrentStreakDates(streakEntries, today)
       return {
         ...habit,
         currentStreak,
@@ -208,7 +225,7 @@ export function useHabits(initialDateRange?: DateRange) {
     }
   }, [])
 
-  /* Cycle cell: complete -> skip -> open. Look up current status from ref so we always use latest state at click time (avoids stale closure from table). */
+  /* Cycle cell: complete -> skipped -> open for both daily and weekly (weekly streak still requires no skip on selected days). */
   const cycleEntry = useCallback(async (habitId: string, entryDate: string) => {
     const entries = entriesByHabitRef.current[habitId] ?? []
     const e = entries.find((x) => x.entry_date === entryDate)
@@ -289,6 +306,31 @@ export function useHabits(initialDateRange?: DateRange) {
     }))
   }, [])
 
+  /* Move date range backward/forward by the current range length (e.g. 3 days on mobile, 7 on desktop) */
+  const goToPrevRange = useCallback(() => {
+    setDateRange((prev) => {
+      const start = new Date(prev.start + 'T12:00:00')
+      const end = new Date(prev.end + 'T12:00:00')
+      const days = Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1
+      return {
+        start: addDays(prev.start, -days),
+        end: addDays(prev.end, -days),
+      }
+    })
+  }, [])
+
+  const goToNextRange = useCallback(() => {
+    setDateRange((prev) => {
+      const start = new Date(prev.start + 'T12:00:00')
+      const end = new Date(prev.end + 'T12:00:00')
+      const days = Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1
+      return {
+        start: addDays(prev.start, days),
+        end: addDays(prev.end, days),
+      }
+    })
+  }, [])
+
   const setWeekToToday = useCallback(() => {
     setDateRange(weekRangeForDate(todayYMD()))
   }, [])
@@ -310,6 +352,8 @@ export function useHabits(initialDateRange?: DateRange) {
     cycleEntry,
     goToPrevWeek,
     goToNextWeek,
+    goToPrevRange,
+    goToNextRange,
     nextThreeDaysRange,
     setWeekToToday,
   }

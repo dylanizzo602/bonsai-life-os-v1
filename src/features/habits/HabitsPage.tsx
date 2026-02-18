@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { AddButton } from '../../components/AddButton'
-import { ChevronLeftIcon, ChevronRightIcon } from '../../components/icons'
+import { ChevronLeftIcon, ChevronRightIcon, HabitsIcon, PlusIcon } from '../../components/icons'
 import { useViewportWidth } from '../../hooks/useViewportWidth'
 import { useHabits } from './hooks/useHabits'
 import { HabitTable } from './HabitTable'
@@ -47,6 +47,8 @@ export function HabitsPage() {
     cycleEntry,
     goToPrevWeek,
     goToNextWeek,
+    goToPrevRange,
+    goToNextRange,
     nextThreeDaysRange,
   } = useHabits()
 
@@ -104,11 +106,37 @@ export function HabitsPage() {
         </p>
       )}
 
-      {/* Habit table or empty state */}
+      {/* Empty state: Card with icon, message, and Create Your First Habit CTA */}
       {!loading && habitsWithStreaks.length === 0 && (
-        <p className="text-body text-bonsai-slate-500 py-8">
-          No habits yet. Add one to get started.
-        </p>
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <div className="w-full max-w-md rounded-xl border border-bonsai-slate-200 bg-white p-8 shadow-sm">
+            {/* Icon: Circular grey background with habits icon */}
+            <div className="flex justify-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-bonsai-slate-100">
+                <HabitsIcon className="h-7 w-7 text-bonsai-slate-500" />
+              </div>
+            </div>
+            {/* Heading */}
+            <h2 className="mt-4 text-center text-body font-semibold text-bonsai-brown-700">
+              No habits yet
+            </h2>
+            {/* Description */}
+            <p className="mt-2 text-center text-body text-bonsai-slate-600">
+              Start building consistency by creating your first habit tracker.
+            </p>
+            {/* CTA: Black pill button with plus and label */}
+            <div className="mt-8 flex justify-center">
+              <button
+                type="button"
+                onClick={handleOpenCreate}
+                className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-body font-semibold text-white transition-colors hover:bg-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-slate-500 focus:ring-offset-2"
+              >
+                <PlusIcon className="h-5 w-5" />
+                Create Your First Habit
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {!loading && habitsWithStreaks.length > 0 && (
         <>
@@ -120,8 +148,8 @@ export function HabitsPage() {
             onCycleEntry={cycleEntry}
             onEditHabit={handleEditHabit}
             isDesktop={isDesktop}
-            onPrevWeek={goToPrevWeek}
-            onNextWeek={goToNextWeek}
+            onPrevWeek={isDesktop ? goToPrevWeek : goToPrevRange}
+            onNextWeek={isDesktop ? goToNextWeek : goToNextRange}
             dateRangeText={formatDateRange(dateRange.start, dateRange.end)}
           />
 

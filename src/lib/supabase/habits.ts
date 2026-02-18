@@ -15,7 +15,10 @@ import type {
   HabitFrequency,
 } from '../../features/habits/types'
 
-/** Build recurrence pattern JSON from habit frequency for reminders */
+/** Day codes for recurrence byDay (Sunday = 0 … Saturday = 6); habit frequency_target bitmask uses same order (1=Sun … 64=Sat) */
+const RECURRENCE_DAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const
+
+/** Build recurrence pattern JSON from habit frequency for reminders. Weekly habits get byDay from frequency_target bitmask. */
 function recurrenceForHabitFrequency(
   frequency: HabitFrequency,
   frequencyTarget: number | null
@@ -27,6 +30,12 @@ function recurrenceForHabitFrequency(
   } else if (frequency === 'weekly') {
     pattern.freq = 'week'
     pattern.interval = 1
+    if (frequencyTarget != null && frequencyTarget >= 1 && frequencyTarget <= 127) {
+      pattern.byDay = [0, 1, 2, 3, 4, 5, 6]
+        .filter((i) => (frequencyTarget & (1 << i)) !== 0)
+        .map((i) => RECURRENCE_DAY_CODES[i])
+      if (pattern.byDay.length === 0) pattern.byDay = ['MO']
+    }
   } else if (frequency === 'every_x_days' && frequencyTarget != null && frequencyTarget > 0) {
     pattern.freq = 'day'
     pattern.interval = frequencyTarget

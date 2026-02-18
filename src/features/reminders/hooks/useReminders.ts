@@ -6,6 +6,7 @@ import {
   updateReminder,
   deleteReminder,
   toggleReminderComplete,
+  advanceReminderToNextOccurrence as advanceReminderToNextOccurrenceApi,
 } from '../../../lib/supabase/reminders'
 import type { Reminder, CreateReminderInput, UpdateReminderInput } from '../types'
 
@@ -100,6 +101,21 @@ export function useReminders() {
     }
   }, [])
 
+  /* Advance recurring reminder to next occurrence (e.g. after habit complete/skip) */
+  const handleAdvanceToNextOccurrence = useCallback(async (id: string) => {
+    try {
+      setError(null)
+      const updated = await advanceReminderToNextOccurrenceApi(id)
+      setReminders((prev) => prev.map((r) => (r.id === id ? updated : r)))
+      return updated
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to advance reminder'
+      setError(errorMessage)
+      throw err
+    }
+  }, [])
+
   return {
     reminders,
     loading,
@@ -109,5 +125,6 @@ export function useReminders() {
     updateReminder: handleUpdateReminder,
     deleteReminder: handleDeleteReminder,
     toggleComplete: handleToggleComplete,
+    advanceToNextOccurrence: handleAdvanceToNextOccurrence,
   }
 }

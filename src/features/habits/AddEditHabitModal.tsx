@@ -16,8 +16,17 @@ import type {
 const FREQUENCY_OPTIONS: { value: HabitFrequency; label: string }[] = [
   { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' },
-  { value: 'times_per_day', label: 'Times per Day' },
-  { value: 'every_x_days', label: 'Every X Days' },
+]
+
+/** Day-of-week for weekly frequency: 0=Sun … 6=Sat; stored as bitmask in frequency_target (1<<d) */
+const DAYS_OF_WEEK: { value: number; label: string }[] = [
+  { value: 0, label: 'Sun' },
+  { value: 1, label: 'Mon' },
+  { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' },
+  { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
 ]
 
 const COLOR_OPTIONS: HabitColorId[] = [
@@ -56,7 +65,7 @@ export interface AddEditHabitModalProps {
 
 /**
  * Add/Edit habit modal: name, description, frequency, add-to-todos with time, color.
- * Footer: Cancel (create) / Delete (edit with confirm), Create Habit / Save Habit.
+ * Footer: Cancel (create) / Delete (edit with confirm), Create Habit / Save Changes (edit).
  */
 export function AddEditHabitModal({
   isOpen,
@@ -84,8 +93,18 @@ export function AddEditHabitModal({
       if (habit) {
         setName(habit.name)
         setDescription(habit.description ?? '')
-        setFrequency(habit.frequency)
-        setFrequencyTarget(habit.frequency_target ?? '')
+        /* Only daily and weekly are offered; map legacy frequencies to daily */
+        const freq = habit.frequency === 'weekly' ? 'weekly' : 'daily'
+        setFrequency(freq)
+        /* For weekly, frequency_target is a day-of-week bitmask; default to Monday (2) if null/invalid */
+        if (freq === 'weekly') {
+          const v = habit.frequency_target
+          setFrequencyTarget(
+            typeof v === 'number' && v >= 1 && v <= 127 ? v : 2
+          )
+        } else {
+          setFrequencyTarget('')
+        }
         setAddToTodos(habit.add_to_todos)
         setReminderTime(habit.reminder_time ?? '09:00')
         setColor(habit.color)
@@ -104,12 +123,18 @@ export function AddEditHabitModal({
 
   const handleSubmit = async () => {
     if (!name.trim()) return
-    const numTarget = frequencyTarget === '' ? null : Number(frequencyTarget)
+    /* For weekly, frequency_target is day-of-week bitmask (1-127); for daily it is null */
+    const numTarget: number | null =
+      frequency === 'weekly'
+        ? (typeof frequencyTarget === 'number' && frequencyTarget >= 1 && frequencyTarget <= 127
+            ? frequencyTarget
+            : 2)
+        : null
     const input: CreateHabitInput | UpdateHabitInput = {
       name: name.trim(),
       description: description.trim() || null,
       frequency,
-      frequency_target: numTarget ?? (frequency === 'every_x_days' || frequency === 'times_per_day' ? 1 : null),
+      frequency_target: numTarget,
       add_to_todos: addToTodos,
       reminder_time: addToTodos ? reminderTime : null,
       color,
@@ -185,7 +210,7 @@ export function AddEditHabitModal({
             onClick={handleSubmit}
             disabled={submitting || !name.trim()}
           >
-            {isEditMode ? 'Save Habit' : 'Create Habit'}
+            {isEditMode ? 'Save Changes' : 'Create Habit'}
           </Button>
         </div>
       }
@@ -219,7 +244,14 @@ export function AddEditHabitModal({
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => setFrequency(opt.value)}
+                onClick={() => {
+                  setFrequency(opt.value)
+                  /* When switching to weekly, default to Monday (2) if current value isn't a valid weekly bitmask */
+                  if (opt.value === 'weekly') {
+                    const v = frequencyTarget
+                    if (typeof v !== 'number' || v < 0 || v > 127) setFrequencyTarget(2)
+                  }
+                }}
                 className={`py-2 px-3 rounded-lg border text-body font-medium transition-colors ${
                   frequency === opt.value
                     ? 'border-bonsai-sage-500 bg-bonsai-sage-100 text-bonsai-sage-800'
@@ -230,17 +262,38 @@ export function AddEditHabitModal({
               </button>
             ))}
           </div>
-          {(frequency === 'times_per_day' || frequency === 'every_x_days') && (
+          {/* Weekly: day-of-week checkboxes (stored as bitmask in frequency_target) */}
+          {frequency === 'weekly' && (
             <div className="mt-2">
-              <Input
-                type="number"
-                min={1}
-                value={frequencyTarget}
-                onChange={(e) =>
-                  setFrequencyTarget(e.target.value === '' ? '' : parseInt(e.target.value, 10) || 1)
-                }
-                label={frequency === 'times_per_day' ? 'Times per day' : 'Every X days'}
-              />
+              <p className="text-secondary font-medium text-bonsai-slate-700 mb-2">
+                Which days?
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {DAYS_OF_WEEK.map(({ value: d, label }) => {
+                  const mask = typeof frequencyTarget === 'number' && frequencyTarget >= 0 && frequencyTarget <= 127
+                    ? frequencyTarget
+                    : 2
+                  const checked = (mask & (1 << d)) !== 0
+                  return (
+                    <label
+                      key={d}
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-bonsai-slate-300 bg-white px-3 py-2 text-body transition-colors has-[:checked]:border-bonsai-sage-500 has-[:checked]:bg-bonsai-sage-100 has-[:checked]:text-bonsai-sage-800 hover:bg-bonsai-slate-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          const newMask = mask ^ (1 << d)
+                          /* Require at least one day selected */
+                          setFrequencyTarget(newMask === 0 ? mask : newMask)
+                        }}
+                        className="h-4 w-4 rounded border-bonsai-slate-300 text-bonsai-sage-600 focus:ring-bonsai-sage-500"
+                      />
+                      <span>{label}</span>
+                    </label>
+                  )
+                })}
+              </div>
             </div>
           )}
         </div>

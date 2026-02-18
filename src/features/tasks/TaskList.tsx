@@ -4,6 +4,8 @@ import { FullTaskItem } from './FullTaskItem'
 import { CompactTaskItem } from './CompactTaskItem'
 import { SubtaskList } from './SubtaskList'
 import { ReminderItem } from '../reminders/ReminderItem'
+import { HabitReminderItem } from '../habits/HabitReminderItem'
+import type { HabitWithStreaks } from '../habits/types'
 import { TaskContextPopover } from './modals/TaskContextPopover'
 import { ReminderContextPopover } from '../reminders/ReminderContextPopover'
 import {
@@ -90,6 +92,12 @@ export interface TaskListProps {
   lineUpTaskIds?: Set<string>
   onAddToLineUp?: (taskId: string) => void
   onRemoveFromLineUp?: (taskId: string) => void
+  /** Habit reminders (habits with add_to_todos) to show with streak, Complete/Skip, notification time */
+  habitReminders?: Array<{ habit: HabitWithStreaks; remindAt: string | null }>
+  /** Complete habit for the occurrence at remindAt; then advance reminder to next occurrence */
+  onHabitMarkComplete?: (habit: HabitWithStreaks, remindAt: string | null) => void
+  /** Skip habit for the occurrence at remindAt; then advance reminder to next occurrence */
+  onHabitSkip?: (habit: HabitWithStreaks, remindAt: string | null) => void
 }
 
 /**
@@ -135,6 +143,9 @@ export function TaskList({
   lineUpTaskIds,
   onAddToLineUp,
   onRemoveFromLineUp,
+  habitReminders = [],
+  onHabitMarkComplete,
+  onHabitSkip,
 }: TaskListProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
   /* Context menu state: which task or reminder is open and at what position */
@@ -244,11 +255,18 @@ export function TaskList({
     })
   }
 
-  /* Combine tasks and reminders: preserve task order (already sorted by TasksPage) and append reminders at end */
+  /* Combine tasks, reminders, and habit reminders: tasks first, then reminders, then habit reminders */
   const combinedItems = useMemo(() => {
-    const items: Array<{ type: 'task' | 'reminder'; id: string; created_at: string; task?: Task; reminder?: Reminder }> = []
-    
-    /* Add tasks in their current order (already sorted by TasksPage based on user's sort configuration) */
+    const items: Array<{
+      type: 'task' | 'reminder' | 'habit_reminder'
+      id: string
+      created_at: string
+      task?: Task
+      reminder?: Reminder
+      habitReminder?: { habit: HabitWithStreaks; remindAt: string | null }
+    }> = []
+
+    /* Add tasks in their current order (already sorted by TasksPage) */
     tasks.forEach((task) => {
       items.push({
         type: 'task',
@@ -257,8 +275,8 @@ export function TaskList({
         task,
       })
     })
-    
-    /* Add reminders at the end (preserve task sort order; reminders don't have sortable fields like priority) */
+
+    /* Add reminders after tasks */
     reminders.forEach((reminder) => {
       items.push({
         type: 'reminder',
@@ -267,9 +285,19 @@ export function TaskList({
         reminder,
       })
     })
-    
+
+    /* Add habit reminders at the end (streak + Complete/Skip + notification time) */
+    habitReminders.forEach(({ habit, remindAt }) => {
+      items.push({
+        type: 'habit_reminder',
+        id: `habit-${habit.id}`,
+        created_at: habit.created_at,
+        habitReminder: { habit, remindAt },
+      })
+    })
+
     return items
-  }, [tasks, reminders])
+  }, [tasks, reminders, habitReminders])
 
   return (
     <div className="space-y-6">
@@ -291,7 +319,7 @@ export function TaskList({
       )}
 
       {/* Empty state */}
-      {!loading && !remindersLoading && tasks.length === 0 && reminders.length === 0 && (
+      {!loading && !remindersLoading && tasks.length === 0 && reminders.length === 0 && habitReminders.length === 0 && (
         <div className="text-center py-12">
           <p className="text-bonsai-slate-600 text-lg">No tasks or reminders found</p>
           <p className="text-bonsai-slate-500 text-sm mt-2">
@@ -303,9 +331,21 @@ export function TaskList({
       {/* Combined list: Tasks and reminders together, visible on all breakpoints */}
       {!loading && !remindersLoading && combinedItems.length > 0 && (
         <>
-          {/* Desktop (lg+): Full task items with expandable subtasks, reminders as ReminderItem */}
+          {/* Desktop (lg+): Full task items with expandable subtasks, reminders as ReminderItem, habit reminders as HabitReminderItem */}
           <div className="hidden lg:block space-y-4">
             {combinedItems.map((item) => {
+              if (item.type === 'habit_reminder' && item.habitReminder && onHabitMarkComplete && onHabitSkip) {
+                const { habit, remindAt } = item.habitReminder
+                return (
+                  <HabitReminderItem
+                    key={item.id}
+                    habit={habit}
+                    remindAt={remindAt}
+                    onMarkComplete={() => onHabitMarkComplete(habit, remindAt)}
+                    onSkip={() => onHabitSkip(habit, remindAt)}
+                  />
+                )
+              }
               if (item.type === 'reminder' && item.reminder) {
                 const reminder = item.reminder
                 return (
@@ -450,9 +490,21 @@ export function TaskList({
               return null
             })}
           </div>
-          {/* Mobile (< md): compact task items with collapsible subtasks; reminders as ReminderItem; tap opens edit modal */}
+          {/* Mobile (< md): compact task items; reminders as ReminderItem; habit reminders as HabitReminderItem */}
           <div className="md:hidden space-y-2">
             {combinedItems.map((item) => {
+              if (item.type === 'habit_reminder' && item.habitReminder && onHabitMarkComplete && onHabitSkip) {
+                const { habit, remindAt } = item.habitReminder
+                return (
+                  <HabitReminderItem
+                    key={item.id}
+                    habit={habit}
+                    remindAt={remindAt}
+                    onMarkComplete={() => onHabitMarkComplete(habit, remindAt)}
+                    onSkip={() => onHabitSkip(habit, remindAt)}
+                  />
+                )
+              }
               if (item.type === 'reminder' && item.reminder) {
                 const reminder = item.reminder
                 return (
@@ -545,9 +597,21 @@ export function TaskList({
               return null
             })}
           </div>
-          {/* Tablet (md to lg): tablet task items, reminders as ReminderItem; no hover tooltips; tap opens edit modal */}
+          {/* Tablet (md to lg): tablet task items; reminders as ReminderItem; habit reminders as HabitReminderItem */}
           <div className="hidden md:block lg:hidden space-y-2">
             {combinedItems.map((item) => {
+              if (item.type === 'habit_reminder' && item.habitReminder && onHabitMarkComplete && onHabitSkip) {
+                const { habit, remindAt } = item.habitReminder
+                return (
+                  <HabitReminderItem
+                    key={item.id}
+                    habit={habit}
+                    remindAt={remindAt}
+                    onMarkComplete={() => onHabitMarkComplete(habit, remindAt)}
+                    onSkip={() => onHabitSkip(habit, remindAt)}
+                  />
+                )
+              }
               if (item.type === 'reminder' && item.reminder) {
                 const reminder = item.reminder
                 return (

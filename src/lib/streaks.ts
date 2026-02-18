@@ -146,3 +146,115 @@ export function getCurrentStreakDates(entries: StreakEntry[], todayYMD: string):
 
   return countStreakBackward(map, endDate).dates
 }
+
+/* --- Weekly habits: streak = consecutive weeks where all selected days are completed. No skip. --- */
+
+/** Sunday (YYYY-MM-DD) that starts the week containing the given date (0=Sun .. 6=Sat) */
+function getWeekStart(ymd: string): string {
+  const d = new Date(ymd + 'T12:00:00')
+  const dayOfWeek = d.getDay()
+  return addDays(ymd, -dayOfWeek)
+}
+
+/** Whether the given date falls on a selected weekday; weekDayBitmask: bit 0=Sun .. bit 6=Sat */
+export function isSelectedWeekday(ymd: string, weekDayBitmask: number): boolean {
+  if (weekDayBitmask < 1 || weekDayBitmask > 127) return false
+  const d = new Date(ymd + 'T12:00:00')
+  const day = d.getDay()
+  return (weekDayBitmask & (1 << day)) !== 0
+}
+
+/** Week is complete if every selected weekday in that week has a completed entry */
+function isWeekComplete(
+  weekStart: string,
+  map: Map<string, 'completed' | 'skipped'>,
+  weekDayBitmask: number
+): boolean {
+  for (let i = 0; i < 7; i++) {
+    if ((weekDayBitmask & (1 << i)) === 0) continue
+    const date = addDays(weekStart, i)
+    if (map.get(date) !== 'completed') return false
+  }
+  return true
+}
+
+/**
+ * Streaks for weekly habits: count consecutive weeks where all selected days are completed.
+ * weekDayBitmask: 1=Sun, 2=Mon, ..., 64=Sat (e.g. Mon+Wed = 2|4 = 6).
+ */
+export function getStreaksWeekly(
+  entries: StreakEntry[],
+  todayYMD: string,
+  weekDayBitmask: number
+): StreakResult {
+  const map = new Map<string, 'completed' | 'skipped'>()
+  for (const e of entries) {
+    map.set(e.date, e.status)
+  }
+  const weekStartToday = getWeekStart(todayYMD)
+
+  /* Current streak: consecutive complete weeks ending at the most recent complete week.
+   * If this week is complete, count from this week backward; if not, count from last week backward
+   * so we still show e.g. 1 when last week was complete but this week isn't done yet. */
+  let currentStreak = 0
+  let w = weekStartToday
+  if (!isWeekComplete(w, map, weekDayBitmask)) {
+    w = addDays(w, -7)
+  }
+  while (isWeekComplete(w, map, weekDayBitmask)) {
+    currentStreak++
+    w = addDays(w, -7)
+  }
+
+  /* Longest streak: scan all weeks that have any entry, find max consecutive complete weeks */
+  const allDates = [...map.keys()]
+  if (allDates.length === 0) return { currentStreak, longestStreak: 0 }
+
+  const weekStarts = new Set<string>()
+  for (const date of allDates) {
+    weekStarts.add(getWeekStart(date))
+  }
+  const sorted = [...weekStarts].sort()
+  let longestStreak = 0
+  let run = 0
+  for (const ws of sorted) {
+    if (isWeekComplete(ws, map, weekDayBitmask)) {
+      run++
+      if (run > longestStreak) longestStreak = run
+    } else {
+      run = 0
+    }
+  }
+
+  return { currentStreak, longestStreak }
+}
+
+/**
+ * Dates that form the current weekly streak (completed selected days in current streak weeks), oldest first.
+ * Used for cell shading in the table.
+ */
+export function getCurrentStreakDatesWeekly(
+  entries: StreakEntry[],
+  todayYMD: string,
+  weekDayBitmask: number
+): string[] {
+  const map = new Map<string, 'completed' | 'skipped'>()
+  for (const e of entries) {
+    map.set(e.date, e.status)
+  }
+  const weekStartToday = getWeekStart(todayYMD)
+  const dates: string[] = []
+  let w = weekStartToday
+  if (!isWeekComplete(w, map, weekDayBitmask)) {
+    w = addDays(w, -7)
+  }
+  while (isWeekComplete(w, map, weekDayBitmask)) {
+    for (let i = 0; i < 7; i++) {
+      if ((weekDayBitmask & (1 << i)) === 0) continue
+      const date = addDays(w, i)
+      if (map.get(date) === 'completed') dates.push(date)
+    }
+    w = addDays(w, -7)
+  }
+  return dates.sort()
+}

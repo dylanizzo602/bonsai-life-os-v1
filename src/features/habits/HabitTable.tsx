@@ -3,6 +3,7 @@
 import type React from 'react'
 import { useCallback } from 'react'
 import { ChevronLeftIcon, ChevronRightIcon } from '../../components/icons'
+import { isSelectedWeekday } from '../../lib/streaks'
 import type { HabitWithStreaks, HabitEntry, HabitColorId } from './types'
 
 /** Add n days to YYYY-MM-DD */
@@ -100,30 +101,30 @@ export function HabitTable({
 
   return (
     <div className="rounded-lg border border-bonsai-slate-200 overflow-hidden bg-white">
-      {/* Date range selector: desktop only, centered above table */}
-      {isDesktop && dateRangeText && (
+      {/* Date range selector: arrows and range text on all viewports (desktop = week, tablet/mobile = 3 days) */}
+      {dateRangeText && (
         <div className="flex items-center justify-center gap-2 py-3 border-b border-bonsai-slate-200 bg-bonsai-slate-50">
           {onPrevWeek && (
             <button
               type="button"
               onClick={onPrevWeek}
-              className="p-1 text-bonsai-slate-600 hover:text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded"
-              aria-label="Previous week"
+              className="p-1.5 md:p-1 text-bonsai-slate-600 hover:text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded touch-manipulation"
+              aria-label={isDesktop ? 'Previous week' : 'Previous dates'}
             >
-              <ChevronLeftIcon className="w-4 h-4" />
+              <ChevronLeftIcon className="w-5 h-5 md:w-4 md:h-4" />
             </button>
           )}
-          <span className="text-body font-medium text-bonsai-slate-600 min-w-[180px] text-center">
+          <span className="text-body font-medium text-bonsai-slate-600 min-w-[140px] md:min-w-[180px] text-center">
             {dateRangeText}
           </span>
           {onNextWeek && (
             <button
               type="button"
               onClick={onNextWeek}
-              className="p-1 text-bonsai-slate-600 hover:text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded"
-              aria-label="Next week"
+              className="p-1.5 md:p-1 text-bonsai-slate-600 hover:text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded touch-manipulation"
+              aria-label={isDesktop ? 'Next week' : 'Next dates'}
             >
-              <ChevronRightIcon className="w-4 h-4" />
+              <ChevronRightIcon className="w-5 h-5 md:w-4 md:h-4" />
             </button>
           )}
         </div>
@@ -172,6 +173,15 @@ export function HabitTable({
                   </button>
                 </td>
                 {dates.map((date) => {
+                  /* Weekly habits: only selected weekdays are active; others are grayed out and not clickable */
+                  const isWeekly =
+                    habit.frequency === 'weekly' &&
+                    typeof habit.frequency_target === 'number' &&
+                    habit.frequency_target >= 1 &&
+                    habit.frequency_target <= 127
+                  const isSelectedDay =
+                    !isWeekly || isSelectedWeekday(date, habit.frequency_target ?? 0)
+
                   const status = getEntry(habit.id, date)
                   const streakIndex = streakDates.indexOf(date)
                   const prevDate = addDays(date, -1)
@@ -184,35 +194,61 @@ export function HabitTable({
                   return (
                     <td
                       key={date}
-                      className={`p-0 align-top relative min-w-0 ${isToday ? 'bg-bonsai-sage-100' : ''}`}
+                      className={`p-0 align-top relative min-w-0 ${isToday ? 'bg-bonsai-sage-100' : ''} ${!isSelectedDay ? 'bg-bonsai-slate-100' : ''}`}
                       role="gridcell"
-                      aria-label={`${date}: ${status ?? 'open'}`}
-                      data-status={status ?? 'empty'}
+                      aria-label={`${date}: ${!isSelectedDay ? 'not scheduled' : status ?? 'open'}`}
+                      data-status={!isSelectedDay ? 'disabled' : status ?? 'empty'}
                     >
-                      {/* Click overlay: full cell so click always registers */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          handleCellClick(habit.id, date, e)
-                        }}
-                        className="absolute inset-0 w-full h-full cursor-pointer border-0 p-0 block opacity-0 z-20"
-                        aria-label={`Mark ${date} as ${status === null ? 'completed' : status === 'completed' ? 'skipped' : 'open'}`}
-                        title={status === null ? 'Mark complete' : status === 'completed' ? 'Mark skipped' : 'Clear'}
-                      />
+                      {/* Click overlay: only on selected days for weekly; daily always clickable */}
+                      {isSelectedDay && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            handleCellClick(habit.id, date, e)
+                          }}
+                          className="absolute inset-0 w-full h-full cursor-pointer border-0 p-0 block opacity-0 z-20"
+                          aria-label={
+                            isWeekly
+                              ? status === null
+                                ? 'Mark complete'
+                                : 'Clear'
+                              : status === null
+                                ? 'Mark complete'
+                                : status === 'completed'
+                                  ? 'Mark skipped'
+                                  : 'Clear'
+                          }
+                          title={
+                            isWeekly
+                              ? status === null
+                                ? 'Mark complete'
+                                : 'Clear'
+                              : status === null
+                                ? 'Mark complete'
+                                : status === 'completed'
+                                  ? 'Mark skipped'
+                                  : 'Clear'
+                          }
+                        />
+                      )}
                       <div className="relative w-full pointer-events-none" style={{ paddingBottom: '100%' }}>
                         <div className="absolute inset-0 overflow-hidden bg-white pointer-events-none">
-                          {status === null && <div className="w-full h-full bg-white" />}
-                          {status === 'completed' && (
+                          {!isSelectedDay && (
+                            <div className="w-full h-full bg-bonsai-slate-100" />
+                          )}
+                          {isSelectedDay && status === null && <div className="w-full h-full bg-white" />}
+                          {isSelectedDay && status === 'completed' && (
                             <>
                               <div className={`w-full h-full ${shadeClass} completed-cell`} />
+                              {/* Skip hover: next click cycles to skipped (triangle); weekly streak still requires no skip on selected days */}
                               <div className="completed-hover-overlay absolute inset-0 flex items-center justify-center opacity-0 transition-opacity bg-black/10 pointer-events-none z-10">
                                 <span className="text-white text-xs font-medium drop-shadow">skip</span>
                               </div>
                             </>
                           )}
-                          {status === 'skipped' && (
+                          {isSelectedDay && status === 'skipped' && (
                             <>
                               <div className="absolute inset-0 bg-white" />
                               <div
@@ -230,8 +266,14 @@ export function HabitTable({
                   <div className="flex flex-col items-center gap-0.5">
                     <span className="text-body font-medium text-bonsai-slate-600" role="img" aria-label="streak">
                       🔥 {habit.currentStreak}
+                      {habit.frequency === 'weekly' && (
+                        <span className="text-secondary font-normal"> wk</span>
+                      )}
                     </span>
-                    <span className="text-secondary text-bonsai-slate-500">longest {habit.longestStreak}</span>
+                    <span className="text-secondary text-bonsai-slate-500">
+                      longest {habit.longestStreak}
+                      {habit.frequency === 'weekly' && ' wk'}
+                    </span>
                   </div>
                 </td>
               </tr>

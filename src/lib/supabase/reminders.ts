@@ -144,3 +144,37 @@ export async function toggleReminderComplete(id: string, completed: boolean): Pr
 
   return updateReminder(id, { remind_at: nextRemindAt, completed: false })
 }
+
+/**
+ * Advance a recurring reminder to the next occurrence (update remind_at only).
+ * Used for habit reminders: after recording complete/skip, advance to next occurrence.
+ */
+export async function advanceReminderToNextOccurrence(id: string): Promise<Reminder> {
+  const { data: existing, error: fetchError } = await supabase
+    .from('reminders')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (fetchError || !existing) {
+    console.error('Error fetching reminder:', fetchError)
+    throw fetchError ?? new Error('Reminder not found')
+  }
+
+  const reminder = existing as Reminder
+  const pattern = parseRecurrencePattern(reminder.recurrence_pattern ?? null)
+  const dueYMD = toDateOnly(reminder.remind_at)
+  if (!pattern || !dueYMD) {
+    return reminder
+  }
+
+  const nextDueYMD = getNextOccurrence(pattern, dueYMD)
+  if (!nextDueYMD) {
+    return reminder
+  }
+
+  const orig = reminder.remind_at
+  const timePart = orig && orig.includes('T') ? orig.slice(11, 19) : '12:00:00'
+  const nextRemindAt = `${nextDueYMD}T${timePart}`
+  return updateReminder(id, { remind_at: nextRemindAt })
+}
