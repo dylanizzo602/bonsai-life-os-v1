@@ -11,6 +11,7 @@ import {
   HourglassIcon,
   RepeatIcon,
   FlagIcon,
+  TrophyIcon,
 } from '../../components/icons'
 import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { Tooltip } from '../../components/Tooltip'
@@ -332,9 +333,19 @@ export function TabletTaskItem({
             </span>
           )
         )}
-        {/* Priority flag */}
-        <span className={`shrink-0 ${getPriorityFlagClasses(priority)}`}>
-          <FlagIcon className="w-3.5 h-3.5" />
+        {/* Priority flag or trophy icon (if goal-linked) */}
+        <span
+          className={`shrink-0 ${
+            task.goal_id
+              ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
+              : getPriorityFlagClasses(priority)
+          }`}
+        >
+          {task.goal_id ? (
+            <TrophyIcon className="w-3.5 h-3.5" />
+          ) : (
+            <FlagIcon className="w-3.5 h-3.5" />
+          )}
         </span>
       </div>
     </div>

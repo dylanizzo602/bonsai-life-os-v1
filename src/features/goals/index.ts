@@ -1,2 +1,11 @@
 /* Goals feature exports */
 export { GoalsPage } from './GoalsPage'
+export { GoalDetailPage } from './GoalDetailPage'
+export { GoalGaugeCard } from './GoalGaugeCard'
+export { GoalGauge } from './GoalGauge'
+export { MilestoneList } from './MilestoneList'
+export { MilestoneItem } from './MilestoneItem'
+export { HabitLinkSection } from './HabitLinkSection'
+export { GoalHistorySection } from './GoalHistorySection'
+export { useGoals, useGoal } from './hooks/useGoals'
+export type * from './types'

@@ -17,6 +17,7 @@ export {
   BellIcon,
   CalendarIcon,
   FlagIcon,
+  TrophyIcon,
   TagIcon,
   HourglassIcon,
   ParagraphIcon,

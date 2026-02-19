@@ -7,6 +7,7 @@ import { Input } from '../../components/Input'
 import { Checkbox } from '../../components/Checkbox'
 import { useTaskChecklists } from './hooks/useTaskChecklists'
 import { useTags } from './hooks/useTags'
+import { useGoals } from '../goals/hooks/useGoals'
 import { SubtaskList } from './SubtaskList'
 import {
   PlusIcon,
@@ -174,6 +175,7 @@ export function AddEditTaskModal({
   const [due_date, setDueDate] = useState<string | null>(null)
   const [recurrence_pattern, setRecurrencePattern] = useState<string | null>(null)
   const [priority, setPriority] = useState<TaskPriority>('medium')
+  const [goal_id, setGoalId] = useState<string | null>(null)
   const [tags, setTags] = useState<Tag[]>([])
   const [time_estimate, setTimeEstimate] = useState<number | null>(null)
   const [attachments, setAttachments] = useState<TaskAttachment[]>([])
@@ -211,6 +213,7 @@ export function AddEditTaskModal({
     deleteTagFromAllTasks,
     setTagsForTask,
   } = useTags(task?.user_id ?? null)
+  const { goals } = useGoals()
 
   /* Prefill form when editing or reset when opening for add */
   useEffect(() => {
@@ -222,6 +225,7 @@ export function AddEditTaskModal({
       setDueDate(task.due_date ?? null)
       setRecurrencePattern(task.recurrence_pattern ?? null)
       setPriority(task.priority ?? 'medium')
+      setGoalId(task.goal_id ?? null)
       setTags(Array.isArray(task.tags) ? task.tags : [])
       setTimeEstimate(task.time_estimate ?? null)
       setAttachments(Array.isArray(task.attachments) ? task.attachments : [])
@@ -233,6 +237,7 @@ export function AddEditTaskModal({
       setDueDate(null)
       setRecurrencePattern(null)
       setPriority('medium')
+      setGoalId(null)
       setTags([])
       setTimeEstimate(null)
       setAttachments([])
@@ -252,7 +257,8 @@ export function AddEditTaskModal({
           start_date: start_date || null,
           due_date: due_date || null,
           recurrence_pattern: recurrence_pattern ?? null,
-          priority,
+          priority: goal_id ? 'high' : priority,
+          goal_id: goal_id || null,
           time_estimate,
           attachments: attachments.length ? attachments : undefined,
           status: getTaskStatus(status),
@@ -294,6 +300,7 @@ export function AddEditTaskModal({
         setDueDate(null)
         setRecurrencePattern(null)
         setPriority('medium')
+        setGoalId(null)
         setTags([])
         setTimeEstimate(null)
         setAttachments([])
@@ -541,6 +548,33 @@ export function AddEditTaskModal({
               onChange={(e) => setDescription(e.target.value)}
               aria-label="Notes or details"
             />
+          </div>
+
+          {/* Goal picker */}
+          <div>
+            <label className="block text-sm font-medium text-bonsai-slate-700 mb-1">
+              Link to Goal (optional)
+            </label>
+            <Select
+              options={[
+                { value: '', label: 'No goal' },
+                ...goals.map((g) => ({ value: g.id, label: g.name })),
+              ]}
+              value={goal_id || ''}
+              onChange={(e) => {
+                const selectedGoalId = e.target.value || null
+                setGoalId(selectedGoalId)
+                /* Auto-set priority to high when goal is linked */
+                if (selectedGoalId && priority !== 'high') {
+                  setPriority('high')
+                }
+              }}
+            />
+            {goal_id && (
+              <p className="mt-1 text-xs text-bonsai-slate-500">
+                Task priority set to High automatically when linked to a goal
+              </p>
+            )}
           </div>
 
           <div>

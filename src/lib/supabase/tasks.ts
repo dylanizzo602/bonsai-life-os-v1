@@ -123,6 +123,38 @@ export async function getTasks(filters?: TaskFilters): Promise<Task[]> {
 }
 
 /**
+ * Fetch tasks by a list of IDs (for goal milestones). Returns tasks with tags and attachments.
+ */
+export async function getTasksByIds(ids: string[]): Promise<Task[]> {
+  if (ids.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('*, task_tags(tag_id, tags(*))')
+    .in('id', ids)
+
+  if (error) {
+    console.error('Error fetching tasks by ids:', error)
+    throw error
+  }
+
+  const tasks = ((data as TaskRowWithTags[]) ?? []).map((t) => {
+    const taskTags = t.task_tags ?? []
+    const tags: Tag[] = taskTags
+      .map((tt) => tt.tags)
+      .filter((tag): tag is Tag => tag != null)
+    const { task_tags: _tt, ...rest } = t
+    return {
+      ...rest,
+      tags,
+      attachments: Array.isArray(t.attachments) ? t.attachments : [],
+    } as Task
+  })
+
+  return tasks
+}
+
+/**
  * Create a new task.
  * Subtasks: pass parent_id to create as child of another task.
  */
@@ -136,6 +168,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     time_estimate: input.time_estimate ?? null,
     attachments: input.attachments ?? [],
     parent_id: input.parent_id ?? null,
+    goal_id: input.goal_id ?? null,
     user_id: input.user_id ?? null,
     recurrence_pattern: input.recurrence_pattern ?? null,
   }
@@ -178,6 +211,7 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
     updateData.completed_at = input.status === 'completed' ? new Date().toISOString() : null
   }
   if (input.category !== undefined) updateData.category = input.category
+  if (input.goal_id !== undefined) updateData.goal_id = input.goal_id
   if (input.recurrence_pattern !== undefined)
     updateData.recurrence_pattern = input.recurrence_pattern
 

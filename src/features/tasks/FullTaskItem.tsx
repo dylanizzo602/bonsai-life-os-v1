@@ -6,6 +6,7 @@ import {
   ChevronRightIcon,
   CalendarIcon,
   FlagIcon,
+  TrophyIcon,
   ParagraphIcon,
   ChecklistIcon,
   BlockedIcon,
@@ -669,17 +670,27 @@ export function FullTaskItem({
           type="button"
           onClick={(e) => {
             e.stopPropagation()
-            /* Open priority picker when flag is clicked */
-            if (onUpdateTask) {
+            /* Open priority picker when flag is clicked (or trophy if goal-linked) */
+            if (onUpdateTask && !task.goal_id) {
               setIsPriorityModalOpen(true)
             }
           }}
-          className={`flex items-center gap-1.5 rounded p-1 text-sm transition-colors hover:bg-bonsai-slate-100 ${getPriorityFlagClasses(priority)}`}
-          aria-label="Edit priority"
-          disabled={!onUpdateTask}
+          className={`flex items-center gap-1.5 rounded p-1 text-sm transition-colors hover:bg-bonsai-slate-100 ${
+            task.goal_id
+              ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
+              : getPriorityFlagClasses(priority)
+          }`}
+          aria-label={task.goal_id ? 'Goal-linked task' : 'Edit priority'}
+          disabled={!onUpdateTask || !!task.goal_id}
         >
-          <FlagIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" />
-          <span className="shrink-0 text-sm text-bonsai-slate-600">{getPriorityLabel(priority)}</span>
+          {task.goal_id ? (
+            <TrophyIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" />
+          ) : (
+            <FlagIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" />
+          )}
+          {!task.goal_id && (
+            <span className="shrink-0 text-sm text-bonsai-slate-600">{getPriorityLabel(priority)}</span>
+          )}
         </button>
       </div>
 

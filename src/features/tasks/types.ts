@@ -64,6 +64,7 @@ export interface Task {
   id: string
   user_id: string | null
   parent_id: string | null
+  goal_id: string | null
   title: string
   description: string | null
   start_date: string | null
@@ -85,6 +86,7 @@ export interface CreateTaskInput {
   title: string
   user_id?: string | null
   parent_id?: string | null
+  goal_id?: string | null
   description?: string | null
   start_date?: string | null
   due_date?: string | null
@@ -106,6 +108,7 @@ export interface UpdateTaskInput {
   attachments?: TaskAttachment[]
   status?: TaskStatus
   category?: string | null
+  goal_id?: string | null
   recurrence_pattern?: string | null
 }
 
