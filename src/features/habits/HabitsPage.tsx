@@ -1,23 +1,44 @@
-/* Habits page: Header, New Habit button, scrollable habit table (dates past to tomorrow, streak at end), add/edit modal */
+/* Habits page: Header, New Habit button, habit table (desktop = week + arrows, mobile = scroll to today), add/edit modal */
 
 import { useState, useEffect } from 'react'
 import { AddButton } from '../../components/AddButton'
 import { HabitsIcon, PlusIcon } from '../../components/icons'
+import { useViewportWidth } from '../../hooks/useViewportWidth'
 import { useHabits } from './hooks/useHabits'
 import { HabitTable } from './HabitTable'
 import { AddEditHabitModal } from './AddEditHabitModal'
 import type { HabitWithStreaks } from './types'
 
+const LG_BREAKPOINT = 1024
+
+/** Format date range for display: "Feb 15 – Feb 21, 2026" */
+function formatDateRange(start: string, end: string): string {
+  const s = new Date(start + 'T12:00:00')
+  const e = new Date(end + 'T12:00:00')
+  const sameYear = s.getFullYear() === e.getFullYear()
+  const startStr = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const endStr = e.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: sameYear ? undefined : 'numeric',
+  })
+  const yearStr = sameYear ? `, ${s.getFullYear()}` : ''
+  return `${startStr} – ${endStr}${yearStr}`
+}
+
 /**
- * Habits section: title, subtitle, New Habit button, scrollable table (endless dates in past, one day future, streak at end).
+ * Habits section: desktop = week view with prev/next arrows; mobile = scrollable range starting at today.
  */
 export function HabitsPage() {
+  const width = useViewportWidth()
+  const isDesktop = width >= LG_BREAKPOINT
   const {
     habitsWithStreaks,
     entriesByHabit,
     dateRange,
     setDateRange,
-    scrollableDateRange,
+    sevenDaysRange,
+    setWeekToToday,
     todayYMD,
     loading,
     error,
@@ -25,12 +46,20 @@ export function HabitsPage() {
     updateHabit,
     deleteHabit,
     cycleEntry,
+    goToPrevWeek,
+    goToNextWeek,
+    goToPrevRange,
+    goToNextRange,
   } = useHabits()
 
-  /* Use single scrollable range: many days in the past up to one day in the future */
+  /* Desktop: current week + arrow nav; mobile/tablet: max 7 dates at a time + arrow nav */
   useEffect(() => {
-    setDateRange(scrollableDateRange)
-  }, [scrollableDateRange, setDateRange])
+    if (isDesktop) {
+      setWeekToToday()
+    } else {
+      setDateRange(sevenDaysRange)
+    }
+  }, [isDesktop, setWeekToToday, setDateRange, sevenDaysRange])
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editingHabit, setEditingHabit] = useState<HabitWithStreaks | null>(null)
@@ -110,9 +139,9 @@ export function HabitsPage() {
         </div>
       )}
 
-      {/* Table: full bleed to content edges (no horizontal padding between table and viewport) */}
+      {/* Table: full bleed on mobile/tablet; on desktop use normal padding so table has padding around it */}
       {!loading && habitsWithStreaks.length > 0 && (
-        <div className="-mx-4 md:-mx-6">
+        <div className="-mx-4 md:-mx-6 lg:mx-0">
           <HabitTable
             habits={habitsWithStreaks}
             entriesByHabit={entriesByHabit}
@@ -120,6 +149,10 @@ export function HabitsPage() {
             todayYMD={todayYMD}
             onCycleEntry={cycleEntry}
             onEditHabit={handleEditHabit}
+            isDesktop={isDesktop}
+            dateRangeText={formatDateRange(dateRange.start, dateRange.end)}
+            onPrevRange={isDesktop ? goToPrevWeek : goToPrevRange}
+            onNextRange={isDesktop ? goToNextWeek : goToNextRange}
           />
         </div>
       )}

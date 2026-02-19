@@ -55,12 +55,10 @@ function nextThreeDaysRange(): DateRange {
   return { start, end }
 }
 
-/** Scrollable range: many days in the past up to and including today only */
-const SCROLLABLE_DAYS_PAST = 120
-
-function scrollableDateRangeFor(today: string): DateRange {
+/** Mobile/tablet: show at most 7 days at a time (ending today); navigate by arrows */
+function sevenDaysEndingToday(today: string): DateRange {
   return {
-    start: addDays(today, -SCROLLABLE_DAYS_PAST),
+    start: addDays(today, -6),
     end: today,
   }
 }
@@ -145,11 +143,8 @@ export function useHabits(initialDateRange?: DateRange) {
 
   const today = todayYMD()
 
-  /* Single scrollable range: past to tomorrow (used for table with horizontal scroll) */
-  const scrollableDateRange = useMemo(
-    () => scrollableDateRangeFor(today),
-    [today]
-  )
+  /* Mobile/tablet: 7 days ending today (max 7 dates at a time) */
+  const sevenDaysRange = useMemo(() => sevenDaysEndingToday(today), [today])
 
   /* Derive habits with current/longest streak and streak dates; weekly habits use week-based streak and selected days only */
   const habitsWithStreaks = useMemo((): HabitWithStreaks[] => {
@@ -360,7 +355,7 @@ export function useHabits(initialDateRange?: DateRange) {
     dateRange,
     setDateRange,
     todayYMD: today,
-    scrollableDateRange,
+    sevenDaysRange,
     refetch: fetchHabitsAndEntries,
     createHabit: createHabitHandler,
     updateHabit: updateHabitHandler,
