@@ -23,7 +23,7 @@ export interface TaskContextPopoverProps {
   onArchive?: (task: Task) => void
   /** Mark task as deleted (soft delete; sets status to deleted) */
   onMarkDeleted?: (task: Task) => void
-  /** Line Up task IDs (show "Add to Line Up" / "Remove from Line Up") */
+  /** Today's Lineup task IDs (show "Add to Today's Lineup" / "Remove from Today's Lineup") */
   lineUpTaskIds?: Set<string>
   onAddToLineUp?: (taskId: string) => void
   onRemoveFromLineUp?: (taskId: string) => void
@@ -164,7 +164,7 @@ export function TaskContextPopover({
               onClick={handleRemoveFromLineUp}
               className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors"
             >
-              Remove from Line Up
+              Remove from Today's Lineup
             </button>
           ) : (
             <button
@@ -173,7 +173,7 @@ export function TaskContextPopover({
               onClick={handleAddToLineUp}
               className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors"
             >
-              Add to Line Up
+              Add to Today's Lineup
             </button>
           )
         )}

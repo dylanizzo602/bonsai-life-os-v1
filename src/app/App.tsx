@@ -51,7 +51,7 @@ function App() {
       case 'home':
         return <HomePage />
       case 'briefings':
-        return <BriefingsPage />
+        return <BriefingsPage onNavigateToReflections={() => setActiveSection('reflections')} />
       case 'goals':
         return <GoalsPage />
       case 'tasks':

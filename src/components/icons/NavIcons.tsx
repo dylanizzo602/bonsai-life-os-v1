@@ -600,7 +600,7 @@ export function SearchIcon({ className = 'w-5 h-5' }: { className?: string }) {
   )
 }
 
-/* LineUp icon: Up arrow for Line Up view */
+/* LineUp icon: Up arrow for Today's Lineup view */
 export function LineUpIcon({ className = 'w-5 h-5' }: { className?: string }) {
   return (
     <svg

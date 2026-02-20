@@ -88,7 +88,7 @@ export interface TaskListProps {
   showDeleted?: boolean
   /** Clear archive/trash view and return to main list */
   onClearArchiveTrashView?: () => void
-  /** Line Up task IDs (for context menu "Add to Line Up" / "Remove from Line Up") */
+  /** Today's Lineup task IDs (for context menu "Add to Today's Lineup" / "Remove from Today's Lineup") */
   lineUpTaskIds?: Set<string>
   onAddToLineUp?: (taskId: string) => void
   onRemoveFromLineUp?: (taskId: string) => void

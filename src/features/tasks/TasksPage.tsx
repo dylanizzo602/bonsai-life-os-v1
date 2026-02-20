@@ -1,4 +1,4 @@
-/* Tasks page: Section header, view toolbar (Line Up / Available / All / Custom), Filter/Sort/Search, task list, Archive/Trash at bottom, Add/Edit modals */
+/* Tasks page: Section header, view toolbar (Today's Lineup / Available / All / Custom), Filter/Sort/Search, task list, Archive/Trash at bottom, Add/Edit modals */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AddButton } from '../../components/AddButton'
@@ -29,8 +29,10 @@ import type { Reminder } from '../reminders/types'
 import type { SortByEntry } from './types'
 import type { FilterCondition } from './modals/FilterModal'
 import type { SavedView } from '../../lib/supabase/savedViews'
-
-const LINE_UP_STORAGE_KEY = 'bonsai-task-lineup'
+import {
+  loadTodaysLineupTaskIds,
+  saveTodaysLineupTaskIds,
+} from '../../lib/todaysLineup'
 
 /**
  * Dropdown content for Add new task: "Add new reminder" option; click opens reminder modal.
@@ -458,7 +460,7 @@ function evaluateFilterConditionForReminder(c: FilterCondition, r: Reminder): bo
 
 /**
  * Tasks page component.
- * Toolbar: view buttons (Line Up, Available, All, Custom), Filter, Sort, Search, Add. Task list with Archive/Trash at bottom.
+ * Toolbar: view buttons (Today's Lineup, Available, All, Custom), Filter, Sort, Search, Add. Task list with Archive/Trash at bottom.
  */
 export function TasksPage() {
   const {
@@ -556,7 +558,7 @@ export function TasksPage() {
   /* Archive/Trash: when true, list shows only archived or only deleted tasks (no filters applied). */
   const [showArchived, setShowArchived] = useState(false)
   const [showDeleted, setShowDeleted] = useState(false)
-  /* Line Up: task IDs in the lineup (persisted in localStorage). */
+  /* Today's Lineup: task IDs for today (date-scoped localStorage, resets daily). */
   const [lineUpTaskIds, setLineUpTaskIds] = useState<Set<string>>(new Set())
   /* Search: query and whether the search pill is expanded. */
   const [searchQuery, setSearchQuery] = useState('')
@@ -594,15 +596,9 @@ export function TasksPage() {
     }
   }, [filterOpen, fetchTags])
 
-  /* Load lineup from localStorage on mount and when key might have changed. */
+  /* Load Today's Lineup from localStorage on mount; empty if stored date is not today. */
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LINE_UP_STORAGE_KEY)
-      const ids: string[] = raw ? JSON.parse(raw) : []
-      setLineUpTaskIds(new Set(Array.isArray(ids) ? ids : []))
-    } catch {
-      setLineUpTaskIds(new Set())
-    }
+    setLineUpTaskIds(loadTodaysLineupTaskIds())
   }, [])
 
   /* Compute blocked and blocking task IDs (for Available view and Custom dependency filters). */
@@ -634,14 +630,9 @@ export function TasksPage() {
       })
   }, [tasks])
 
-  /* Persist lineup to localStorage when it changes. */
+  /* Persist Today's Lineup to localStorage when it changes (date-scoped, resets daily). */
   const persistLineUp = useCallback((ids: Set<string>) => {
-    const arr = Array.from(ids)
-    try {
-      localStorage.setItem(LINE_UP_STORAGE_KEY, JSON.stringify(arr))
-    } catch {
-      // ignore
-    }
+    saveTodaysLineupTaskIds(ids)
     setLineUpTaskIds(ids)
   }, [])
 
@@ -794,7 +785,7 @@ export function TasksPage() {
     switch (viewMode) {
       case 'lineup':
         viewTasks = baseTasks.filter((t) => lineUpTaskIds.has(t.id))
-        /* Line Up shows only tasks in the lineup; no reminders or habit reminders */
+        /* Today's Lineup shows only tasks in the lineup; no reminders or habit reminders */
         remindersFiltered = []
         habitRemindersFiltered = []
         break
@@ -1049,7 +1040,7 @@ export function TasksPage() {
             aria-pressed={viewMode === 'lineup'}
           >
             <LineUpIcon className="w-4 h-4 md:w-5 md:h-5" />
-            Line Up
+            Today's Lineup
           </button>
           <button
             type="button"
