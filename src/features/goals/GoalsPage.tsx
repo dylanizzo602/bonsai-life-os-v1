@@ -44,6 +44,9 @@ export function GoalsPage() {
 
   /* Handle goal card click: navigate to detail page */
   const handleGoalClick = (goalId: string) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7825/ingest/5e4e8d61-5cc8-4de4-815f-8096cfa9d88f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6f20d7'},body:JSON.stringify({sessionId:'6f20d7',location:'GoalsPage.tsx:handleGoalClick',message:'goal click',data:{goalId},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+    // #endregion
     setSelectedGoalId(goalId)
   }
 
@@ -71,9 +74,18 @@ export function GoalsPage() {
     setEditingGoal(null)
   }
 
-  /* If a goal is selected, show detail page */
+  /* If a goal is selected, show detail page (key forces fresh mount when goal changes) */
   if (selectedGoalId) {
-    return <GoalDetailPage goalId={selectedGoalId} onBack={handleBack} />
+    // #region agent log
+    fetch('http://127.0.0.1:7825/ingest/5e4e8d61-5cc8-4de4-815f-8096cfa9d88f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6f20d7'},body:JSON.stringify({sessionId:'6f20d7',location:'GoalsPage.tsx:render',message:'rendering GoalDetailPage',data:{selectedGoalId},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
+    // #endregion
+    return (
+      <GoalDetailPage
+        key={selectedGoalId}
+        goalId={selectedGoalId}
+        onBack={handleBack}
+      />
+    )
   }
 
   return (

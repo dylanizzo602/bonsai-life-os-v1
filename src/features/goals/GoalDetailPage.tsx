@@ -11,7 +11,7 @@ import { AddEditTaskModal } from '../tasks/AddEditTaskModal'
 import { TaskContextPopover } from '../tasks/modals/TaskContextPopover'
 import { useTasks } from '../tasks/hooks/useTasks'
 import type { Task } from '../tasks/types'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 
 interface GoalDetailPageProps {
   /** Goal ID to display */
@@ -60,6 +60,28 @@ export function GoalDetailPage({ goalId, onBack }: GoalDetailPageProps) {
   /* Task context menu: right-click on linked task shows Rename, Duplicate, Archive, Delete */
   const [contextTask, setContextTask] = useState<Task | null>(null)
   const [contextPosition, setContextPosition] = useState({ x: 0, y: 0 })
+  /* Debug H7/H8: ref to measure success root and scroll parent */
+  const successRootRef = useRef<HTMLDivElement>(null)
+
+  /* Debug H7/H8: when success UI is shown, log dimensions and scroll position; scroll scrollable parent to top */
+  useEffect(() => {
+    if (!goal || loading) return
+    const el = successRootRef.current
+    if (!el) return
+    let p: HTMLElement | null = el.parentElement
+    while (p) {
+      const style = getComputedStyle(p)
+      const overflow = style.overflow + style.overflowY
+      if (overflow.includes('auto') || overflow.includes('scroll')) {
+        const scrollTopBefore = p.scrollTop
+        p.scrollTo(0, 0)
+        const rootRect = el.getBoundingClientRect()
+        fetch('http://127.0.0.1:7825/ingest/5e4e8d61-5cc8-4de4-815f-8096cfa9d88f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6f20d7'},body:JSON.stringify({sessionId:'6f20d7',location:'GoalDetailPage.tsx:useEffect',message:'success layout',data:{rootHeight:rootRect.height,rootWidth:rootRect.width,scrollTopBefore,scrollHeight:p.scrollHeight,clientHeight:p.clientHeight},timestamp:Date.now(),hypothesisId:'H7'})}).catch(()=>{});
+        break
+      }
+      p = p.parentElement
+    }
+  }, [goal, loading])
 
   /* Sync milestone completion when linked task is completed/uncompleted */
   const syncMilestoneForTask = useCallback(
@@ -105,6 +127,12 @@ export function GoalDetailPage({ goalId, onBack }: GoalDetailPageProps) {
     })
   }
 
+  /* Debug: which branch GoalDetailPage renders (loading / error / success) */
+  // #region agent log
+  const branch = loading ? 'loading' : (error || !goal) ? 'error' : 'success'
+  fetch('http://127.0.0.1:7825/ingest/5e4e8d61-5cc8-4de4-815f-8096cfa9d88f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6f20d7'},body:JSON.stringify({sessionId:'6f20d7',location:'GoalDetailPage.tsx:render',message:'detail branch',data:{goalId,loading,error:error||null,hasGoal:!!goal,goalName:goal?.name,branch},timestamp:Date.now(),hypothesisId:'H6'})}).catch(()=>{});
+  // #endregion
+
   if (loading) {
     return (
       <div className="min-h-full">
@@ -126,8 +154,9 @@ export function GoalDetailPage({ goalId, onBack }: GoalDetailPageProps) {
     )
   }
 
+  /* Success branch: root fills and scrolls with main content wrapper */
   return (
-    <div className="min-h-full">
+    <div ref={successRootRef} className="min-h-full">
       {/* Header: back button and title */}
       <div className="flex items-center gap-4 mb-6">
         <button

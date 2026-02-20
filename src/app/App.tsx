@@ -40,6 +40,11 @@ function App() {
   /* Navigation hook: Manage active section state */
   const { activeSection, setActiveSection } = useNavigation('home')
 
+  /* Debug: H1 – viewport and render branch */
+  // #region agent log
+  fetch('http://127.0.0.1:7825/ingest/5e4e8d61-5cc8-4de4-815f-8096cfa9d88f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6f20d7'},body:JSON.stringify({sessionId:'6f20d7',location:'App.tsx:render',message:'viewport and branch',data:{viewportWidth,isScreenTooSmall,activeSection,branch:isScreenTooSmall?'ScreenTooSmallMessage':'BaseLayout'},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+  // #endregion
+
   /* Content rendering: Render the appropriate page component based on active section */
   const renderContent = () => {
     switch (activeSection) {

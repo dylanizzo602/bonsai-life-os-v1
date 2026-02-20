@@ -48,10 +48,25 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Full viewport height chain: ensures app fills screen on mobile and desktop */
+html {
+  min-height: 100%;
+  height: 100%;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  height: 100%;
+}
+
+/* Root mount: fill viewport so layout flex children get correct height on mobile */
+#root {
+  min-height: 100vh;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Typography utilities: Bonsai branding – page title, body, secondary (responsive) */

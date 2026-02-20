@@ -43,8 +43,10 @@ export function GoalGaugeCard({ goal, milestones = [], onClick }: GoalGaugeCardP
   /* Use computed progress if available, otherwise use manual progress */
   const displayProgress = goal.progress
 
+  /* Render: Card as button so click navigates to goal detail; type="button" prevents form submit */
   return (
     <button
+      type="button"
       onClick={onClick}
       className="w-full bg-white border border-bonsai-slate-200 rounded-lg p-4 md:p-6 hover:shadow-md transition-shadow text-left"
       aria-label={`View goal: ${goal.name}`}

@@ -140,8 +140,15 @@ export function useGoal(goalId: string | null) {
       setError(null)
       const data = await getGoal(goalId)
       setGoal(data)
+      // #region agent log
+      fetch('http://127.0.0.1:7825/ingest/5e4e8d61-5cc8-4de4-815f-8096cfa9d88f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6f20d7'},body:JSON.stringify({sessionId:'6f20d7',location:'useGoals.ts:fetchGoal',message:'goal fetch ok',data:{goalId,goalName:data?.name},timestamp:Date.now(),hypothesisId:'H6'})}).catch(()=>{});
+      // #endregion
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch goal')
+      const errMsg = err instanceof Error ? err.message : 'Failed to fetch goal'
+      setError(errMsg)
+      // #region agent log
+      fetch('http://127.0.0.1:7825/ingest/5e4e8d61-5cc8-4de4-815f-8096cfa9d88f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6f20d7'},body:JSON.stringify({sessionId:'6f20d7',location:'useGoals.ts:fetchGoal',message:'goal fetch error',data:{goalId,error:errMsg},timestamp:Date.now(),hypothesisId:'H6'})}).catch(()=>{});
+      // #endregion
       console.error('Error fetching goal:', err)
     } finally {
       setLoading(false)
