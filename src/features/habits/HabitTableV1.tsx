@@ -2,35 +2,11 @@
 
 import type React from 'react'
 import { useCallback } from 'react'
-import { ChevronLeftIcon, ChevronRightIcon } from '../../components/icons'
 import { isSelectedWeekday } from '../../lib/streaks'
 import type { HabitWithStreaksV1, HabitEntry } from './types'
-
-/** Add n days to YYYY-MM-DD */
-function addDays(ymd: string, n: number): string {
-  const d = new Date(ymd + 'T12:00:00')
-  d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
-}
-
-/** List of dates from start to end inclusive */
-function datesInRange(start: string, end: string): string[] {
-  const out: string[] = []
-  let d = start
-  while (d <= end) {
-    out.push(d)
-    d = addDays(d, 1)
-  }
-  return out
-}
-
-/** Short month + day for date column header */
-function formatHeaderMonthDay(ymd: string): { month: string; day: string } {
-  const d = new Date(ymd + 'T12:00:00')
-  const month = d.toLocaleDateString('en-US', { month: 'short' })
-  const day = String(d.getDate())
-  return { month, day }
-}
+import { DateRangeBar } from './DateRangeBar'
+import { datesInRange, formatHeaderMonthDay } from './dateUtils'
+import { DATE_COLUMN_WIDTH_PX, HABIT_COLUMN_WIDTH_PX, STREAK_COLUMN_WIDTH_PX } from './constants'
 
 export interface HabitTableV1Props {
   habits: HabitWithStreaksV1[]
@@ -45,12 +21,8 @@ export interface HabitTableV1Props {
   onNextRange?: () => void
 }
 
-const DATE_COLUMN_WIDTH_PX = 44
-const HABIT_COLUMN_WIDTH_PX = 140
-const STREAK_COLUMN_WIDTH_PX = 100
-
 /**
- * 1.1 table: Green (completed), yellow (minimum), red (skipped/no entry). Weighted streak column.
+ * Habits 1.1 table: Green (completed), yellow (minimum), red (skipped/no entry). Weighted streak column.
  */
 export function HabitTableV1({
   habits,
@@ -102,34 +74,31 @@ export function HabitTableV1({
     return 'bg-red-400'
   }
 
+  /* Desktop: card with date bar, legend, and full table */
   if (isDesktop) {
     return (
-      <div className="w-fit border border-bonsai-slate-200 rounded-lg overflow-hidden bg-white">
+      <div className="w-fit border border-bonsai-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
         {dateRangeText && onPrevRange && onNextRange && (
-          <div className="flex items-center justify-center gap-2 py-2 border-b border-bonsai-slate-200 bg-bonsai-slate-50">
-            <button
-              type="button"
-              onClick={onPrevRange}
-              className="p-1.5 text-bonsai-slate-600 hover:text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded"
-              aria-label="Previous week"
-            >
-              <ChevronLeftIcon className="w-5 h-5" />
-            </button>
-            <span className="text-body font-medium text-bonsai-slate-700 min-w-[180px] text-center">
-              {dateRangeText}
-            </span>
-            <button
-              type="button"
-              onClick={onNextRange}
-              className="p-1.5 text-bonsai-slate-600 hover:text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded"
-              aria-label="Next week"
-            >
-              <ChevronRightIcon className="w-5 h-5" />
-            </button>
-          </div>
+          <DateRangeBar dateRangeText={dateRangeText} onPrev={onPrevRange} onNext={onNextRange} />
         )}
+        {/* Legend: one-line hint for cell meaning */}
+        <div className="flex flex-wrap items-center justify-center gap-3 py-1.5 px-2 border-b border-bonsai-slate-200 bg-bonsai-slate-50/70">
+          <span className="text-secondary text-bonsai-slate-600">
+            <span className="inline-block w-3 h-3 rounded-sm bg-green-500 align-middle mr-1" aria-hidden />
+            Full
+          </span>
+          <span className="text-secondary text-bonsai-slate-600">
+            <span className="inline-block w-3 h-3 rounded-sm bg-amber-400 align-middle mr-1" aria-hidden />
+            Minimum
+          </span>
+          <span className="text-secondary text-bonsai-slate-600">
+            <span className="inline-block w-3 h-3 rounded-sm bg-red-400 align-middle mr-1" aria-hidden />
+            None
+          </span>
+        </div>
         <table className="border-collapse" style={{ tableLayout: 'fixed', width: tableWidthPx }}>
           <thead>
+            {/* Header row: HABIT, date columns, STREAK */}
             <tr className="border-b border-bonsai-slate-200 bg-bonsai-slate-50">
               <th
                 className="text-left text-secondary font-semibold text-bonsai-slate-700 py-2 px-3 border-r border-bonsai-slate-200"
@@ -160,6 +129,7 @@ export function HabitTableV1({
             </tr>
           </thead>
           <tbody>
+            {/* Body rows: one per habit with green/yellow/red cells and weighted streak */}
             {habits.map((habit) => (
               <tr key={habit.id} className="group border-b border-bonsai-slate-100 hover:bg-bonsai-slate-50/50">
                 <td className="py-2 px-3 border-r border-bonsai-slate-200 bg-white">
@@ -226,57 +196,80 @@ export function HabitTableV1({
     )
   }
 
-  /* Mobile: horizontal scroll, same structure */
+  /* Mobile/tablet: sticky habit column + scrollable dates (same pattern as 1.0) */
+  const rightPanelWidthPx = dates.length * DATE_COLUMN_WIDTH_PX + STREAK_COLUMN_WIDTH_PX
   return (
-    <div className="w-full overflow-x-auto px-4 md:px-6 flex justify-center">
-      <div className="w-fit border border-bonsai-slate-200 rounded-lg overflow-hidden bg-white">
-        {dateRangeText && onPrevRange && onNextRange && (
-          <div className="flex items-center justify-center gap-2 py-2 border-b border-bonsai-slate-200 bg-bonsai-slate-50">
-            <button type="button" onClick={onPrevRange} className="p-1.5 text-bonsai-slate-600 rounded" aria-label="Previous">
-              <ChevronLeftIcon className="w-5 h-5" />
-            </button>
-            <span className="text-body font-medium text-bonsai-slate-700 min-w-[140px] text-center">{dateRangeText}</span>
-            <button type="button" onClick={onNextRange} className="p-1.5 text-bonsai-slate-600 rounded" aria-label="Next">
-              <ChevronRightIcon className="w-5 h-5" />
-            </button>
+    <div className="w-fit border border-bonsai-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
+      {dateRangeText && onPrevRange && onNextRange && (
+        <DateRangeBar dateRangeText={dateRangeText} onPrev={onPrevRange} onNext={onNextRange} />
+      )}
+      <div className="flex items-stretch">
+        {/* Sticky habit column */}
+        <div className="shrink-0 border-r border-bonsai-slate-200 bg-bonsai-slate-50/50 z-10 flex flex-col" style={{ width: HABIT_COLUMN_WIDTH_PX }}>
+          <div className="bg-bonsai-slate-50 border-b border-bonsai-slate-200 py-2 px-3 flex items-center shrink-0" style={{ height: DATE_COLUMN_WIDTH_PX }}>
+            <span className="text-secondary font-semibold text-bonsai-slate-700">HABIT</span>
           </div>
-        )}
-        <table className="border-collapse" style={{ tableLayout: 'fixed', width: tableWidthPx }}>
-          <thead>
-            <tr className="border-b border-bonsai-slate-200 bg-bonsai-slate-50">
-              <th className="text-left text-secondary font-semibold py-2 px-3 border-r border-bonsai-slate-200" style={{ width: HABIT_COLUMN_WIDTH_PX }}>HABIT</th>
-              {dates.map((d) => (
-                <th key={d} className="text-center text-xs font-semibold py-0.5 px-0.5 text-bonsai-slate-700" style={{ ...squareCellStyle }}>{formatHeaderMonthDay(d).day}</th>
-              ))}
-              <th className="text-center text-secondary font-semibold py-2 px-3 border-l border-bonsai-slate-200" style={{ width: STREAK_COLUMN_WIDTH_PX }}>STREAK</th>
-            </tr>
-          </thead>
-          <tbody>
-            {habits.map((habit) => (
-              <tr key={habit.id} className="group border-b border-bonsai-slate-100" style={{ height: DATE_COLUMN_WIDTH_PX }}>
-                <td className="py-2 px-3 border-r border-bonsai-slate-200 bg-white">
-                  <button type="button" onClick={() => onEditHabit(habit)} className="text-sm font-bold text-bonsai-brown-700 truncate max-w-full block w-full text-left">{habit.name}</button>
-                </td>
-                {dates.map((date) => {
-                  const isWeekly = habit.frequency === 'weekly' && typeof habit.frequency_target === 'number' && habit.frequency_target >= 1 && habit.frequency_target <= 127
-                  const isSelectedDay = !isWeekly || isSelectedWeekday(date, habit.frequency_target ?? 0)
-                  const status = getEntry(habit.id, date)
-                  const cellStatus = !isSelectedDay ? null : status
-                  const bg = !isSelectedDay ? 'bg-bonsai-slate-100' : getCellBg(cellStatus)
+          {habits.map((habit) => (
+            <div key={habit.id} className="border-b border-bonsai-slate-100 py-2 px-3 bg-white hover:bg-bonsai-slate-50/50 flex items-center shrink-0" style={{ height: DATE_COLUMN_WIDTH_PX }}>
+              <button type="button" onClick={() => onEditHabit(habit)} className="text-sm font-bold text-bonsai-brown-700 hover:text-bonsai-brown-800 text-left truncate max-w-full block w-full">{habit.name}</button>
+            </div>
+          ))}
+        </div>
+        {/* Dates + streak: scrollable table */}
+        <div style={{ width: rightPanelWidthPx }}>
+          <table className="border-collapse" style={{ tableLayout: 'fixed', width: rightPanelWidthPx }}>
+            <thead>
+              <tr className="border-b border-bonsai-slate-200 bg-bonsai-slate-50" style={{ height: DATE_COLUMN_WIDTH_PX }}>
+                {dates.map((d) => {
+                  const isToday = d === todayYMD
+                  const { month, day } = formatHeaderMonthDay(d)
                   return (
-                    <td key={date} className="p-0 relative overflow-hidden" style={{ ...squareCellStyle }} role="gridcell" aria-label={`${date}: ${cellStatus ?? 'open'}`}>
-                      {isSelectedDay && <button type="button" onClick={(e) => handleCellClick(habit.id, date, e)} className="absolute inset-0 w-full h-full cursor-pointer border-0 p-0 block z-20" aria-label="Cycle status" />}
-                      <div className={`absolute inset-0 ${bg}`} />
-                    </td>
+                    <th key={d} className={`text-center font-semibold py-0.5 px-0.5 text-xs text-bonsai-slate-700 overflow-hidden ${isToday ? 'bg-bonsai-sage-100 text-bonsai-sage-700' : 'bg-bonsai-slate-50'}`} style={{ ...squareCellStyle }} title={d}>
+                      <span className="block leading-none text-[10px]">{month}</span>
+                      <span className="block font-semibold leading-tight mt-0.5">{day}</span>
+                    </th>
                   )
                 })}
-                <td className="py-1 px-2 text-center border-l border-bonsai-slate-200 bg-white align-middle" style={{ width: STREAK_COLUMN_WIDTH_PX }}>
-                  <span className="text-xs font-medium text-bonsai-slate-600">🔥 {habit.currentStreak % 1 === 0 ? habit.currentStreak : habit.currentStreak.toFixed(1)}{habit.frequency === 'weekly' && ' wk'}</span>
-                </td>
+                <th className="text-center text-secondary font-semibold text-bonsai-slate-700 py-2 px-3 border-l border-bonsai-slate-200 bg-bonsai-slate-50" style={{ width: STREAK_COLUMN_WIDTH_PX, minWidth: STREAK_COLUMN_WIDTH_PX, height: DATE_COLUMN_WIDTH_PX }}>
+                  STREAK
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {habits.map((habit) => (
+                <tr key={habit.id} className="group border-b border-bonsai-slate-100 hover:bg-bonsai-slate-50/50" style={{ height: DATE_COLUMN_WIDTH_PX }}>
+                  {dates.map((date) => {
+                    const isWeekly = habit.frequency === 'weekly' && typeof habit.frequency_target === 'number' && habit.frequency_target >= 1 && habit.frequency_target <= 127
+                    const isSelectedDay = !isWeekly || isSelectedWeekday(date, habit.frequency_target ?? 0)
+                    const status = getEntry(habit.id, date)
+                    const cellStatus = !isSelectedDay ? null : status
+                    const bg = !isSelectedDay ? 'bg-bonsai-slate-100' : getCellBg(cellStatus)
+                    const isToday = date === todayYMD
+                    return (
+                      <td key={date} className={`p-0 relative overflow-hidden ${isToday ? 'ring-1 ring-bonsai-sage-300' : ''}`} style={{ ...squareCellStyle }} role="gridcell" aria-label={`${date}: ${cellStatus ?? 'open'}`}>
+                        {isSelectedDay && (
+                          <button type="button" onClick={(e) => handleCellClick(habit.id, date, e)} className="absolute inset-0 w-full h-full cursor-pointer border-0 p-0 block z-20 touch-manipulation" aria-label="Cycle status" />
+                        )}
+                        <div className={`absolute inset-0 ${bg}`} style={{ width: DATE_COLUMN_WIDTH_PX, height: DATE_COLUMN_WIDTH_PX }} />
+                      </td>
+                    )
+                  })}
+                  <td className="py-1 px-2 text-center border-l border-bonsai-slate-200 bg-white align-middle" style={{ width: STREAK_COLUMN_WIDTH_PX, minWidth: STREAK_COLUMN_WIDTH_PX, height: DATE_COLUMN_WIDTH_PX }}>
+                    <div className="flex flex-col items-center justify-center gap-0 leading-tight">
+                      <span className="text-secondary text-bonsai-slate-600 whitespace-nowrap" role="img" aria-label="streak">
+                        🔥 {habit.currentStreak % 1 === 0 ? habit.currentStreak : habit.currentStreak.toFixed(1)}
+                        {habit.frequency === 'weekly' && <span className="font-normal"> wk</span>}
+                      </span>
+                      <span className="text-[10px] text-bonsai-slate-500 whitespace-nowrap" title={`Longest: ${habit.longestStreak}${habit.frequency === 'weekly' ? ' wk' : ''}`}>
+                        max {habit.longestStreak % 1 === 0 ? habit.longestStreak : habit.longestStreak.toFixed(1)}{habit.frequency === 'weekly' && ' wk'}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )

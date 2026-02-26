@@ -4,6 +4,7 @@ import {
   createReminder,
   updateReminder,
   deleteReminder,
+  advanceReminderToNextOccurrenceIfDueOn,
 } from './reminders'
 import { serializeRecurrencePattern } from '../recurrence'
 import type { RecurrencePattern } from '../recurrence'
@@ -93,6 +94,8 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
     user_id: input.user_id ?? null,
     name: input.name,
     description: input.description ?? null,
+    desired_action: input.desired_action ?? null,
+    minimum_action: input.minimum_action ?? null,
     sort_order: input.sort_order ?? 0,
     frequency: input.frequency ?? 'daily',
     frequency_target: input.frequency_target ?? null,
@@ -167,6 +170,8 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
   const updateData: Record<string, unknown> = {}
   if (input.name !== undefined) updateData.name = input.name
   if (input.description !== undefined) updateData.description = input.description
+  if (input.desired_action !== undefined) updateData.desired_action = input.desired_action
+  if (input.minimum_action !== undefined) updateData.minimum_action = input.minimum_action
   if (input.sort_order !== undefined) updateData.sort_order = input.sort_order
   if (input.frequency !== undefined) updateData.frequency = input.frequency
   if (input.frequency_target !== undefined) updateData.frequency_target = input.frequency_target
@@ -209,11 +214,13 @@ export async function deleteHabit(id: string): Promise<void> {
 
 /**
  * Set or clear entry for a habit on a date. status 'completed' | 'minimum' | 'skipped' upserts; null means delete (open).
+ * When status is 'completed' or 'minimum' and reminderId is provided, the habit reminder is advanced to the next occurrence (dismissed for today).
  */
 export async function setEntry(
   habitId: string,
   entryDate: string,
-  status: 'completed' | 'skipped' | 'minimum' | null
+  status: 'completed' | 'skipped' | 'minimum' | null,
+  reminderId?: string | null
 ): Promise<void> {
   if (status === null) {
     const { error } = await supabase
@@ -240,6 +247,15 @@ export async function setEntry(
   if (error) {
     console.error('Error upserting habit entry:', error)
     throw error
+  }
+
+  /* When habit is marked complete or minimum, dismiss the linked reminder if it is due on entryDate (advance to next occurrence) */
+  if ((status === 'completed' || status === 'minimum') && reminderId) {
+    try {
+      await advanceReminderToNextOccurrenceIfDueOn(reminderId, entryDate)
+    } catch (err) {
+      console.error('Error advancing habit reminder:', err)
+    }
   }
 }
 

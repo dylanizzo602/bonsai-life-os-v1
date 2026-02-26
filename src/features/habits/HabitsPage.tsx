@@ -71,7 +71,7 @@ export function HabitsPage() {
 
   const [activeTab, setActiveTab] = useState<HabitsTab>('1.0')
   const [modalOpen, setModalOpen] = useState(false)
-  const [editingHabit, setEditingHabit] = useState<HabitWithStreaks | null>(null)
+  const [editingHabit, setEditingHabit] = useState<HabitWithStreaks | HabitWithStreaksV1 | HabitWithStreaksV2 | null>(null)
 
   const handleOpenCreate = () => {
     setEditingHabit(null)
@@ -92,50 +92,49 @@ export function HabitsPage() {
 
   return (
     <div className="min-h-full overflow-x-hidden">
-      {/* Header: title, tabs, and New Habit button */}
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-4 mb-6">
-        <div>
+      {/* Header: title, description, tabs, and New Habit button */}
+      <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-4 mb-6">
+        <div className="min-w-0 flex-1">
           <h1 className="text-page-title font-bold text-bonsai-brown-700">Habits</h1>
           <p className="text-secondary text-bonsai-slate-600 mt-1">
             {activeTab === '1.0' &&
               'Track your daily routines and watch your consistency grow. Small habits, compounded over time, create lasting change.'}
             {activeTab === '1.1' &&
-              'Green = full completion, yellow = minimum viable action, red = nothing. Streak is the sum of day weights (green 1, yellow 0.1).'}
+              'Weighted streak: green = 1, yellow = 0.1, red = 0.'}
             {activeTab === '1.2' &&
               'Simple checklist: did you do it today? Consecutive days counter (only full completion counts).'}
           </p>
-          {/* Tabs: Habits | Habits 1.1 | Habits 1.2 */}
+          {/* Tabs: Habits | Habits 1.1 | Habits 1.2 – improved tap targets on mobile */}
           {hasHabits && (
-            <div className="flex gap-1 mt-3 border-b border-bonsai-slate-200">
+            <div className="flex flex-wrap gap-1 md:gap-2 mt-3 border-b border-bonsai-slate-200">
               <button
                 type="button"
                 onClick={() => setActiveTab('1.0')}
-                className={`px-3 py-2 text-secondary font-medium border-b-2 -mb-px transition-colors ${activeTab === '1.0' ? 'border-bonsai-brown-700 text-bonsai-brown-700' : 'border-transparent text-bonsai-slate-600 hover:text-bonsai-slate-800'}`}
+                className={`px-4 py-2.5 text-secondary font-medium border-b-2 -mb-px transition-colors touch-manipulation ${activeTab === '1.0' ? 'border-bonsai-brown-700 text-bonsai-brown-700' : 'border-transparent text-bonsai-slate-600 hover:text-bonsai-slate-800'}`}
               >
                 Habits
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('1.1')}
-                className={`px-3 py-2 text-secondary font-medium border-b-2 -mb-px transition-colors ${activeTab === '1.1' ? 'border-bonsai-brown-700 text-bonsai-brown-700' : 'border-transparent text-bonsai-slate-600 hover:text-bonsai-slate-800'}`}
+                className={`px-4 py-2.5 text-secondary font-medium border-b-2 -mb-px transition-colors touch-manipulation ${activeTab === '1.1' ? 'border-bonsai-brown-700 text-bonsai-brown-700' : 'border-transparent text-bonsai-slate-600 hover:text-bonsai-slate-800'}`}
               >
                 Habits 1.1
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('1.2')}
-                className={`px-3 py-2 text-secondary font-medium border-b-2 -mb-px transition-colors ${activeTab === '1.2' ? 'border-bonsai-brown-700 text-bonsai-brown-700' : 'border-transparent text-bonsai-slate-600 hover:text-bonsai-slate-800'}`}
+                className={`px-4 py-2.5 text-secondary font-medium border-b-2 -mb-px transition-colors touch-manipulation ${activeTab === '1.2' ? 'border-bonsai-brown-700 text-bonsai-brown-700' : 'border-transparent text-bonsai-slate-600 hover:text-bonsai-slate-800'}`}
               >
                 Habits 1.2
               </button>
             </div>
           )}
         </div>
-        <div className="shrink-0">
+        <div className="shrink-0 w-full md:w-auto">
           <AddButton onClick={handleOpenCreate} hideChevron>New Habit</AddButton>
         </div>
-      </div>
-
+      </header>
 
       {/* Loading and error states */}
       {loading && (
@@ -151,21 +150,17 @@ export function HabitsPage() {
       {!loading && habitsWithStreaks.length === 0 && (
         <div className="flex min-h-[60vh] items-center justify-center">
           <div className="w-full max-w-md rounded-xl border border-bonsai-slate-200 bg-white p-8 shadow-sm">
-            {/* Icon: Circular grey background with habits icon */}
             <div className="flex justify-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-bonsai-slate-100">
                 <HabitsIcon className="h-7 w-7 text-bonsai-slate-500" />
               </div>
             </div>
-            {/* Heading */}
             <h2 className="mt-4 text-center text-body font-semibold text-bonsai-brown-700">
               No habits yet
             </h2>
-            {/* Description */}
             <p className="mt-2 text-center text-body text-bonsai-slate-600">
               Start building consistency by creating your first habit tracker.
             </p>
-            {/* CTA: Black pill button with plus and label */}
             <div className="mt-8 flex justify-center">
               <button
                 type="button"
@@ -180,50 +175,52 @@ export function HabitsPage() {
         </div>
       )}
 
-      {/* Content per tab: 1.0 table, 1.1 table, or 1.2 list */}
-      {!loading && hasHabits && activeTab === '1.0' && (
-        <div className="px-4 md:px-6 flex justify-center">
-          <HabitTable
-            habits={habitsWithStreaks}
-            entriesByHabit={entriesByHabit}
-            dateRange={dateRange}
-            todayYMD={todayYMD}
-            onCycleEntry={cycleEntry}
-            onEditHabit={handleEditHabit}
-            isDesktop={isDesktop}
-            dateRangeText={formatDateRange(dateRange.start, dateRange.end)}
-            onPrevRange={isDesktop ? goToPrevWeek : goToPrevRange}
-            onNextRange={isDesktop ? goToNextWeek : goToNextRange}
-          />
-        </div>
-      )}
-      {!loading && hasHabits && activeTab === '1.1' && (
-        <div className="px-4 md:px-6 flex justify-center">
-          <HabitTableV1
-            habits={habitsWithStreaksV1}
-            entriesByHabit={entriesByHabit}
-            dateRange={dateRange}
-            todayYMD={todayYMD}
-            onCycleEntryV1={cycleEntryV1}
-            onEditHabit={handleEditHabit}
-            isDesktop={isDesktop}
-            dateRangeText={formatDateRange(dateRange.start, dateRange.end)}
-            onPrevRange={isDesktop ? goToPrevWeek : goToPrevRange}
-            onNextRange={isDesktop ? goToNextWeek : goToNextRange}
-          />
-        </div>
-      )}
-      {!loading && hasHabits && activeTab === '1.2' && (
-        <div className="px-4 md:px-6 flex justify-center">
-          <HabitListV2
-            habits={habitsWithStreaksV2}
-            entriesByHabit={entriesByHabit}
-            todayYMD={todayYMD}
-            onSetEntry={setEntry}
-            onEditHabit={handleEditHabit}
-          />
-        </div>
-      )}
+      {/* Single content wrapper: one responsive padding; children handle their own width/centering */}
+      <div className="w-full p-4 md:p-6">
+        {!loading && hasHabits && activeTab === '1.0' && (
+          <div className="flex justify-center">
+            <HabitTable
+              habits={habitsWithStreaks}
+              entriesByHabit={entriesByHabit}
+              dateRange={dateRange}
+              todayYMD={todayYMD}
+              onCycleEntry={cycleEntry}
+              onEditHabit={handleEditHabit}
+              isDesktop={isDesktop}
+              dateRangeText={formatDateRange(dateRange.start, dateRange.end)}
+              onPrevRange={isDesktop ? goToPrevWeek : goToPrevRange}
+              onNextRange={isDesktop ? goToNextWeek : goToNextRange}
+            />
+          </div>
+        )}
+        {!loading && hasHabits && activeTab === '1.1' && (
+          <div className="flex justify-center">
+            <HabitTableV1
+              habits={habitsWithStreaksV1}
+              entriesByHabit={entriesByHabit}
+              dateRange={dateRange}
+              todayYMD={todayYMD}
+              onCycleEntryV1={cycleEntryV1}
+              onEditHabit={handleEditHabit}
+              isDesktop={isDesktop}
+              dateRangeText={formatDateRange(dateRange.start, dateRange.end)}
+              onPrevRange={isDesktop ? goToPrevWeek : goToPrevRange}
+              onNextRange={isDesktop ? goToNextWeek : goToNextRange}
+            />
+          </div>
+        )}
+        {!loading && hasHabits && activeTab === '1.2' && (
+          <div className="flex justify-center">
+            <HabitListV2
+              habits={habitsWithStreaksV2}
+              entriesByHabit={entriesByHabit}
+              todayYMD={todayYMD}
+              onSetEntry={setEntry}
+              onEditHabit={handleEditHabit}
+            />
+          </div>
+        )}
+      </div>
 
       {/* Add/Edit habit modal */}
       <AddEditHabitModal

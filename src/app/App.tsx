@@ -6,6 +6,9 @@ import { GoalsPage } from '../features/goals'
 import { TasksPage } from '../features/tasks'
 import { HabitsPage } from '../features/habits'
 import { ReflectionsPage } from '../features/reflections'
+import { WeeklyBriefingPage } from '../features/weekly-briefing'
+import { ExperiencesPage } from '../features/experiences'
+import { NotesPage } from '../features/notes'
 import { SettingsPage } from '../features/settings'
 import { useViewportWidth } from '../hooks/useViewportWidth'
 
@@ -52,6 +55,8 @@ function App() {
         return <HomePage />
       case 'briefings':
         return <BriefingsPage onNavigateToReflections={() => setActiveSection('reflections')} />
+      case 'weekly-briefing':
+        return <WeeklyBriefingPage />
       case 'goals':
         return <GoalsPage />
       case 'tasks':
@@ -60,6 +65,10 @@ function App() {
         return <HabitsPage />
       case 'reflections':
         return <ReflectionsPage />
+      case 'experiences':
+        return <ExperiencesPage />
+      case 'notes':
+        return <NotesPage />
       case 'settings':
         return <SettingsPage />
       default:

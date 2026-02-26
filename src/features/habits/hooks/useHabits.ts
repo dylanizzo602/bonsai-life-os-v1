@@ -163,7 +163,21 @@ export function useHabits(initialDateRange?: DateRange) {
       })
   }, [dateRange.start, dateRange.end, habits.length])
 
-  const today = todayYMD()
+  /* Today in YYYY-MM-DD: state so we can update at midnight for Habits 1.2 checklist reset */
+  const [today, setToday] = useState(() => todayYMD())
+
+  /* At local midnight, update today so Habits 1.2 checkboxes show the new day */
+  useEffect(() => {
+    const now = new Date()
+    const nextMidnight = new Date(now)
+    nextMidnight.setDate(nextMidnight.getDate() + 1)
+    nextMidnight.setHours(0, 0, 0, 0)
+    const delay = nextMidnight.getTime() - now.getTime()
+    const timeoutId = setTimeout(() => {
+      setToday(todayYMD())
+    }, delay)
+    return () => clearTimeout(timeoutId)
+  }, [today])
 
   /* Mobile/tablet: 7 days ending today (max 7 dates at a time) */
   const sevenDaysRange = useMemo(() => sevenDaysEndingToday(today), [today])
@@ -380,7 +394,7 @@ export function useHabits(initialDateRange?: DateRange) {
     []
   )
 
-  /* setEntry(habitId, date, status) for 1.2 checkbox and direct API; accepts minimum for 1.1 compatibility */
+  /* setEntry(habitId, date, status) for 1.2 checkbox and direct API; when status is completed/minimum, dismiss habit reminder */
   const setEntry = useCallback(
     async (
       habitId: string,
@@ -388,6 +402,7 @@ export function useHabits(initialDateRange?: DateRange) {
       status: 'completed' | 'skipped' | 'minimum' | null
     ) => {
       setError(null)
+      const reminderId = habits.find((h) => h.id === habitId)?.reminder_id ?? null
       setEntriesByHabit((prev) => {
         const entries = prev[habitId] ?? []
         const withoutDate = entries.filter((e) => e.entry_date !== entryDate)
@@ -406,7 +421,7 @@ export function useHabits(initialDateRange?: DateRange) {
         return { ...prev, [habitId]: next }
       })
       try {
-        await setEntryApi(habitId, entryDate, status)
+        await setEntryApi(habitId, entryDate, status, reminderId)
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to update entry'
         setError(msg)
@@ -414,7 +429,7 @@ export function useHabits(initialDateRange?: DateRange) {
         throw err
       }
     },
-    []
+    [habits]
   )
 
   const goToPrevWeek = useCallback(() => {

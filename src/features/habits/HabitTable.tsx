@@ -1,50 +1,20 @@
-/* HabitTable: HABIT | date columns (square cells) | STREAK. Fixed width, centered; no horizontal scroll. */
+/* HabitTable: Habits 1.0. HABIT | date columns (square cells) | STREAK. Fixed width, centered; no horizontal scroll. */
 
 import type React from 'react'
 import { useCallback } from 'react'
-import { ChevronLeftIcon, ChevronRightIcon } from '../../components/icons'
 import { isSelectedWeekday } from '../../lib/streaks'
 import type { HabitWithStreaks, HabitEntry, HabitColorId } from './types'
+import { DateRangeBar } from './DateRangeBar'
+import { addDays, datesInRange, formatHeaderMonthDay } from './dateUtils'
+import { DATE_COLUMN_WIDTH_PX, HABIT_COLUMN_WIDTH_PX, STREAK_COLUMN_WIDTH_PX } from './constants'
 
-/** Add n days to YYYY-MM-DD */
-function addDays(ymd: string, n: number): string {
-  const d = new Date(ymd + 'T12:00:00')
-  d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
-}
-
-/** List of dates from start to end inclusive */
-function datesInRange(start: string, end: string): string[] {
-  const out: string[] = []
-  let d = start
-  while (d <= end) {
-    out.push(d)
-    d = addDays(d, 1)
-  }
-  return out
-}
-
-/** Format date for column header: "SUN 8" */
+/** Format date for column header tooltip: "SUN 8" */
 function formatHeader(ymd: string): string {
   const d = new Date(ymd + 'T12:00:00')
   const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
   const dayName = dayNames[d.getDay()]
   const dateNum = d.getDate()
   return `${dayName} ${dateNum}`
-}
-
-/** Day number only (e.g. "18") */
-function formatHeaderDayOnly(ymd: string): string {
-  const d = new Date(ymd + 'T12:00:00')
-  return String(d.getDate())
-}
-
-/** Short month + day for date column header (e.g. "Feb" and "18") */
-function formatHeaderMonthDay(ymd: string): { month: string; day: string } {
-  const d = new Date(ymd + 'T12:00:00')
-  const month = d.toLocaleDateString('en-US', { month: 'short' })
-  const day = String(d.getDate())
-  return { month, day }
 }
 
 /** Gradient: 16 steps from light to dark; stays light longer then darkens slowly (Tailwind classes) */
@@ -81,13 +51,8 @@ export interface HabitTableProps {
   onNextRange?: () => void
 }
 
-/** Base pixel size for date columns (used for height and mobile square sizing) */
-const DATE_COLUMN_WIDTH_PX = 44
-const HABIT_COLUMN_WIDTH_PX = 140
-const STREAK_COLUMN_WIDTH_PX = 100
-
 /**
- * Table: HABIT | date columns (square cells) | STREAK. Fixed width, centered by parent; square date cells; no horizontal scroll.
+ * Habits 1.0 table: HABIT | date columns (square cells) | STREAK. Fixed width, centered by parent; square date cells; no horizontal scroll.
  */
 export function HabitTable({
   habits,
@@ -103,7 +68,7 @@ export function HabitTable({
 }: HabitTableProps) {
   const dates = datesInRange(dateRange.start, dateRange.end)
 
-  /* Fixed table width: HABIT + date columns (square cells) + STREAK so table is centered and doesn't stretch */
+  /* Table width: HABIT + date columns (square cells) + STREAK so table is centered and doesn't stretch */
   const tableWidthPx =
     HABIT_COLUMN_WIDTH_PX + dates.length * DATE_COLUMN_WIDTH_PX + STREAK_COLUMN_WIDTH_PX
 
@@ -132,22 +97,15 @@ export function HabitTable({
     padding: 0 as const,
   }
 
-  /* Desktop: fixed-width table with square date cells, centered by parent */
+  /* Desktop: card-style table with date bar and square date cells */
   if (isDesktop) {
     return (
-      <div className="w-fit border border-bonsai-slate-200 rounded-lg overflow-hidden bg-white">
+      <div className="w-fit border border-bonsai-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
         {dateRangeText && onPrevRange && onNextRange && (
-          <div className="flex items-center justify-center gap-2 py-2 border-b border-bonsai-slate-200 bg-bonsai-slate-50">
-            <button type="button" onClick={onPrevRange} className="p-1.5 text-bonsai-slate-600 hover:text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded" aria-label="Previous week">
-              <ChevronLeftIcon className="w-5 h-5" />
-            </button>
-            <span className="text-body font-medium text-bonsai-slate-700 min-w-[180px] text-center">{dateRangeText}</span>
-            <button type="button" onClick={onNextRange} className="p-1.5 text-bonsai-slate-600 hover:text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded" aria-label="Next week">
-              <ChevronRightIcon className="w-5 h-5" />
-            </button>
-          </div>
+          <DateRangeBar dateRangeText={dateRangeText} onPrev={onPrevRange} onNext={onNextRange} />
         )}
         <table className="border-collapse" style={{ tableLayout: 'fixed', width: tableWidthPx }}>
+          {/* Table header: HABIT, date columns (month + day), STREAK */}
           <thead>
             <tr className="border-b border-bonsai-slate-200 bg-bonsai-slate-50">
               <th className="text-left text-secondary font-semibold text-bonsai-slate-700 py-2 px-3 border-r border-bonsai-slate-200 bg-bonsai-slate-50" style={{ width: HABIT_COLUMN_WIDTH_PX }}>HABIT</th>
@@ -166,6 +124,7 @@ export function HabitTable({
               <th className="text-center text-secondary font-semibold text-bonsai-slate-700 py-2 px-3 border-l border-bonsai-slate-200 bg-bonsai-slate-50" style={{ width: STREAK_COLUMN_WIDTH_PX }}>STREAK</th>
             </tr>
           </thead>
+          {/* Body rows: one per habit with date cells and streak */}
           <tbody>
             {habits.map((habit) => (
               <tr key={habit.id} className="group border-b border-bonsai-slate-100 hover:bg-bonsai-slate-50/50">
@@ -216,24 +175,21 @@ export function HabitTable({
     )
   }
 
-  /* Mobile/tablet: two-panel layout with fixed square cells; table width fixed, centered by parent */
+  /* Mobile/tablet: sticky habit column + scrollable dates; date bar stays visible above scroll */
   const rightPanelWidthPx = dates.length * DATE_COLUMN_WIDTH_PX + STREAK_COLUMN_WIDTH_PX
   return (
-    <div className="w-fit border-y border-bonsai-slate-200 bg-white">
+    <div className="w-fit border border-bonsai-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
       {dateRangeText && onPrevRange && onNextRange && (
-        <div className="flex items-center justify-center gap-2 py-2 border-b border-bonsai-slate-200 bg-bonsai-slate-50">
-          <button type="button" onClick={onPrevRange} className="p-1.5 text-bonsai-slate-600 hover:text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded touch-manipulation" aria-label="Previous week"><ChevronLeftIcon className="w-5 h-5" /></button>
-          <span className="text-body font-medium text-bonsai-slate-700 min-w-[180px] text-center">{dateRangeText}</span>
-          <button type="button" onClick={onNextRange} className="p-1.5 text-bonsai-slate-600 hover:text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded touch-manipulation" aria-label="Next week"><ChevronRightIcon className="w-5 h-5" /></button>
-        </div>
+        <DateRangeBar dateRangeText={dateRangeText} onPrev={onPrevRange} onNext={onNextRange} />
       )}
       <div className="flex">
-        <div className="shrink-0 border-r border-bonsai-slate-200 bg-white z-10 flex flex-col" style={{ width: HABIT_COLUMN_WIDTH_PX }}>
+        {/* Sticky habit column: clear border so it doesn't blend with dates */}
+        <div className="shrink-0 border-r border-bonsai-slate-200 bg-bonsai-slate-50/50 z-10 flex flex-col" style={{ width: HABIT_COLUMN_WIDTH_PX }}>
           <div className="bg-bonsai-slate-50 border-b border-bonsai-slate-200 py-2 px-3 flex items-center shrink-0" style={{ height: DATE_COLUMN_WIDTH_PX }}>
             <span className="text-secondary font-semibold text-bonsai-slate-700">HABIT</span>
           </div>
           {habits.map((habit) => (
-            <div key={habit.id} className="border-b border-bonsai-slate-100 py-2 px-3 hover:bg-bonsai-slate-50/50 group flex items-center shrink-0" style={{ height: DATE_COLUMN_WIDTH_PX }}>
+            <div key={habit.id} className="border-b border-bonsai-slate-100 py-2 px-3 bg-white hover:bg-bonsai-slate-50/50 group flex items-center shrink-0" style={{ height: DATE_COLUMN_WIDTH_PX }}>
               <button type="button" onClick={() => onEditHabit(habit)} className="text-sm font-bold text-bonsai-brown-700 hover:text-bonsai-brown-800 text-left truncate max-w-full block w-full">{habit.name}</button>
             </div>
           ))}

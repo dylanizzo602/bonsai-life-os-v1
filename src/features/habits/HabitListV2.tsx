@@ -3,13 +3,7 @@
 import { useCallback } from 'react'
 import { Checkbox } from '../../components/Checkbox'
 import type { HabitWithStreaksV2, HabitEntry } from './types'
-
-/** Add n days to YYYY-MM-DD */
-function addDays(ymd: string, n: number): string {
-  const d = new Date(ymd + 'T12:00:00')
-  d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
-}
+import { addDays } from './dateUtils'
 
 /** Sunday (YYYY-MM-DD) that starts the week containing the given date */
 function getWeekStart(ymd: string): string {
@@ -91,9 +85,11 @@ export function HabitListV2({
     return null
   }
 
+  /* List: full width on mobile, capped on tablet/desktop for readability */
   return (
-    <div className="w-full max-w-xl">
-      <ul className="divide-y divide-bonsai-slate-200 border border-bonsai-slate-200 rounded-lg bg-white overflow-hidden">
+    <div className="w-full max-w-xl md:max-w-2xl">
+      <ul className="divide-y divide-bonsai-slate-200 border border-bonsai-slate-200 rounded-lg bg-white overflow-hidden shadow-sm">
+        {/* One row per habit: checkbox, name (with "this week" hint for weekly), streak */}
         {habits.map((habit) => {
           const isWeekly =
             habit.frequency === 'weekly' &&
@@ -105,7 +101,7 @@ export function HabitListV2({
           return (
             <li
               key={habit.id}
-              className="flex items-center gap-3 px-4 py-3 hover:bg-bonsai-slate-50/50 transition-colors"
+              className="flex items-center gap-3 px-4 py-3 md:py-4 hover:bg-bonsai-slate-50/50 transition-colors min-h-[44px] md:min-h-0"
             >
               <Checkbox
                 checked={isCompleted}
@@ -115,9 +111,14 @@ export function HabitListV2({
               <button
                 type="button"
                 onClick={() => onEditHabit(habit)}
-                className="text-body font-semibold text-bonsai-brown-700 hover:text-bonsai-brown-800 text-left flex-1 truncate"
+                className="text-body font-semibold text-bonsai-brown-700 hover:text-bonsai-brown-800 text-left flex-1 truncate min-w-0"
               >
                 {habit.name}
+                {isWeekly && (
+                  <span className="text-secondary font-normal text-bonsai-slate-500 ml-1" aria-hidden>
+                    (this week)
+                  </span>
+                )}
               </button>
               <span className="text-secondary text-bonsai-slate-600 whitespace-nowrap shrink-0" role="img" aria-label="streak">
                 {habit.currentStreak} {isWeekly ? 'wk' : 'days'}

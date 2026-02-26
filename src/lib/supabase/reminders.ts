@@ -178,3 +178,31 @@ export async function advanceReminderToNextOccurrence(id: string): Promise<Remin
   const nextRemindAt = `${nextDueYMD}T${timePart}`
   return updateReminder(id, { remind_at: nextRemindAt })
 }
+
+/**
+ * Advance a habit reminder to the next occurrence only if it is due on entryDate (YYYY-MM-DD).
+ * Used when marking a habit complete/minimum so we only dismiss once per logical completion (e.g. once for weekly, not per day).
+ */
+export async function advanceReminderToNextOccurrenceIfDueOn(
+  id: string,
+  entryDate: string
+): Promise<Reminder | null> {
+  const { data: existing, error: fetchError } = await supabase
+    .from('reminders')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (fetchError || !existing) {
+    console.error('Error fetching reminder:', fetchError)
+    return null
+  }
+
+  const reminder = existing as Reminder
+  const dueYMD = toDateOnly(reminder.remind_at)
+  if (dueYMD !== entryDate) {
+    return reminder
+  }
+
+  return advanceReminderToNextOccurrence(id)
+}

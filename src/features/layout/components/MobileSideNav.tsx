@@ -8,6 +8,9 @@ import {
   GoalsIcon,
   ReflectionsIcon,
   BriefingsIcon,
+  WeeklyBriefingIcon,
+  ExperiencesIcon,
+  NotesIcon,
   SettingsIcon,
 } from '../../../components/icons'
 import type { NavigationSection } from '../hooks/useNavigation'
@@ -31,10 +34,13 @@ const navItems: Array<{
 }> = [
   { id: 'home', icon: HomeIcon, label: 'Home' },
   { id: 'briefings', icon: BriefingsIcon, label: 'Briefing' },
+  { id: 'weekly-briefing', icon: WeeklyBriefingIcon, label: 'Weekly Briefing' },
   { id: 'goals', icon: GoalsIcon, label: 'Goals' },
   { id: 'tasks', icon: TasksIcon, label: 'Tasks' },
   { id: 'habits', icon: HabitsIcon, label: 'Habits' },
   { id: 'reflections', icon: ReflectionsIcon, label: 'Reflections' },
+  { id: 'experiences', icon: ExperiencesIcon, label: 'Experiences' },
+  { id: 'notes', icon: NotesIcon, label: 'Notes' },
 ]
 
 /**

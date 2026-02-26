@@ -1,4 +1,4 @@
-/* AddEditHabitModal: Create/Edit habit with name, description, frequency, add-to-todos reminder time, color */
+/* AddEditHabitModal: Create/Edit habit with name, desired action, minimum action, frequency, add-to-todos reminder time, color */
 
 import { useState, useEffect } from 'react'
 import { Modal } from '../../components/Modal'
@@ -76,7 +76,8 @@ export function AddEditHabitModal({
   habit = null,
 }: AddEditHabitModalProps) {
   const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
+  const [desiredAction, setDesiredAction] = useState('')
+  const [minimumAction, setMinimumAction] = useState('')
   const [frequency, setFrequency] = useState<HabitFrequency>('daily')
   const [frequencyTarget, setFrequencyTarget] = useState<number | ''>(1)
   const [addToTodos, setAddToTodos] = useState(false)
@@ -92,7 +93,8 @@ export function AddEditHabitModal({
     if (isOpen) {
       if (habit) {
         setName(habit.name)
-        setDescription(habit.description ?? '')
+        setDesiredAction(habit.desired_action ?? '')
+        setMinimumAction(habit.minimum_action ?? '')
         /* Only daily and weekly are offered; map legacy frequencies to daily */
         const freq = habit.frequency === 'weekly' ? 'weekly' : 'daily'
         setFrequency(freq)
@@ -111,7 +113,8 @@ export function AddEditHabitModal({
         setDeleteConfirm(false)
       } else {
         setName('')
-        setDescription('')
+        setDesiredAction('')
+        setMinimumAction('')
         setFrequency('daily')
         setFrequencyTarget(1)
         setAddToTodos(false)
@@ -132,7 +135,8 @@ export function AddEditHabitModal({
         : null
     const input: CreateHabitInput | UpdateHabitInput = {
       name: name.trim(),
-      description: description.trim() || null,
+      desired_action: desiredAction.trim() || null,
+      minimum_action: minimumAction.trim() || null,
       frequency,
       frequency_target: numTarget,
       add_to_todos: addToTodos,
@@ -223,17 +227,36 @@ export function AddEditHabitModal({
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g., Morning meditation, Drink water, Exercise"
         />
+
+        {/* Desired action: full/ideal action description */}
         <div>
           <label className="block text-secondary font-medium text-bonsai-slate-700 mb-1">
-            Description (optional)
+            Desired action
           </label>
           <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Add notes or context about this habit..."
-            rows={3}
+            value={desiredAction}
+            onChange={(e) => setDesiredAction(e.target.value)}
+            placeholder="Describe the full action you're aiming for (e.g., Run 3 miles, Meditate 10 minutes)"
+            rows={2}
             className="w-full px-3 py-2 md:px-4 md:py-2.5 border border-bonsai-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent text-body"
           />
+        </div>
+
+        {/* Minimum action: smallest version that still counts (Habits 1.1 minimum status) */}
+        <div>
+          <label className="block text-secondary font-medium text-bonsai-slate-700 mb-1">
+            Minimum desired action
+          </label>
+          <textarea
+            value={minimumAction}
+            onChange={(e) => setMinimumAction(e.target.value)}
+            placeholder="The smallest version that still counts (e.g., Put on running shoes, Sit down to meditate)"
+            rows={2}
+            className="w-full px-3 py-2 md:px-4 md:py-2.5 border border-bonsai-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent text-body"
+          />
+          <p className="text-secondary text-bonsai-slate-500 mt-1">
+            In Habits 1.1, marking &quot;minimum&quot; uses this; full completion uses the desired action.
+          </p>
         </div>
 
         {/* Frequency */}

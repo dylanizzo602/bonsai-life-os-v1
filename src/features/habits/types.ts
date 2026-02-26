@@ -20,12 +20,16 @@ export type HabitColorId =
   | 'red'
   | 'grey'
 
-/** Main habit entity: name, frequency, optional reminder, color */
+/** Main habit entity: name, frequency, optional reminder, color, desired/minimum action text */
 export interface Habit {
   id: string
   user_id: string | null
   name: string
   description: string | null
+  /** Full/ideal action description (e.g. "Run 3 miles") */
+  desired_action: string | null
+  /** Minimum viable action (e.g. "Put on running shoes") – maps to Habits 1.1 minimum status */
+  minimum_action: string | null
   sort_order: number
   frequency: HabitFrequency
   frequency_target: number | null
@@ -51,6 +55,8 @@ export interface CreateHabitInput {
   name: string
   user_id?: string | null
   description?: string | null
+  desired_action?: string | null
+  minimum_action?: string | null
   sort_order?: number
   frequency?: HabitFrequency
   frequency_target?: number | null
@@ -63,6 +69,8 @@ export interface CreateHabitInput {
 export interface UpdateHabitInput {
   name?: string
   description?: string | null
+  desired_action?: string | null
+  minimum_action?: string | null
   sort_order?: number
   frequency?: HabitFrequency
   frequency_target?: number | null
