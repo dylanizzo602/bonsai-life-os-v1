@@ -37,12 +37,12 @@ export interface Habit {
   updated_at: string
 }
 
-/** Habit entry: one per habit per day; status completed or skipped (no row = open) */
+/** Habit entry: one per habit per day; status completed, minimum (1.1 yellow), or skipped (no row = open) */
 export interface HabitEntry {
   id: string
   habit_id: string
   entry_date: string
-  status: 'completed' | 'skipped'
+  status: 'completed' | 'skipped' | 'minimum'
   created_at: string
 }
 
@@ -72,10 +72,24 @@ export interface UpdateHabitInput {
   color?: HabitColorId
 }
 
-/** Habit with computed streak info for UI */
+/** Habit with computed streak info for UI (1.0) */
 export interface HabitWithStreaks extends Habit {
   currentStreak: number
   longestStreak: number
   /** Dates (YYYY-MM-DD) in current streak, oldest first; for cell shading */
   currentStreakDates: string[]
+}
+
+/** Habit with weighted streak for 1.1 (green=1, yellow=0.1; red ends streak) */
+export interface HabitWithStreaksV1 extends Habit {
+  currentStreak: number
+  longestStreak: number
+  /** Dates in current weighted streak, oldest first */
+  currentStreakDates: string[]
+}
+
+/** Habit with strict streak for 1.2 (only completed counts; no skips/partial) */
+export interface HabitWithStreaksV2 extends Habit {
+  currentStreak: number
+  longestStreak: number
 }

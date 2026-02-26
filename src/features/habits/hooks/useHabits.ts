@@ -13,11 +13,21 @@ import {
   getCurrentStreakDates,
   getStreaksWeekly,
   getCurrentStreakDatesWeekly,
+  getStreaksStrict,
+  getStreaksWeeklyStrict,
 } from '../../../lib/streaks'
+import {
+  getStreaksWeighted,
+  getCurrentStreakDatesWeighted,
+  getStreaksWeeklyWeighted,
+  getCurrentStreakDatesWeeklyWeighted,
+} from '../../../lib/streaks-v1'
 import type {
   Habit,
   HabitEntry,
   HabitWithStreaks,
+  HabitWithStreaksV1,
+  HabitWithStreaksV2,
   CreateHabitInput,
   UpdateHabitInput,
 } from '../types'
@@ -63,10 +73,22 @@ function sevenDaysEndingToday(today: string): DateRange {
   }
 }
 
-/** Cycle for daily: empty -> completed -> skipped -> empty */
-function getNextStatus(current: 'completed' | 'skipped' | null): 'completed' | 'skipped' | null {
+/** Cycle for 1.0: empty -> completed -> skipped -> empty; minimum (from 1.1) -> skipped -> empty */
+function getNextStatus(
+  current: 'completed' | 'skipped' | 'minimum' | null
+): 'completed' | 'skipped' | null {
   if (current === null || current === undefined) return 'completed'
-  if (current === 'completed') return 'skipped'
+  if (current === 'completed' || current === 'minimum') return 'skipped'
+  return null
+}
+
+/** Cycle for 1.1: empty -> completed (green) -> minimum (yellow) -> skipped (red) -> empty */
+function getNextStatusV1(
+  current: 'completed' | 'skipped' | 'minimum' | null
+): 'completed' | 'skipped' | 'minimum' | null {
+  if (current === null || current === undefined) return 'completed'
+  if (current === 'completed') return 'minimum'
+  if (current === 'minimum') return 'skipped'
   return null
 }
 
@@ -172,6 +194,54 @@ export function useHabits(initialDateRange?: DateRange) {
     })
   }, [habits, entriesByHabit, today])
 
+  /* 1.1: Weighted streaks (green=1, yellow=0.1; red ends streak) */
+  const habitsWithStreaksV1 = useMemo((): HabitWithStreaksV1[] => {
+    return habits.map((habit) => {
+      const entries = entriesByHabit[habit.id] ?? []
+      const streakEntries = entries.map((e) => ({ date: e.entry_date, status: e.status }))
+      const isWeekly =
+        habit.frequency === 'weekly' &&
+        typeof habit.frequency_target === 'number' &&
+        habit.frequency_target >= 1 &&
+        habit.frequency_target <= 127
+      const mask = isWeekly ? habit.frequency_target : 0
+      const { currentStreak, longestStreak } = isWeekly
+        ? getStreaksWeeklyWeighted(streakEntries, today, mask)
+        : getStreaksWeighted(streakEntries, today)
+      const currentStreakDates = isWeekly
+        ? getCurrentStreakDatesWeeklyWeighted(streakEntries, today, mask)
+        : getCurrentStreakDatesWeighted(streakEntries, today)
+      return {
+        ...habit,
+        currentStreak,
+        longestStreak,
+        currentStreakDates,
+      }
+    })
+  }, [habits, entriesByHabit, today])
+
+  /* 1.2: Strict streaks (only completed counts; no skips/partial) */
+  const habitsWithStreaksV2 = useMemo((): HabitWithStreaksV2[] => {
+    return habits.map((habit) => {
+      const entries = entriesByHabit[habit.id] ?? []
+      const streakEntries = entries.map((e) => ({ date: e.entry_date, status: e.status }))
+      const isWeekly =
+        habit.frequency === 'weekly' &&
+        typeof habit.frequency_target === 'number' &&
+        habit.frequency_target >= 1 &&
+        habit.frequency_target <= 127
+      const mask = isWeekly ? habit.frequency_target : 0
+      const { currentStreak, longestStreak } = isWeekly
+        ? getStreaksWeeklyStrict(streakEntries, today, mask)
+        : getStreaksStrict(streakEntries, today)
+      return {
+        ...habit,
+        currentStreak,
+        longestStreak,
+      }
+    })
+  }, [habits, entriesByHabit, today])
+
   /* Entries in visible range only (for table cells) */
   const entriesInRange = useMemo((): Record<string, HabitEntry[]> => {
     const out: Record<string, HabitEntry[]> = {}
@@ -236,12 +306,13 @@ export function useHabits(initialDateRange?: DateRange) {
     }
   }, [])
 
-  /* Cycle cell: complete -> skipped -> open for both daily and weekly (weekly streak still requires no skip on selected days). */
+  /* Cycle cell: complete -> skipped -> open (1.0); minimum from 1.1 shows as yellow and cycles to skipped). */
   const cycleEntry = useCallback(async (habitId: string, entryDate: string) => {
     const entries = entriesByHabitRef.current[habitId] ?? []
     const e = entries.find((x) => x.entry_date === entryDate)
-    const currentStatus: 'completed' | 'skipped' | null = e ? e.status : null
-    const next = getNextStatus(currentStatus)
+    const currentStatus: 'completed' | 'skipped' | 'minimum' | null = e ? e.status : null
+    const nextRaw = getNextStatus(currentStatus)
+    const next = nextRaw === null ? null : nextRaw
     setError(null)
     setEntriesByHabit((prev) => {
       const ents = prev[habitId] ?? []
@@ -270,9 +341,52 @@ export function useHabits(initialDateRange?: DateRange) {
     }
   }, [])
 
-  /* Legacy setEntry(habitId, date, status) kept for compatibility; table will use cycleEntry only. */
+  /* 1.1: 4-state cycle (completed -> minimum -> skipped -> empty) */
+  const cycleEntryV1 = useCallback(
+    async (habitId: string, entryDate: string) => {
+      const entries = entriesByHabitRef.current[habitId] ?? []
+      const e = entries.find((x) => x.entry_date === entryDate)
+      const currentStatus: 'completed' | 'skipped' | 'minimum' | null = e ? e.status : null
+      const next = getNextStatusV1(currentStatus)
+      setError(null)
+      setEntriesByHabit((prev) => {
+        const ents = prev[habitId] ?? []
+        const withoutDate = ents.filter((x) => x.entry_date !== entryDate)
+        if (next === null) {
+          return { ...prev, [habitId]: withoutDate }
+        }
+        const existing = ents.find((x) => x.entry_date === entryDate)
+        const newEntry: HabitEntry = {
+          id: existing?.id ?? '',
+          habit_id: habitId,
+          entry_date: entryDate,
+          status: next,
+          created_at: existing?.created_at ?? new Date().toISOString(),
+        }
+        const merged = withoutDate
+          .concat(newEntry)
+          .sort((a, b) => a.entry_date.localeCompare(b.entry_date))
+        return { ...prev, [habitId]: merged }
+      })
+      try {
+        await setEntryApi(habitId, entryDate, next)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to update entry'
+        setError(msg)
+        fetchHabitsAndEntries()
+        throw err
+      }
+    },
+    []
+  )
+
+  /* setEntry(habitId, date, status) for 1.2 checkbox and direct API; accepts minimum for 1.1 compatibility */
   const setEntry = useCallback(
-    async (habitId: string, entryDate: string, status: 'completed' | 'skipped' | null) => {
+    async (
+      habitId: string,
+      entryDate: string,
+      status: 'completed' | 'skipped' | 'minimum' | null
+    ) => {
       setError(null)
       setEntriesByHabit((prev) => {
         const entries = prev[habitId] ?? []
@@ -349,6 +463,8 @@ export function useHabits(initialDateRange?: DateRange) {
   return {
     habits,
     habitsWithStreaks,
+    habitsWithStreaksV1,
+    habitsWithStreaksV2,
     entriesByHabit: entriesInRange,
     loading,
     error,
@@ -362,6 +478,7 @@ export function useHabits(initialDateRange?: DateRange) {
     deleteHabit: deleteHabitHandler,
     setEntry,
     cycleEntry,
+    cycleEntryV1,
     goToPrevWeek,
     goToNextWeek,
     goToPrevRange,

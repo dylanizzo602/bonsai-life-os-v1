@@ -1,10 +1,10 @@
 /* Streaks: Compute current and longest habit streaks from entries.
- * Rules: Only completed days count. At most 1 consecutive skipped/incomplete day is allowed.
- * 2+ consecutive skipped or incomplete days in a row breaks the streak. */
+ * 1.0: Completed and minimum both count; at most 1 consecutive skipped/incomplete day allowed.
+ * 1.2 strict: Only completed counts; any skip/minimum/missing breaks the streak. */
 
 export interface StreakEntry {
   date: string
-  status: 'completed' | 'skipped'
+  status: 'completed' | 'skipped' | 'minimum'
 }
 
 export interface StreakResult {
@@ -27,17 +27,22 @@ function addDays(ymd: string, n: number): string {
   return toYMD(d)
 }
 
-/** Day is a gap (skipped or incomplete) if not completed */
-function isGap(status: 'completed' | 'skipped' | undefined): boolean {
-  return status !== 'completed'
+/** Day counts as done for 1.0 streak (completed or minimum); gap = skipped or missing */
+function isDoneForStreak(status: 'completed' | 'skipped' | 'minimum' | undefined): boolean {
+  return status === 'completed' || status === 'minimum'
+}
+
+/** Day is a gap (skipped or no entry) for 1.0; minimum counts as done so not a gap */
+function isGap(status: 'completed' | 'skipped' | 'minimum' | undefined): boolean {
+  return !isDoneForStreak(status)
 }
 
 /**
- * Compute current streak by walking backward from endDate.
- * Counts completed days; allows at most 1 consecutive gap. Stops when 2+ consecutive gaps.
+ * Compute current streak by walking backward from endDate (1.0).
+ * Counts completed and minimum days; allows at most 1 consecutive gap. Stops when 2+ consecutive gaps.
  */
 function countStreakBackward(
-  map: Map<string, 'completed' | 'skipped'>,
+  map: Map<string, 'completed' | 'skipped' | 'minimum'>,
   endDate: string
 ): { count: number; dates: string[] } {
   const dates: string[] = []
@@ -45,7 +50,7 @@ function countStreakBackward(
   let consecutiveGaps = 0
   while (true) {
     const status = map.get(d)
-    if (status === 'completed') {
+    if (isDoneForStreak(status)) {
       consecutiveGaps = 0
       dates.push(d)
       d = addDays(d, -1)
@@ -66,7 +71,7 @@ export function getStreaks(
   entries: StreakEntry[],
   todayYMD: string
 ): StreakResult {
-  const map = new Map<string, 'completed' | 'skipped'>()
+  const map = new Map<string, 'completed' | 'skipped' | 'minimum'>()
   for (const e of entries) {
     map.set(e.date, e.status)
   }
@@ -75,22 +80,20 @@ export function getStreaks(
   const todayStatus = map.get(todayYMD)
   const yesterdayStatus = map.get(yesterday)
 
-  /* Current streak end date: today if completed; yesterday if today is 1 gap and yesterday completed; else null */
+  /* Current streak end date: today if done (completed/minimum); yesterday if today is 1 gap and yesterday done; else null */
   let endDate: string | null = null
-  if (todayStatus === 'completed') {
+  if (isDoneForStreak(todayStatus)) {
     endDate = todayYMD
-  } else if (isGap(todayStatus) && yesterdayStatus === 'completed') {
-    /* 1 gap allowed: today skipped/incomplete, yesterday completed */
+  } else if (isGap(todayStatus) && isDoneForStreak(yesterdayStatus)) {
     endDate = yesterday
   }
-  /* else: today and yesterday both gaps = 2 consecutive, streak broken */
 
   let currentStreak = 0
   if (endDate) {
     currentStreak = countStreakBackward(map, endDate).count
   }
 
-  /* Longest streak: scan calendar days from min to max entry date, count runs with at most 1 consecutive gap */
+  /* Longest streak: count runs with at most 1 consecutive gap; completed and minimum both count */
   const allDates = [...map.keys()]
   if (allDates.length === 0) return { currentStreak, longestStreak: 0 }
 
@@ -104,7 +107,7 @@ export function getStreaks(
   let d = minDate
   while (d <= end) {
     const status = map.get(d)
-    if (status === 'completed') {
+    if (isDoneForStreak(status)) {
       run++
       consecutiveGaps = 0
     } else {
@@ -128,7 +131,7 @@ export function getStreaks(
  * Only includes completed days; allows at most 1 consecutive skip/incomplete between completed days.
  */
 export function getCurrentStreakDates(entries: StreakEntry[], todayYMD: string): string[] {
-  const map = new Map<string, 'completed' | 'skipped'>()
+  const map = new Map<string, 'completed' | 'skipped' | 'minimum'>()
   for (const e of entries) {
     map.set(e.date, e.status)
   }
@@ -137,9 +140,9 @@ export function getCurrentStreakDates(entries: StreakEntry[], todayYMD: string):
   const yesterdayStatus = map.get(yesterday)
 
   let endDate: string | null = null
-  if (todayStatus === 'completed') {
+  if (isDoneForStreak(todayStatus)) {
     endDate = todayYMD
-  } else if (isGap(todayStatus) && yesterdayStatus === 'completed') {
+  } else if (isGap(todayStatus) && isDoneForStreak(yesterdayStatus)) {
     endDate = yesterday
   }
   if (!endDate) return []
@@ -164,16 +167,16 @@ export function isSelectedWeekday(ymd: string, weekDayBitmask: number): boolean 
   return (weekDayBitmask & (1 << day)) !== 0
 }
 
-/** Week is complete if every selected weekday in that week has a completed entry */
+/** Week is complete for 1.0 if every selected weekday has completed or minimum */
 function isWeekComplete(
   weekStart: string,
-  map: Map<string, 'completed' | 'skipped'>,
+  map: Map<string, 'completed' | 'skipped' | 'minimum'>,
   weekDayBitmask: number
 ): boolean {
   for (let i = 0; i < 7; i++) {
     if ((weekDayBitmask & (1 << i)) === 0) continue
     const date = addDays(weekStart, i)
-    if (map.get(date) !== 'completed') return false
+    if (!isDoneForStreak(map.get(date))) return false
   }
   return true
 }
@@ -187,7 +190,7 @@ export function getStreaksWeekly(
   todayYMD: string,
   weekDayBitmask: number
 ): StreakResult {
-  const map = new Map<string, 'completed' | 'skipped'>()
+  const map = new Map<string, 'completed' | 'skipped' | 'minimum'>()
   for (const e of entries) {
     map.set(e.date, e.status)
   }
@@ -238,7 +241,7 @@ export function getCurrentStreakDatesWeekly(
   todayYMD: string,
   weekDayBitmask: number
 ): string[] {
-  const map = new Map<string, 'completed' | 'skipped'>()
+  const map = new Map<string, 'completed' | 'skipped' | 'minimum'>()
   for (const e of entries) {
     map.set(e.date, e.status)
   }
@@ -252,9 +255,111 @@ export function getCurrentStreakDatesWeekly(
     for (let i = 0; i < 7; i++) {
       if ((weekDayBitmask & (1 << i)) === 0) continue
       const date = addDays(w, i)
-      if (map.get(date) === 'completed') dates.push(date)
+      if (isDoneForStreak(map.get(date))) dates.push(date)
     }
     w = addDays(w, -7)
   }
   return dates.sort()
+}
+
+/* --- 1.2 Strict: only completed counts; any skip/minimum/missing breaks the streak --- */
+
+/**
+ * Strict streak (1.2): count consecutive days backward from today where every day is completed.
+ * Minimum, skipped, or missing breaks the streak.
+ */
+export function getStreaksStrict(
+  entries: StreakEntry[],
+  todayYMD: string
+): StreakResult {
+  const map = new Map<string, 'completed' | 'skipped' | 'minimum'>()
+  for (const e of entries) {
+    map.set(e.date, e.status)
+  }
+
+  /* Current: walk backward while status === 'completed' only */
+  let currentStreak = 0
+  let d = todayYMD
+  while (map.get(d) === 'completed') {
+    currentStreak++
+    d = addDays(d, -1)
+  }
+
+  /* Longest: scan all dates, find max run of consecutive completed days */
+  const allDates = [...map.keys()]
+  if (allDates.length === 0) return { currentStreak, longestStreak: Math.max(currentStreak, 0) }
+
+  const minDate = allDates.reduce((a, b) => (a < b ? a : b))
+  const maxDate = allDates.reduce((a, b) => (a > b ? a : b))
+  const end = maxDate > todayYMD ? maxDate : todayYMD
+
+  let longestStreak = currentStreak
+  let run = 0
+  d = minDate
+  while (d <= end) {
+    if (map.get(d) === 'completed') {
+      run++
+      if (run > longestStreak) longestStreak = run
+    } else {
+      run = 0
+    }
+    d = addDays(d, 1)
+  }
+
+  return { currentStreak, longestStreak }
+}
+
+/**
+ * Strict weekly (1.2): consecutive weeks where all selected days are completed (no minimum/skip).
+ */
+export function getStreaksWeeklyStrict(
+  entries: StreakEntry[],
+  todayYMD: string,
+  weekDayBitmask: number
+): StreakResult {
+  const map = new Map<string, 'completed' | 'skipped' | 'minimum'>()
+  for (const e of entries) {
+    map.set(e.date, e.status)
+  }
+
+  function isWeekCompleteStrict(weekStart: string): boolean {
+    for (let i = 0; i < 7; i++) {
+      if ((weekDayBitmask & (1 << i)) === 0) continue
+      const date = addDays(weekStart, i)
+      if (map.get(date) !== 'completed') return false
+    }
+    return true
+  }
+
+  const weekStartToday = getWeekStart(todayYMD)
+  let currentStreak = 0
+  let w = weekStartToday
+  if (!isWeekCompleteStrict(w)) {
+    w = addDays(w, -7)
+  }
+  while (isWeekCompleteStrict(w)) {
+    currentStreak++
+    w = addDays(w, -7)
+  }
+
+  const allDates = [...map.keys()]
+  if (allDates.length === 0) return { currentStreak, longestStreak: currentStreak }
+
+  const weekStarts = new Set<string>()
+  for (const date of allDates) {
+    weekStarts.add(getWeekStart(date))
+  }
+  const sorted = [...weekStarts].sort()
+  let longestStreak = currentStreak
+  let run = 0
+  for (const ws of sorted) {
+    if (isWeekCompleteStrict(ws)) {
+      run++
+      if (run > longestStreak) longestStreak = run
+    } else {
+      run = 0
+    }
+  }
+
+  return { currentStreak, longestStreak }
 }

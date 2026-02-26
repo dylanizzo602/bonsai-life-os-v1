@@ -107,7 +107,7 @@ export function HabitTable({
   const tableWidthPx =
     HABIT_COLUMN_WIDTH_PX + dates.length * DATE_COLUMN_WIDTH_PX + STREAK_COLUMN_WIDTH_PX
 
-  const getEntry = (habitId: string, date: string): 'completed' | 'skipped' | null => {
+  const getEntry = (habitId: string, date: string): 'completed' | 'skipped' | 'minimum' | null => {
     const entries = entriesByHabit[habitId] ?? []
     const e = entries.find((x) => x.entry_date === date)
     return e ? e.status : null
@@ -180,7 +180,8 @@ export function HabitTable({
                   const streakIndex = streakDates.indexOf(date)
                   const prevDate = addDays(date, -1)
                   const prevIndex = streakDates.indexOf(prevDate)
-                  const shadeIndex = status === 'skipped' ? (prevIndex >= 0 ? prevIndex : 0) : status === 'completed' ? (streakIndex >= 0 ? streakIndex : 0) : -1
+                  /* Shade index: minimum (from 1.1) counts as done like completed; skipped uses previous day */
+                  const shadeIndex = status === 'skipped' ? (prevIndex >= 0 ? prevIndex : 0) : (status === 'completed' || status === 'minimum') ? (streakIndex >= 0 ? streakIndex : 0) : -1
                   const shadeClass = shadeIndex >= 0 ? getShadeClass(habit.color, shadeIndex) : ''
                   const isToday = date === todayYMD
                   return (
@@ -188,12 +189,13 @@ export function HabitTable({
                       {/* Square cell: fixed 44×44, content fills cell */}
                       <div className="relative w-full h-full pointer-events-none" style={{ width: DATE_COLUMN_WIDTH_PX, height: DATE_COLUMN_WIDTH_PX }}>
                         {isSelectedDay && (
-                          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleCellClick(habit.id, date, e) }} className="absolute inset-0 w-full h-full cursor-pointer border-0 p-0 block opacity-0 z-20 pointer-events-auto" aria-label={status === null ? 'Mark complete' : status === 'completed' ? 'Mark skipped' : 'Clear'} title={status === null ? 'Mark complete' : status === 'completed' ? 'Mark skipped' : 'Clear'} />
+                          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleCellClick(habit.id, date, e) }} className="absolute inset-0 w-full h-full cursor-pointer border-0 p-0 block opacity-0 z-20 pointer-events-auto" aria-label={status === null ? 'Mark complete' : status === 'completed' || status === 'minimum' ? 'Mark skipped' : 'Clear'} title={status === null ? 'Mark complete' : status === 'completed' || status === 'minimum' ? 'Mark skipped' : 'Clear'} />
                         )}
                         <div className="absolute inset-0 pointer-events-none">
                           {!isSelectedDay && <div className="w-full h-full bg-bonsai-slate-100" />}
                           {isSelectedDay && status === null && <div className="w-full h-full bg-white" />}
                           {isSelectedDay && status === 'completed' && <><div className={`absolute inset-0 ${shadeClass} completed-cell`} /><div className="completed-hover-overlay absolute inset-0 flex items-center justify-center opacity-0 transition-opacity bg-black/10 pointer-events-none z-10"><span className="text-white text-xs font-medium drop-shadow">skip</span></div></>}
+                          {isSelectedDay && status === 'minimum' && <><div className="absolute inset-0 bg-amber-200/90 completed-cell" /><div className="completed-hover-overlay absolute inset-0 flex items-center justify-center opacity-0 transition-opacity bg-black/10 pointer-events-none z-10"><span className="text-amber-900 text-xs font-medium drop-shadow">skip</span></div></>}
                           {isSelectedDay && status === 'skipped' && <><div className="absolute inset-0 bg-white" /><div className={`absolute inset-0 ${shadeClass}`} style={{ clipPath: 'polygon(0 100%, 0 0, 100% 100%)' }} /></>}
                         </div>
                       </div>
@@ -285,8 +287,8 @@ export function HabitTable({
                   const streakIndex = streakDates.indexOf(date)
                   const prevDate = addDays(date, -1)
                   const prevIndex = streakDates.indexOf(prevDate)
-                  /* Shade index: skipped uses previous day's shade, completed uses streak index (or 0 if not in streak yet) */
-                  const shadeIndex = status === 'skipped' ? (prevIndex >= 0 ? prevIndex : 0) : status === 'completed' ? (streakIndex >= 0 ? streakIndex : 0) : -1
+                  /* Shade index: skipped uses previous day's shade; completed and minimum use streak index */
+                  const shadeIndex = status === 'skipped' ? (prevIndex >= 0 ? prevIndex : 0) : (status === 'completed' || status === 'minimum') ? (streakIndex >= 0 ? streakIndex : 0) : -1
                   const shadeClass = shadeIndex >= 0 ? getShadeClass(habit.color, shadeIndex) : ''
                   const isToday = date === todayYMD
 
@@ -316,7 +318,7 @@ export function HabitTable({
                                 : 'Clear'
                               : status === null
                                 ? 'Mark complete'
-                                : status === 'completed'
+                                : status === 'completed' || status === 'minimum'
                                   ? 'Mark skipped'
                                   : 'Clear'
                           }
@@ -327,13 +329,13 @@ export function HabitTable({
                                 : 'Clear'
                               : status === null
                                 ? 'Mark complete'
-                                : status === 'completed'
+                                : status === 'completed' || status === 'minimum'
                                   ? 'Mark skipped'
                                   : 'Clear'
                           }
                         />
                       )}
-                      {/* Perfect square cell; complete/skip fill entire box (inset-0, no padding) */}
+                      {/* Perfect square cell; complete/minimum/skip fill entire box (inset-0, no padding) */}
                       <div className="absolute inset-0 pointer-events-none">
                         {!isSelectedDay && (
                           <div className="w-full h-full bg-bonsai-slate-100" />
@@ -344,6 +346,14 @@ export function HabitTable({
                             <div className={`absolute inset-0 ${shadeClass} completed-cell`} />
                             <div className="completed-hover-overlay absolute inset-0 flex items-center justify-center opacity-0 transition-opacity bg-black/10 pointer-events-none z-10">
                               <span className="text-white text-xs font-medium drop-shadow">skip</span>
+                            </div>
+                          </>
+                        )}
+                        {isSelectedDay && status === 'minimum' && (
+                          <>
+                            <div className="absolute inset-0 bg-amber-200/90 completed-cell" />
+                            <div className="completed-hover-overlay absolute inset-0 flex items-center justify-center opacity-0 transition-opacity bg-black/10 pointer-events-none z-10">
+                              <span className="text-amber-900 text-xs font-medium drop-shadow">skip</span>
                             </div>
                           </>
                         )}

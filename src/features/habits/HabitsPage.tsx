@@ -1,4 +1,4 @@
-/* Habits page: Header, New Habit button, habit table (desktop = week + arrows, mobile = scroll to today), add/edit modal */
+/* Habits page: Tabs (Habits | Habits 1.1 | Habits 1.2), header, New Habit button, table/list per view, add/edit modal */
 
 import { useState, useEffect } from 'react'
 import { AddButton } from '../../components/AddButton'
@@ -6,8 +6,12 @@ import { HabitsIcon, PlusIcon } from '../../components/icons'
 import { useViewportWidth } from '../../hooks/useViewportWidth'
 import { useHabits } from './hooks/useHabits'
 import { HabitTable } from './HabitTable'
+import { HabitTableV1 } from './HabitTableV1'
+import { HabitListV2 } from './HabitListV2'
 import { AddEditHabitModal } from './AddEditHabitModal'
-import type { HabitWithStreaks } from './types'
+import type { HabitWithStreaks, HabitWithStreaksV1, HabitWithStreaksV2 } from './types'
+
+type HabitsTab = '1.0' | '1.1' | '1.2'
 
 const LG_BREAKPOINT = 1024
 
@@ -34,6 +38,8 @@ export function HabitsPage() {
   const isDesktop = width >= LG_BREAKPOINT
   const {
     habitsWithStreaks,
+    habitsWithStreaksV1,
+    habitsWithStreaksV2,
     entriesByHabit,
     dateRange,
     setDateRange,
@@ -45,7 +51,9 @@ export function HabitsPage() {
     createHabit,
     updateHabit,
     deleteHabit,
+    setEntry,
     cycleEntry,
+    cycleEntryV1,
     goToPrevWeek,
     goToNextWeek,
     goToPrevRange,
@@ -61,6 +69,7 @@ export function HabitsPage() {
     }
   }, [isDesktop, setWeekToToday, setDateRange, sevenDaysRange])
 
+  const [activeTab, setActiveTab] = useState<HabitsTab>('1.0')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingHabit, setEditingHabit] = useState<HabitWithStreaks | null>(null)
 
@@ -69,7 +78,7 @@ export function HabitsPage() {
     setModalOpen(true)
   }
 
-  const handleEditHabit = (habit: HabitWithStreaks) => {
+  const handleEditHabit = (habit: HabitWithStreaks | HabitWithStreaksV1 | HabitWithStreaksV2) => {
     setEditingHabit(habit)
     setModalOpen(true)
   }
@@ -79,16 +88,48 @@ export function HabitsPage() {
     setEditingHabit(null)
   }
 
+  const hasHabits = habitsWithStreaks.length > 0
+
   return (
     <div className="min-h-full overflow-x-hidden">
-      {/* Header: title and subtitle on left, New Habit button on right */}
+      {/* Header: title, tabs, and New Habit button */}
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-4 mb-6">
         <div>
           <h1 className="text-page-title font-bold text-bonsai-brown-700">Habits</h1>
           <p className="text-secondary text-bonsai-slate-600 mt-1">
-            Track your daily routines and watch your consistency grow. Small habits, compounded over
-            time, create lasting change.
+            {activeTab === '1.0' &&
+              'Track your daily routines and watch your consistency grow. Small habits, compounded over time, create lasting change.'}
+            {activeTab === '1.1' &&
+              'Green = full completion, yellow = minimum viable action, red = nothing. Streak is the sum of day weights (green 1, yellow 0.1).'}
+            {activeTab === '1.2' &&
+              'Simple checklist: did you do it today? Consecutive days counter (only full completion counts).'}
           </p>
+          {/* Tabs: Habits | Habits 1.1 | Habits 1.2 */}
+          {hasHabits && (
+            <div className="flex gap-1 mt-3 border-b border-bonsai-slate-200">
+              <button
+                type="button"
+                onClick={() => setActiveTab('1.0')}
+                className={`px-3 py-2 text-secondary font-medium border-b-2 -mb-px transition-colors ${activeTab === '1.0' ? 'border-bonsai-brown-700 text-bonsai-brown-700' : 'border-transparent text-bonsai-slate-600 hover:text-bonsai-slate-800'}`}
+              >
+                Habits
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('1.1')}
+                className={`px-3 py-2 text-secondary font-medium border-b-2 -mb-px transition-colors ${activeTab === '1.1' ? 'border-bonsai-brown-700 text-bonsai-brown-700' : 'border-transparent text-bonsai-slate-600 hover:text-bonsai-slate-800'}`}
+              >
+                Habits 1.1
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('1.2')}
+                className={`px-3 py-2 text-secondary font-medium border-b-2 -mb-px transition-colors ${activeTab === '1.2' ? 'border-bonsai-brown-700 text-bonsai-brown-700' : 'border-transparent text-bonsai-slate-600 hover:text-bonsai-slate-800'}`}
+              >
+                Habits 1.2
+              </button>
+            </div>
+          )}
         </div>
         <div className="shrink-0">
           <AddButton onClick={handleOpenCreate} hideChevron>New Habit</AddButton>
@@ -139,8 +180,8 @@ export function HabitsPage() {
         </div>
       )}
 
-      {/* Table: side padding, centered, no horizontal scroll */}
-      {!loading && habitsWithStreaks.length > 0 && (
+      {/* Content per tab: 1.0 table, 1.1 table, or 1.2 list */}
+      {!loading && hasHabits && activeTab === '1.0' && (
         <div className="px-4 md:px-6 flex justify-center">
           <HabitTable
             habits={habitsWithStreaks}
@@ -153,6 +194,33 @@ export function HabitsPage() {
             dateRangeText={formatDateRange(dateRange.start, dateRange.end)}
             onPrevRange={isDesktop ? goToPrevWeek : goToPrevRange}
             onNextRange={isDesktop ? goToNextWeek : goToNextRange}
+          />
+        </div>
+      )}
+      {!loading && hasHabits && activeTab === '1.1' && (
+        <div className="px-4 md:px-6 flex justify-center">
+          <HabitTableV1
+            habits={habitsWithStreaksV1}
+            entriesByHabit={entriesByHabit}
+            dateRange={dateRange}
+            todayYMD={todayYMD}
+            onCycleEntryV1={cycleEntryV1}
+            onEditHabit={handleEditHabit}
+            isDesktop={isDesktop}
+            dateRangeText={formatDateRange(dateRange.start, dateRange.end)}
+            onPrevRange={isDesktop ? goToPrevWeek : goToPrevRange}
+            onNextRange={isDesktop ? goToNextWeek : goToNextRange}
+          />
+        </div>
+      )}
+      {!loading && hasHabits && activeTab === '1.2' && (
+        <div className="px-4 md:px-6 flex justify-center">
+          <HabitListV2
+            habits={habitsWithStreaksV2}
+            entriesByHabit={entriesByHabit}
+            todayYMD={todayYMD}
+            onSetEntry={setEntry}
+            onEditHabit={handleEditHabit}
           />
         </div>
       )}

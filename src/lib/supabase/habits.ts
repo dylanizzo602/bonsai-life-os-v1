@@ -208,12 +208,12 @@ export async function deleteHabit(id: string): Promise<void> {
 }
 
 /**
- * Set or clear entry for a habit on a date. status 'completed' | 'skipped' upserts; null/omit means delete (open).
+ * Set or clear entry for a habit on a date. status 'completed' | 'minimum' | 'skipped' upserts; null means delete (open).
  */
 export async function setEntry(
   habitId: string,
   entryDate: string,
-  status: 'completed' | 'skipped' | null
+  status: 'completed' | 'skipped' | 'minimum' | null
 ): Promise<void> {
   if (status === null) {
     const { error } = await supabase
