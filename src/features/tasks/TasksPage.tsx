@@ -553,8 +553,8 @@ export function TasksPage() {
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false)
   const [editReminder, setEditReminder] = useState<Reminder | null>(null)
 
-  /* View mode: lineup | available | all | custom. Available is default. */
-  const [viewMode, setViewMode] = useState<'lineup' | 'available' | 'all' | 'custom'>('available')
+  /* View mode: lineup | available | all | custom. All is default so tasks are visible (Available can hide everything). */
+  const [viewMode, setViewMode] = useState<'lineup' | 'available' | 'all' | 'custom'>('all')
   /* Archive/Trash: when true, list shows only archived or only deleted tasks (no filters applied). */
   const [showArchived, setShowArchived] = useState(false)
   const [showDeleted, setShowDeleted] = useState(false)

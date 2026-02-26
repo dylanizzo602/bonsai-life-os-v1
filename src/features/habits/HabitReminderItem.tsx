@@ -2,6 +2,7 @@
 
 import { Button } from '../../components/Button'
 import { BellIcon } from '../../components/icons'
+import { isOverdue } from '../tasks/utils/date'
 import type { HabitWithStreaks } from './types'
 
 /** Format remind_at ISO string for display: "Today at 9:00pm" or "Feb 18 at 9:00pm" */
@@ -46,6 +47,9 @@ export function HabitReminderItem({
   onSkip,
   hideSkip = false,
 }: HabitReminderItemProps) {
+  /* Overdue flag: true when remindAt is set and the notification time is in the past */
+  const isRemindOverdue = Boolean(remindAt && isOverdue(remindAt))
+
   return (
     <div
       className="flex items-center gap-3 rounded-lg border border-bonsai-slate-200 bg-white p-3 md:p-4 hover:bg-bonsai-slate-50 transition-colors text-left"
@@ -99,10 +103,14 @@ export function HabitReminderItem({
         )}
       </div>
 
-      {/* Notification date: bell icon + formatted time */}
-      <div className="flex shrink-0 items-center gap-1.5 text-secondary text-bonsai-slate-500">
+      {/* Notification date: bell icon + formatted time; red when overdue */}
+      <div
+        className={`flex shrink-0 items-center gap-1.5 text-secondary ${
+          isRemindOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-500'
+        }`}
+      >
         <BellIcon className="w-4 h-4 md:w-5 md:h-5" aria-hidden />
-        <span className="text-secondary whitespace-nowrap">
+        <span className="whitespace-nowrap">
           {formatNotificationDate(remindAt)}
         </span>
       </div>

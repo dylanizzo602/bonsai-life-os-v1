@@ -80,7 +80,7 @@ export function HabitsPage() {
   }
 
   return (
-    <div className="min-h-full">
+    <div className="min-h-full overflow-x-hidden">
       {/* Header: title and subtitle on left, New Habit button on right */}
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-4 mb-6">
         <div>
@@ -139,9 +139,9 @@ export function HabitsPage() {
         </div>
       )}
 
-      {/* Table: full bleed on mobile/tablet; on desktop use normal padding so table has padding around it */}
+      {/* Table: side padding, centered, no horizontal scroll */}
       {!loading && habitsWithStreaks.length > 0 && (
-        <div className="-mx-4 md:-mx-6 lg:mx-0">
+        <div className="px-4 md:px-6 flex justify-center">
           <HabitTable
             habits={habitsWithStreaks}
             entriesByHabit={entriesByHabit}

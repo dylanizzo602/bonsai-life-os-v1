@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTasks } from '../tasks/hooks/useTasks'
 import { useReminders } from '../reminders/hooks/useReminders'
+import { useHabits } from '../habits/hooks/useHabits'
 import { getDependenciesForTaskIds } from '../../lib/supabase/tasks'
 import { createReflectionEntry } from '../../lib/supabase/reflections'
 import {
@@ -11,6 +12,7 @@ import {
 } from '../../lib/todaysLineup'
 import type { Task } from '../tasks/types'
 import type { MorningBriefingResponses } from '../reflections/types'
+import type { HabitWithStreaks } from '../habits/types'
 import { BriefingProgressBar } from './BriefingProgressBar'
 import { GreetingScreen } from './GreetingScreen'
 import { OverdueScreen } from './OverdueScreen'
@@ -105,7 +107,16 @@ export function BriefingsPage({ onNavigateToReflections }: BriefingsPageProps) {
     refetch: refetchReminders,
     updateReminder,
     toggleComplete: toggleReminderComplete,
+    advanceToNextOccurrence: advanceReminderToNextOccurrence,
   } = useReminders()
+
+  /* Habits: used to surface overdue habit reminders in the overdue step */
+  const {
+    habitsWithStreaks,
+    todayYMD,
+    setEntry: setHabitEntry,
+    refetch: refetchHabits,
+  } = useHabits()
 
   /* Blocked/blocking task IDs for "available" filter */
   const [blockedTaskIds, setBlockedTaskIds] = useState<Set<string>>(new Set())
@@ -172,6 +183,28 @@ export function BriefingsPage({ onNavigateToReflections }: BriefingsPageProps) {
           new Date(r.remind_at).getTime() < todayStart,
       ),
     [reminders, todayStart],
+  )
+
+  /* Overdue habit reminders: habits with add_to_todos and a linked reminder/reminder_time whose occurrence is before today */
+  const overdueHabitReminders = useMemo(
+    () => {
+      const items: { habit: HabitWithStreaks; remindAt: string | null }[] =
+        habitsWithStreaks
+          .filter((h) => h.add_to_todos && h.reminder_id)
+          .map((habit) => {
+            const linked = reminders.find((r) => r.id === habit.reminder_id!)
+            const remindAt =
+              linked?.remind_at ??
+              (habit.reminder_time ? `${todayYMD}T${habit.reminder_time}` : null)
+            return { habit, remindAt }
+          })
+
+      return items.filter(
+        ({ remindAt }) =>
+          !!remindAt && new Date(remindAt).getTime() < todayStart,
+      )
+    },
+    [habitsWithStreaks, reminders, todayYMD, todayStart],
   )
 
   /* Available tasks (first 5): not completed/archived/deleted, not blocked, start <= now */
@@ -268,11 +301,30 @@ export function BriefingsPage({ onNavigateToReflections }: BriefingsPageProps) {
         <OverdueScreen
           overdueTasks={overdueTasks}
           overdueReminders={overdueReminders}
+          overdueHabitReminders={overdueHabitReminders}
           loading={tasksLoading || remindersLoading}
           onEditTask={setEditTask}
           onEditReminder={setEditReminder}
           onUpdateReminder={updateReminder}
           onToggleReminderComplete={toggleReminderComplete}
+          onHabitMarkComplete={async (habit, remindAt) => {
+            /* Mark habit occurrence complete and advance linked reminder to next occurrence when present */
+            const occurrenceDate = remindAt ? remindAt.slice(0, 10) : todayYMD
+            await setHabitEntry(habit.id, occurrenceDate, 'completed')
+            if (habit.reminder_id) {
+              await advanceReminderToNextOccurrence(habit.reminder_id)
+            }
+            await refetchHabits()
+          }}
+          onHabitSkip={async (habit, remindAt) => {
+            /* Mark habit occurrence skipped and advance linked reminder to next occurrence when present */
+            const occurrenceDate = remindAt ? remindAt.slice(0, 10) : todayYMD
+            await setHabitEntry(habit.id, occurrenceDate, 'skipped')
+            if (habit.reminder_id) {
+              await advanceReminderToNextOccurrence(habit.reminder_id)
+            }
+            await refetchHabits()
+          }}
           onNext={() => setStep(2)}
         />
       )}

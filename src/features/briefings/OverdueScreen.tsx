@@ -1,16 +1,25 @@
-/* OverdueScreen: Show overdue tasks and reminders from yesterday; allow update/complete; same breakpoints as Task section */
+/* OverdueScreen: Show overdue tasks, reminders, and habit reminders from before today; allow update/complete; same breakpoints as Task section */
 
 import { Button } from '../../components/Button'
 import { CompactTaskItem } from '../tasks/CompactTaskItem'
 import { ReminderItem } from '../reminders/ReminderItem'
+import { HabitReminderItem } from '../habits/HabitReminderItem'
 import type { Task } from '../tasks/types'
 import type { Reminder } from '../reminders/types'
+import type { HabitWithStreaks } from '../habits/types'
+
+interface OverdueHabitReminder {
+  habit: HabitWithStreaks
+  remindAt: string | null
+}
 
 interface OverdueScreenProps {
   /** Overdue tasks (due_date before today, not completed) */
   overdueTasks: Task[]
   /** Overdue reminders (remind_at before today, not completed) */
   overdueReminders: Reminder[]
+  /** Overdue habit reminders (remindAt before today, not completed) */
+  overdueHabitReminders?: OverdueHabitReminder[]
   loading: boolean
   /** When user clicks a task, open edit modal */
   onEditTask: (task: Task) => void
@@ -20,27 +29,37 @@ interface OverdueScreenProps {
   onUpdateReminder: (id: string, input: { name?: string; remind_at?: string | null; completed?: boolean }) => Promise<Reminder>
   /** Toggle reminder complete */
   onToggleReminderComplete: (id: string, completed: boolean) => void
+  /** Mark a habit reminder as complete for its occurrence */
+  onHabitMarkComplete?: (habit: HabitWithStreaks, remindAt: string | null) => void
+  /** Skip a habit reminder occurrence */
+  onHabitSkip?: (habit: HabitWithStreaks, remindAt: string | null) => void
   /** Go to next step */
   onNext: () => void
 }
 
 /**
- * Overdue / catch-up step: list overdue tasks and reminders; "Way to go" if none.
+ * Overdue / catch-up step: list overdue tasks, reminders, and habit reminders; "Way to go" if none.
  * Uses same breakpoint behavior as Task section: lg = full-width rows, below = compact.
- * Here we use CompactTaskItem for all breakpoints for simplicity; ReminderItem for reminders.
+ * Here we use CompactTaskItem for tasks, ReminderItem for reminders, and HabitReminderItem for habit reminders.
  */
 export function OverdueScreen({
   overdueTasks,
   overdueReminders,
+  overdueHabitReminders,
   loading,
   onEditTask,
   onEditReminder,
   onUpdateReminder,
   onToggleReminderComplete,
+  onHabitMarkComplete,
+  onHabitSkip,
   onNext,
 }: OverdueScreenProps) {
-  /* Combined list: tasks first, then reminders (same order as TaskList) */
-  const hasAny = overdueTasks.length > 0 || overdueReminders.length > 0
+  /* Combined presence check: tasks, reminders, or habit reminders */
+  const hasAny =
+    overdueTasks.length > 0 ||
+    overdueReminders.length > 0 ||
+    (overdueHabitReminders?.length ?? 0) > 0
 
   return (
     <div className="flex flex-col">
@@ -52,13 +71,13 @@ export function OverdueScreen({
             Way to go — you're all caught up.
           </p>
           <p className="text-secondary text-bonsai-slate-600 mb-6">
-            No overdue tasks or reminders from yesterday.
+            No overdue tasks, reminders, or habit reminders from before today.
           </p>
         </>
       ) : (
         <>
           <p className="text-body font-medium text-bonsai-slate-700 mb-4">
-            Here are overdue items from yesterday. Clear or update them, then continue.
+            Here are overdue items from before today. Clear or update them, then continue.
           </p>
           {/* Tasks: compact layout on all breakpoints to match Task section density */}
           <div className="space-y-2 mb-4">
@@ -84,6 +103,20 @@ export function OverdueScreen({
               />
             ))}
           </div>
+          {/* Habit reminders */}
+          {overdueHabitReminders && overdueHabitReminders.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {overdueHabitReminders.map(({ habit, remindAt }) => (
+                <HabitReminderItem
+                  key={habit.id}
+                  habit={habit}
+                  remindAt={remindAt}
+                  onMarkComplete={() => onHabitMarkComplete?.(habit, remindAt)}
+                  onSkip={() => onHabitSkip?.(habit, remindAt)}
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
 
