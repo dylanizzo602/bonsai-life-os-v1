@@ -110,4 +110,13 @@ body {
   td[data-status="completed"]:hover .completed-hover-overlay {
     opacity: 1;
   }
+  /* Notes rich editor: no border/box so text flows like a document */
+  .notes-rich-editor .ProseMirror {
+    border: none;
+    outline: none;
+    padding: 0;
+  }
+  .notes-rich-editor .ProseMirror:focus {
+    outline: none;
+  }
 }

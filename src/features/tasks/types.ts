@@ -142,6 +142,9 @@ export interface TaskFilters {
   parent_id?: string | null
   /** When true, fetch all tasks (including subtasks) for dependency linking */
   includeAllTasks?: boolean
+  /** Filter completed tasks by completed_at range (ISO strings); used with status: 'completed' */
+  completedAtFrom?: string
+  completedAtTo?: string
 }
 
 /** Sort field ids for the sort modal (tasks only) */

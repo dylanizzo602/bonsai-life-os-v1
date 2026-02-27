@@ -51,6 +51,17 @@ export async function getTasks(filters?: TaskFilters): Promise<Task[]> {
     query = query.eq('status', filters.status)
   }
 
+  /* Completed-at range: when status is completed and both bounds set, filter by completed_at */
+  if (
+    filters?.status === 'completed' &&
+    filters?.completedAtFrom &&
+    filters?.completedAtTo
+  ) {
+    query = query
+      .gte('completed_at', filters.completedAtFrom)
+      .lte('completed_at', filters.completedAtTo)
+  }
+
   if (filters?.priority && filters.priority !== 'all') {
     query = query.eq('priority', filters.priority)
   }
