@@ -145,6 +145,8 @@ export interface AddEditTaskModalProps {
   onAddDependency?: (input: CreateTaskDependencyInput) => Promise<void>
   /** Remove a task dependency by id */
   onRemoveDependency?: (dependencyId: string) => Promise<void>
+  /** When adding (task is null), pre-fill the title (e.g. from Inbox "Convert to task") */
+  initialTitle?: string
 }
 
 /**
@@ -168,6 +170,7 @@ export function AddEditTaskModal({
   getTaskDependencies,
   onAddDependency,
   onRemoveDependency,
+  initialTitle,
 }: AddEditTaskModalProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -231,7 +234,7 @@ export function AddEditTaskModal({
       setAttachments(Array.isArray(task.attachments) ? task.attachments : [])
       setStatus(getDisplayStatus(task.status))
     } else {
-      setTitle('')
+      setTitle(initialTitle ?? '')
       setDescription('')
       setStartDate(null)
       setDueDate(null)
@@ -243,7 +246,7 @@ export function AddEditTaskModal({
       setAttachments([])
       setStatus('open')
     }
-  }, [isOpen, task])
+  }, [isOpen, task, initialTitle])
 
   /* Submit: create or update task with all form fields */
   const handleSubmit = async () => {

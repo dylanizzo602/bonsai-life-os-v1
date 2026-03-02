@@ -9,7 +9,6 @@ import {
   ReflectionsIcon,
   BriefingsIcon,
   WeeklyBriefingIcon,
-  ExperiencesIcon,
   NotesIcon,
   SettingsIcon,
 } from '../../../components/icons'
@@ -39,7 +38,6 @@ const navItems: Array<{
   { id: 'tasks', icon: TasksIcon, label: 'Tasks' },
   { id: 'habits', icon: HabitsIcon, label: 'Habits' },
   { id: 'reflections', icon: ReflectionsIcon, label: 'Reflections' },
-  { id: 'experiences', icon: ExperiencesIcon, label: 'Experiences' },
   { id: 'notes', icon: NotesIcon, label: 'Notes' },
 ]
 

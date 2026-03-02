@@ -9,7 +9,6 @@ export type NavigationSection =
   | 'reflections'
   | 'briefings'
   | 'weekly-briefing'
-  | 'experiences'
   | 'notes'
   | 'settings'
 

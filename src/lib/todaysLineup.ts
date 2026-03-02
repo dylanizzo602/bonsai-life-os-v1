@@ -22,6 +22,20 @@ export function loadTodaysLineupTaskIds(): Set<string> {
   }
 }
 
+/** Load today's lineup task IDs in display order (array). Returns empty array if stored date is not today. */
+export function getTodaysLineupOrderedIds(): string[] {
+  try {
+    const raw = localStorage.getItem(TODAYS_LINEUP_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as { date?: string; taskIds?: string[] }
+    const today = getTodayYMD()
+    if (parsed?.date !== today || !Array.isArray(parsed.taskIds)) return []
+    return parsed.taskIds
+  } catch {
+    return []
+  }
+}
+
 /** Persist Today's Lineup to localStorage with current date. */
 export function saveTodaysLineupTaskIds(ids: Set<string>): void {
   try {
