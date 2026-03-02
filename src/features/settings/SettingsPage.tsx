@@ -2,8 +2,10 @@
 import { useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useAccountSettings } from './hooks/useAccountSettings'
+import { useNotificationSettings } from './hooks/useNotificationSettings'
 import { Input } from '../../components/Input'
 import { Button } from '../../components/Button'
+import { Checkbox } from '../../components/Checkbox'
 
 /**
  * Settings page component
@@ -29,6 +31,17 @@ export function SettingsPage() {
     saveEmail,
     savePassword,
   } = useAccountSettings(user)
+
+  /* Notification settings hook: manage per-type/channel notification preferences */
+  const {
+    loading: loadingNotifications,
+    saving: savingNotifications,
+    error: notificationError,
+    types: notificationTypes,
+    channels: notificationChannels,
+    isEnabled: isNotificationEnabled,
+    togglePreference,
+  } = useNotificationSettings()
 
   /* Local password field state: keep separate from main hook state */
   const [password, setPassword] = useState('')
@@ -133,6 +146,60 @@ export function SettingsPage() {
                 {saving ? 'Saving…' : 'Save profile'}
               </Button>
             </div>
+          </section>
+
+          {/* Notifications section: configure email and push preferences for different notification types */}
+          <section className="border border-bonsai-slate-200 rounded-xl p-4 md:p-6 bg-white">
+            <h2 className="text-body font-semibold text-bonsai-brown-700 mb-4">Notifications</h2>
+            <p className="text-secondary text-bonsai-slate-600 mb-4">
+              Choose how Bonsai notifies you about overdue tasks, reminders, and habit reminders.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="min-w-full border-collapse">
+                <thead>
+                  <tr>
+                    <th className="text-secondary text-bonsai-slate-600 text-left py-2 pr-4">
+                      Notification type
+                    </th>
+                    {notificationChannels.map((channel) => (
+                      <th
+                        key={channel}
+                        className="text-secondary text-bonsai-slate-600 text-left py-2 px-2"
+                      >
+                        {channel === 'email' && 'Email'}
+                        {channel === 'push_web' && 'Web push'}
+                        {channel === 'push_mobile' && 'Mobile push'}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {notificationTypes.map((type) => (
+                    <tr key={type} className="border-t border-bonsai-slate-100">
+                      <td className="text-body text-bonsai-slate-800 py-2 pr-4">
+                        {type === 'task_overdue' && 'Overdue tasks'}
+                        {type === 'reminder_due' && 'Reminders due'}
+                        {type === 'habit_reminder_due' && 'Habit reminders due'}
+                      </td>
+                      {notificationChannels.map((channel) => (
+                        <td key={channel} className="py-2 px-2">
+                          <Checkbox
+                            size="sm"
+                            checked={isNotificationEnabled(type, channel)}
+                            onChange={() => void togglePreference(type, channel)}
+                            disabled={loadingNotifications || savingNotifications || !user}
+                            aria-label={`${type} via ${channel}`}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {notificationError && (
+              <p className="text-secondary text-red-600 mt-3">{notificationError}</p>
+            )}
           </section>
 
           {/* Email section: change sign-in email address */}
