@@ -63,11 +63,6 @@ export function GoalsPage() {
   }
 
   /* Handle edit goal */
-  const handleEditGoal = (goal: Goal) => {
-    setEditingGoal(goal)
-    setModalOpen(true)
-  }
-
   /* Handle close modal */
   const handleCloseModal = () => {
     setModalOpen(false)

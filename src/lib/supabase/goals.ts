@@ -136,7 +136,6 @@ function calculateProgressFromMilestones(milestones: GoalMilestone[]): number {
  */
 export async function createGoal(input: CreateGoalInput): Promise<Goal> {
   const insertData: Record<string, unknown> = {
-    user_id: input.user_id ?? null,
     name: input.name,
     description: input.description ?? null,
     start_date: input.start_date,

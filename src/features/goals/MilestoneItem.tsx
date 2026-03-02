@@ -14,8 +14,6 @@ interface MilestoneItemProps {
   onEdit: (milestone: GoalMilestone) => void
   /** Delete milestone handler */
   onDelete: (id: string) => void
-  /** When task is shown, called so parent can refetch (e.g. after navigating back from task) */
-  onTaskUpdated?: () => void
   /** Open task edit modal when user clicks the linked task */
   onOpenEditTaskModal?: (task: Task) => void
   /** Open task context menu when user right-clicks the linked task */
@@ -31,7 +29,6 @@ export function MilestoneItem({
   onToggleComplete,
   onEdit,
   onDelete,
-  onTaskUpdated,
   onOpenEditTaskModal,
   onOpenTaskContextMenu,
 }: MilestoneItemProps) {

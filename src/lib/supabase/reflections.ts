@@ -12,7 +12,6 @@ export async function createReflectionEntry(
   const { data, error } = await supabase
     .from('reflection_entries')
     .insert({
-      user_id: input.user_id ?? null,
       type: input.type,
       title: input.title ?? null,
       responses: input.responses ?? {},

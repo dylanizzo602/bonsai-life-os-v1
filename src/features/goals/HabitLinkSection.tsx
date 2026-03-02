@@ -4,11 +4,9 @@ import { Button } from '../../components/Button'
 import { PlusIcon } from '../../components/icons'
 import { useHabits } from '../habits/hooks/useHabits'
 import { Select } from '../../components/Select'
-import type { Habit } from '../habits/types'
 
 interface HabitLinkSectionProps {
   /** Goal ID */
-  goalId: string
   /** Linked habits (with habit data) */
   linkedHabits: Array<{
     id: string
@@ -30,7 +28,6 @@ interface HabitLinkSectionProps {
  * Displays linked habits and allows linking/unlinking habits to goals.
  */
 export function HabitLinkSection({
-  goalId,
   linkedHabits,
   onLinkHabit,
   onUnlinkHabit,

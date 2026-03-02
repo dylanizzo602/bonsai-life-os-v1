@@ -6,7 +6,6 @@ import {
   createGoal,
   updateGoal,
   deleteGoal,
-  getMilestonesForGoal,
   createMilestone,
   updateMilestone,
   deleteMilestone,
@@ -17,7 +16,6 @@ import {
 } from '../../../lib/supabase/goals'
 import type {
   Goal,
-  GoalMilestone,
   GoalHistory,
   GoalWithDetails,
   CreateGoalInput,
@@ -122,19 +120,13 @@ export function useGoals() {
 /**
  * Custom hook for managing a single goal with details (milestones, habits, history).
  */
-export function useGoal(goalId: string | null) {
+export function useGoal(goalId: string) {
   const [goal, setGoal] = useState<GoalWithDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   /* Fetch goal with details */
   const fetchGoal = useCallback(async () => {
-    if (!goalId) {
-      setGoal(null)
-      setLoading(false)
-      return
-    }
-
     try {
       setLoading(true)
       setError(null)
@@ -163,7 +155,6 @@ export function useGoal(goalId: string | null) {
   /* Create a milestone */
   const handleCreateMilestone = useCallback(
     async (input: CreateMilestoneInput) => {
-      if (!goalId) return
       try {
         setError(null)
         const newMilestone = await createMilestone(input)
@@ -183,7 +174,6 @@ export function useGoal(goalId: string | null) {
   /* Update a milestone */
   const handleUpdateMilestone = useCallback(
     async (id: string, input: UpdateMilestoneInput) => {
-      if (!goalId) return
       try {
         setError(null)
         const updatedMilestone = await updateMilestone(id, input)
@@ -203,7 +193,6 @@ export function useGoal(goalId: string | null) {
   /* Delete a milestone */
   const handleDeleteMilestone = useCallback(
     async (id: string) => {
-      if (!goalId) return
       try {
         setError(null)
         await deleteMilestone(id)

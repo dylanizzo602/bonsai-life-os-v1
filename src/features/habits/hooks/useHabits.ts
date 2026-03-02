@@ -187,12 +187,10 @@ export function useHabits(initialDateRange?: DateRange) {
     return habits.map((habit) => {
       const entries = entriesByHabit[habit.id] ?? []
       const streakEntries = entries.map((e) => ({ date: e.entry_date, status: e.status }))
-      const isWeekly =
-        habit.frequency === 'weekly' &&
-        typeof habit.frequency_target === 'number' &&
-        habit.frequency_target >= 1 &&
-        habit.frequency_target <= 127
-      const mask = isWeekly ? habit.frequency_target : 0
+      /* Weekly mask: frequency_target is a day-of-week bitmask (1..127) when weekly */
+      const weeklyMask = typeof habit.frequency_target === 'number' ? habit.frequency_target : 0
+      const isWeekly = habit.frequency === 'weekly' && weeklyMask >= 1 && weeklyMask <= 127
+      const mask = isWeekly ? weeklyMask : 0
       const { currentStreak, longestStreak } = isWeekly
         ? getStreaksWeekly(streakEntries, today, mask)
         : getStreaks(streakEntries, today)
@@ -213,12 +211,10 @@ export function useHabits(initialDateRange?: DateRange) {
     return habits.map((habit) => {
       const entries = entriesByHabit[habit.id] ?? []
       const streakEntries = entries.map((e) => ({ date: e.entry_date, status: e.status }))
-      const isWeekly =
-        habit.frequency === 'weekly' &&
-        typeof habit.frequency_target === 'number' &&
-        habit.frequency_target >= 1 &&
-        habit.frequency_target <= 127
-      const mask = isWeekly ? habit.frequency_target : 0
+      /* Weekly mask: frequency_target is a day-of-week bitmask (1..127) when weekly */
+      const weeklyMask = typeof habit.frequency_target === 'number' ? habit.frequency_target : 0
+      const isWeekly = habit.frequency === 'weekly' && weeklyMask >= 1 && weeklyMask <= 127
+      const mask = isWeekly ? weeklyMask : 0
       const { currentStreak, longestStreak } = isWeekly
         ? getStreaksWeeklyWeighted(streakEntries, today, mask)
         : getStreaksWeighted(streakEntries, today)
@@ -239,12 +235,10 @@ export function useHabits(initialDateRange?: DateRange) {
     return habits.map((habit) => {
       const entries = entriesByHabit[habit.id] ?? []
       const streakEntries = entries.map((e) => ({ date: e.entry_date, status: e.status }))
-      const isWeekly =
-        habit.frequency === 'weekly' &&
-        typeof habit.frequency_target === 'number' &&
-        habit.frequency_target >= 1 &&
-        habit.frequency_target <= 127
-      const mask = isWeekly ? habit.frequency_target : 0
+      /* Weekly mask: frequency_target is a day-of-week bitmask (1..127) when weekly */
+      const weeklyMask = typeof habit.frequency_target === 'number' ? habit.frequency_target : 0
+      const isWeekly = habit.frequency === 'weekly' && weeklyMask >= 1 && weeklyMask <= 127
+      const mask = isWeekly ? weeklyMask : 0
       const { currentStreak, longestStreak } = isWeekly
         ? getStreaksWeeklyStrict(streakEntries, today, mask)
         : getStreaksStrict(streakEntries, today)

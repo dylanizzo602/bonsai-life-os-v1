@@ -25,16 +25,14 @@ export interface UpdateSavedViewInput {
 }
 
 /**
- * Fetch all saved views for a user (or all if user_id is null).
+ * Fetch all saved views for the current user.
+ * User scoping is enforced by RLS in the database.
  */
-export async function getSavedViews(userId: string | null): Promise<SavedView[]> {
-  let query = supabase.from('saved_views').select('*').order('created_at', { ascending: false })
-  if (userId != null) {
-    query = query.eq('user_id', userId)
-  } else {
-    query = query.is('user_id', null)
-  }
-  const { data, error } = await query
+export async function getSavedViews(): Promise<SavedView[]> {
+  const { data, error } = await supabase
+    .from('saved_views')
+    .select('*')
+    .order('created_at', { ascending: false })
   if (error) {
     console.error('Error fetching saved views:', error)
     throw error
@@ -49,7 +47,6 @@ export async function createSavedView(input: CreateSavedViewInput): Promise<Save
   const { data, error } = await supabase
     .from('saved_views')
     .insert({
-      user_id: input.user_id ?? null,
       name: input.name,
       filter_json: input.filter_json ?? null,
       sort_json: input.sort_json ?? null,

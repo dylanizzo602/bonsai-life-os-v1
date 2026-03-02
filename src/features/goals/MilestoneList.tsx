@@ -5,6 +5,7 @@ import { PlusIcon } from '../../components/icons'
 import { MilestoneItem } from './MilestoneItem'
 import { AddEditMilestoneModal } from './AddEditMilestoneModal'
 import type { GoalMilestone, CreateMilestoneInput, UpdateMilestoneInput } from './types'
+import type { Task } from '../tasks/types'
 
 interface MilestoneListProps {
   /** Goal ID */
@@ -19,8 +20,10 @@ interface MilestoneListProps {
   onDeleteMilestone: (id: string) => Promise<void>
   /** Function to fetch tasks for task picker */
   getTasks?: () => Promise<Array<{ id: string; title: string }>>
-  /** When linked task view is shown, refetch goal so task data stays in sync */
-  onTaskUpdated?: () => void
+  /** Open task edit modal when user clicks the linked task */
+  onOpenEditTaskModal?: (task: Task) => void
+  /** Open task context menu when user right-clicks the linked task */
+  onOpenTaskContextMenu?: (task: Task, x: number, y: number) => void
 }
 
 /**
@@ -34,7 +37,6 @@ export function MilestoneList({
   onUpdateMilestone,
   onDeleteMilestone,
   getTasks,
-  onTaskUpdated,
   onOpenEditTaskModal,
   onOpenTaskContextMenu,
 }: MilestoneListProps) {
@@ -96,7 +98,6 @@ export function MilestoneList({
               onToggleComplete={handleToggleComplete}
               onEdit={handleEditMilestone}
               onDelete={handleDelete}
-              onTaskUpdated={onTaskUpdated}
               onOpenEditTaskModal={onOpenEditTaskModal}
               onOpenTaskContextMenu={onOpenTaskContextMenu}
             />

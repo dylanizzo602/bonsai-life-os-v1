@@ -228,9 +228,8 @@ export function GoalDetailPage({ goalId, onBack }: GoalDetailPageProps) {
             const tasks = await getTasks()
             return tasks.map((t) => ({ id: t.id, title: t.title }))
           }}
-          onTaskUpdated={refetch}
-          onOpenEditTaskModal={(task) => setTaskToEdit(task)}
-          onOpenTaskContextMenu={(task, x, y) => {
+          onOpenEditTaskModal={(task: Task) => setTaskToEdit(task)}
+          onOpenTaskContextMenu={(task: Task, x: number, y: number) => {
             setContextTask(task)
             setContextPosition({ x, y })
           }}
@@ -238,7 +237,6 @@ export function GoalDetailPage({ goalId, onBack }: GoalDetailPageProps) {
 
         {/* Linked habits section */}
         <HabitLinkSection
-          goalId={goal.id}
           linkedHabits={goal.linked_habits}
           onLinkHabit={linkHabit}
           onUnlinkHabit={unlinkHabit}

@@ -83,7 +83,6 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
     const remindAt = firstRemindAt(input.reminder_time)
     const reminder = await createReminder({
       name: input.name,
-      user_id: input.user_id ?? null,
       remind_at: remindAt,
       recurrence_pattern: recurrence,
     })
@@ -91,7 +90,6 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
   }
 
   const insertData: Record<string, unknown> = {
-    user_id: input.user_id ?? null,
     name: input.name,
     description: input.description ?? null,
     desired_action: input.desired_action ?? null,

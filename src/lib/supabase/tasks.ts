@@ -180,7 +180,6 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     attachments: input.attachments ?? [],
     parent_id: input.parent_id ?? null,
     goal_id: input.goal_id ?? null,
-    user_id: input.user_id ?? null,
     recurrence_pattern: input.recurrence_pattern ?? null,
   }
 

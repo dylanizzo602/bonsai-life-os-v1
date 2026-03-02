@@ -498,8 +498,6 @@ export function TasksPage() {
   const {
     habitsWithStreaks,
     todayYMD,
-    entriesByHabit,
-    cycleEntry: cycleHabitEntry,
     setEntry: setHabitEntry,
     refetch: refetchHabits,
   } = useHabits()
@@ -582,7 +580,7 @@ export function TasksPage() {
 
   /* Fetch saved views on mount (for Custom dropdown). */
   useEffect(() => {
-    getSavedViews(null)
+    getSavedViews()
       .then(setSavedViews)
       .catch(() => setSavedViews([]))
   }, [])
@@ -777,8 +775,8 @@ export function TasksPage() {
       }
     }
 
-    /* Base tasks: include all statuses; Archive/Trash views filter by status explicitly below. */
-    let baseTasks = tasks
+    /* Base tasks: exclude deleted; Trash view above is the only place deleted tasks appear. */
+    let baseTasks = tasks.filter((t) => t.status !== 'deleted')
 
     /* By view: lineup, available, all, or custom base list. */
     let viewTasks: Task[]

@@ -33,7 +33,6 @@ export async function getReminders(): Promise<Reminder[]> {
 export async function createReminder(input: CreateReminderInput): Promise<Reminder> {
   const insertData: Record<string, unknown> = {
     name: input.name,
-    user_id: input.user_id ?? null,
     remind_at: input.remind_at ?? null,
     recurrence_pattern: input.recurrence_pattern ?? null,
   }

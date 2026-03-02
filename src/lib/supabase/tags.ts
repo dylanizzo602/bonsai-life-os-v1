@@ -3,17 +3,16 @@ import { supabase } from './client'
 import type { Tag, TagColorId } from '../../features/tasks/types'
 
 /**
- * Fetch all tags for a user (or all if no user_id).
+ * Fetch all tags for the current user.
+ * User scoping is enforced by RLS in the database.
  * Used for search/list in TagModal.
  */
 export async function getTags(userId?: string | null): Promise<Tag[]> {
-  let query = supabase.from('tags').select('*').order('name', { ascending: true })
-
-  if (userId !== undefined && userId !== null && userId !== '') {
-    query = query.or(`user_id.eq.${userId},user_id.is.null`)
-  }
-
-  const { data, error } = await query
+  void userId
+  const { data, error } = await supabase
+    .from('tags')
+    .select('*')
+    .order('name', { ascending: true })
 
   if (error) {
     console.error('Error fetching tags:', error)
@@ -48,15 +47,11 @@ export async function getTagsForTask(taskId: string): Promise<Tag[]> {
 export async function searchTags(query: string, userId?: string | null): Promise<Tag[]> {
   if (!query.trim()) return getTags(userId)
 
-  let dbQuery = supabase
+  const dbQuery = supabase
     .from('tags')
     .select('*')
     .ilike('name', `%${query.trim()}%`)
     .order('name', { ascending: true })
-
-  if (userId !== undefined && userId !== null) {
-    dbQuery = dbQuery.or(`user_id.eq.${userId},user_id.is.null`)
-  }
 
   const { data, error } = await dbQuery
 
@@ -72,12 +67,12 @@ export async function searchTags(query: string, userId?: string | null): Promise
  * Create a new tag.
  */
 export async function createTag(name: string, color: TagColorId, userId?: string | null): Promise<Tag> {
+  void userId
   const { data, error } = await supabase
     .from('tags')
     .insert({
       name: name.trim(),
       color,
-      user_id: userId ?? null,
     })
     .select()
     .single()

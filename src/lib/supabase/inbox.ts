@@ -27,7 +27,6 @@ export async function createInboxItem(input: CreateInboxItemInput): Promise<Inbo
   const { data, error } = await supabase
     .from('inbox_items')
     .insert({
-      user_id: input.user_id ?? null,
       name: input.name,
       sort_order: input.sort_order ?? 0,
     })

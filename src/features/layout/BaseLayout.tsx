@@ -26,7 +26,7 @@ export function BaseLayout({ children, activeSection, onNavigate }: BaseLayoutPr
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   /* Debug: H2 – ref to measure main content wrapper height on mobile */
   const contentWrapperRef = useRef<HTMLDivElement>(null)
-  const mainRef = useRef<HTMLMainElement>(null)
+  const mainRef = useRef<HTMLElement>(null)
 
   /* Debug: H2/H3 – log layout mount and content dimensions after paint */
   useEffect(() => {
