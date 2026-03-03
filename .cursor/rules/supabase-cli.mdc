@@ -1,0 +1,22 @@
+---
+description: Use Supabase CLI for database changes
+alwaysApply: true
+---
+
+# Supabase CLI & Database Changes
+
+- **Primary DB workflow**: Use the **Supabase CLI** and the `supabase/` folder in this repo for all schema and database changes (migrations, functions, policies, etc.).
+- **Migrations**: When you need to change the database (e.g., add columns, change enums, new tables), prefer:
+  - `supabase migration new <descriptive_name>`
+  - Edit the generated SQL in `supabase/migrations/`
+  - `supabase db push` to apply changes to your Supabase project.
+- **Tasks priority enum**: The `tasks.priority` field is managed in Supabase; when adding new priority values (e.g. `none`, `urgent`), do so via a Supabase migration and `supabase db push`, not by hard-coding assumptions in the app.
+- **Agent permissions**: The AI agent is allowed to:
+  - Create Supabase migrations using the Supabase CLI.
+  - Edit migration SQL files under `supabase/migrations/`.
+  - Run `supabase db push` from the project root to apply schema changes to your Supabase project.
+  - Avoid destructive operations (dropping tables/enums) unless explicitly requested.
+- **Non-goals**:
+  - Do not edit production data directly from migrations or ad-hoc SQL unless the user clearly asks for a data migration.
+  - Do not introduce DB changes outside of the Supabase CLI/migrations flow.
+
