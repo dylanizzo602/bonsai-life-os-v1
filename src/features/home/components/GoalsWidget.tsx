@@ -19,11 +19,16 @@ export interface GoalsWidgetProps {
 }
 
 /**
- * Goals widget: 3 random goals with gauge and name.
+ * Goals widget: 3 random active goals with gauge and name.
+ * Inactive goals remain visible only in the main Goals section.
  */
 export function GoalsWidget({ onViewAll }: GoalsWidgetProps) {
   const { goals } = useGoals()
-  const three = useMemo(() => shuffle(goals).slice(0, 3), [goals])
+  /* Pick up to three active goals (inactive goals are excluded from the widget) */
+  const three = useMemo(
+    () => shuffle(goals.filter((g) => g.is_active !== false)).slice(0, 3),
+    [goals],
+  )
 
   return (
     <DashboardWidget

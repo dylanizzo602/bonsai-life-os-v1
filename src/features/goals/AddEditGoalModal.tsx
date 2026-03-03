@@ -32,6 +32,7 @@ export function AddEditGoalModal({
   const [targetDate, setTargetDate] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [isActive, setIsActive] = useState(true)
 
   const isEditMode = !!goal
 
@@ -43,6 +44,7 @@ export function AddEditGoalModal({
         setDescription(goal.description ?? '')
         setStartDate(goal.start_date)
         setTargetDate(goal.target_date)
+        setIsActive(goal.is_active)
         setDeleteConfirm(false)
       } else {
         /* Default dates: start = today, target = 30 days from today */
@@ -53,6 +55,7 @@ export function AddEditGoalModal({
         setDescription('')
         setStartDate(today.toISOString().slice(0, 10))
         setTargetDate(target.toISOString().slice(0, 10))
+        setIsActive(true)
       }
     }
   }, [isOpen, goal])
@@ -66,6 +69,7 @@ export function AddEditGoalModal({
       description: description.trim() || null,
       start_date: startDate,
       target_date: targetDate,
+      is_active: isActive,
     }
 
     try {
@@ -196,6 +200,32 @@ export function AddEditGoalModal({
               className="w-full px-3 py-2 md:px-4 md:py-2.5 border border-bonsai-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent text-body"
             />
           </div>
+        </div>
+
+        {/* Active / inactive toggle */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-secondary font-medium text-bonsai-slate-700">
+              Show in widgets and briefings
+            </p>
+            <p className="text-secondary text-bonsai-slate-500">
+              When off, this goal stays in the Goals section only.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsActive((prev) => !prev)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              isActive ? 'bg-bonsai-sage-600' : 'bg-bonsai-slate-300'
+            }`}
+            aria-pressed={isActive}
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                isActive ? 'translate-x-5' : 'translate-x-1'
+              }`}
+            />
+          </button>
         </div>
 
         {/* Validation error */}

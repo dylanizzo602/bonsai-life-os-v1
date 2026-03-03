@@ -15,6 +15,7 @@ import type {
 
 /**
  * Fetch all goals ordered by created_at descending.
+ * Returns both active and inactive goals; UI decides how to categorize.
  */
 export async function getGoals(): Promise<Goal[]> {
   const { data, error } = await supabase
@@ -141,6 +142,7 @@ export async function createGoal(input: CreateGoalInput): Promise<Goal> {
     start_date: input.start_date,
     target_date: input.target_date,
     progress: input.progress ?? 0,
+    is_active: input.is_active ?? true,
   }
 
   const { data, error } = await supabase
@@ -187,6 +189,8 @@ export async function updateGoal(id: string, input: UpdateGoalInput): Promise<Go
   if (input.start_date !== undefined) updateData.start_date = input.start_date
   if (input.target_date !== undefined) updateData.target_date = input.target_date
   if (input.progress !== undefined) updateData.progress = input.progress
+   /* Allow toggling active/inactive state */
+  if (input.is_active !== undefined) updateData.is_active = input.is_active
 
   const { data, error } = await supabase
     .from('goals')

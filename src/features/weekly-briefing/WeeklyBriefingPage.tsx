@@ -51,6 +51,12 @@ export function WeeklyBriefingPage() {
   const { goals, refetch: refetchGoals } = useGoals()
   const [milestonesByGoal, setMilestonesByGoal] = useState<Record<string, GoalMilestone[]>>({})
 
+  /* Derive active goals for weekly briefing (inactive goals stay only in Goals section) */
+  const activeGoals = useMemo(
+    () => goals.filter((g) => g.is_active !== false),
+    [goals],
+  )
+
   /* Fetch tasks completed in last 7 days for look-back step */
   useEffect(() => {
     const now = new Date()
@@ -69,15 +75,15 @@ export function WeeklyBriefingPage() {
       .finally(() => setTasksCompletedLoading(false))
   }, [])
 
-  /* Fetch milestones for all goals (for goals step display) */
+  /* Fetch milestones for all active goals (for goals step display) */
   useEffect(() => {
-    if (goals.length === 0) {
+    if (activeGoals.length === 0) {
       setMilestonesByGoal({})
       return
     }
     const fetchMilestones = async () => {
       const map: Record<string, GoalMilestone[]> = {}
-      for (const goal of goals) {
+      for (const goal of activeGoals) {
         try {
           const milestones = await getMilestonesForGoal(goal.id)
           map[goal.id] = milestones
@@ -88,7 +94,7 @@ export function WeeklyBriefingPage() {
       setMilestonesByGoal(map)
     }
     fetchMilestones()
-  }, [goals])
+  }, [activeGoals])
 
   /* Tasks that need review: active/in_progress, no due date or no priority */
   const tasksToReview = useMemo(
@@ -157,7 +163,7 @@ export function WeeklyBriefingPage() {
 
       {step === 1 && (
         <GoalsProgressScreen
-          goals={goals}
+          goals={activeGoals}
           milestonesByGoal={milestonesByGoal}
           onUpdateProgress={setSelectedGoalId}
           onNext={() => setStep(2)}

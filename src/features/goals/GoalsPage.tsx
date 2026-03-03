@@ -21,6 +21,10 @@ export function GoalsPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null)
 
+  /* Split goals into active and inactive for separate sections */
+  const activeGoals = goals.filter((g) => g.is_active !== false)
+  const inactiveGoals = goals.filter((g) => g.is_active === false)
+
   /* Fetch milestones for all goals */
   useEffect(() => {
     const fetchMilestones = async () => {
@@ -143,17 +147,44 @@ export function GoalsPage() {
         </div>
       )}
 
-      {/* Goals grid: responsive (1 col mobile, 2 cols tablet, 3 cols desktop) */}
-      {!loading && goals.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {goals.map((goal) => (
-            <GoalGaugeCard
-              key={goal.id}
-              goal={goal}
-              milestones={milestonesByGoal[goal.id] ?? []}
-              onClick={() => handleGoalClick(goal.id)}
-            />
-          ))}
+      {/* Active goals grid: responsive (1 col mobile, 2 cols tablet, 3 cols desktop) */}
+      {!loading && activeGoals.length > 0 && (
+        <div className="mb-8">
+          <h2 className="mb-3 text-body font-semibold text-bonsai-brown-700">
+            Active goals
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {activeGoals.map((goal) => (
+              <GoalGaugeCard
+                key={goal.id}
+                goal={goal}
+                milestones={milestonesByGoal[goal.id] ?? []}
+                onClick={() => handleGoalClick(goal.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Inactive goals grid: only visible in Goals section */}
+      {!loading && inactiveGoals.length > 0 && (
+        <div>
+          <h2 className="mb-3 text-body font-semibold text-bonsai-brown-700">
+            Inactive goals
+          </h2>
+          <p className="mb-2 text-secondary text-bonsai-slate-600">
+            These goals do not appear in widgets or briefings but can still be updated here.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {inactiveGoals.map((goal) => (
+              <GoalGaugeCard
+                key={goal.id}
+                goal={goal}
+                milestones={milestonesByGoal[goal.id] ?? []}
+                onClick={() => handleGoalClick(goal.id)}
+              />
+            ))}
+          </div>
         </div>
       )}
 
