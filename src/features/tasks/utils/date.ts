@@ -41,30 +41,43 @@ export function isPastStartDate(startDate: string | null | undefined): boolean {
 }
 
 /**
- * Format ISO date as "Jan 22" or "Jan 22 at 3:00pm" when time present. Date-only (YYYY-MM-DD) parsed as local.
+ * Format ISO date as "Jan 22" or "Jan 22 at 3:00pm" when time present.
+ * Treats strings that only encode a midnight time (e.g. "2026-03-31T00:00:00+00:00")
+ * as date-only so that clearing time or storing date-only values does not show
+ * a phantom time from timezone conversion.
  */
 function formatDateWithOptionalTime(isoString: string | null | undefined): string | null {
   if (isoString == null || isoString === '') return null
-  const isDateOnly = !isoString.includes('T')
+
+  // Detect explicit non-midnight time component directly from the string
+  const timeMatch = isoString.match(/T(\d{2}):(\d{2})/)
+  const hasExplicitTime =
+    !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
+
+  const isDateOnly = !isoString.includes('T') || !hasExplicitTime
+
   const d = isDateOnly
     ? (() => {
-        const [y, m, day] = isoString.split('-').map(Number)
+        // When a time component is present but effectively midnight, only use the
+        // date portion (first 10 chars, YYYY-MM-DD) so that timezone offsets
+        // do not create a phantom time.
+        const datePart = isoString.includes('T') ? isoString.slice(0, 10) : isoString
+        const [y, m, day] = datePart.split('-').map(Number)
         return new Date(y, (m ?? 1) - 1, day ?? 1)
       })()
     : new Date(isoString)
+
   if (isNaN(d.getTime())) return null
+
   const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   if (isDateOnly) return dateStr
-  const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0
-  if (hasTime) {
-    const timeStr = d.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
-    return `${dateStr} at ${timeStr}`
-  }
-  return dateStr
+
+  const timeStr = d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+  return `${dateStr} at ${timeStr}`
 }
 
 /**

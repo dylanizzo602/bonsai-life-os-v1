@@ -127,12 +127,6 @@ export function GoalDetailPage({ goalId, onBack }: GoalDetailPageProps) {
     })
   }
 
-  /* Debug: which branch GoalDetailPage renders (loading / error / success) */
-  // #region agent log
-  const branch = loading ? 'loading' : (error || !goal) ? 'error' : 'success'
-  fetch('http://127.0.0.1:7825/ingest/5e4e8d61-5cc8-4de4-815f-8096cfa9d88f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6f20d7'},body:JSON.stringify({sessionId:'6f20d7',location:'GoalDetailPage.tsx:render',message:'detail branch',data:{goalId,loading,error:error||null,hasGoal:!!goal,goalName:goal?.name,branch},timestamp:Date.now(),hypothesisId:'H6'})}).catch(()=>{});
-  // #endregion
-
   if (loading) {
     return (
       <div className="min-h-full">

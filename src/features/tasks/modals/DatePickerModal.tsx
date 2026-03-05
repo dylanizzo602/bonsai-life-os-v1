@@ -31,11 +31,21 @@ function toDateInputValue(iso: string | null): string {
   return d.toISOString().slice(0, 10)
 }
 
-/** Parse ISO string to time input value (HH:mm). Returns empty string for date-only strings. */
+/** Parse ISO string to time input value (HH:mm).
+ * Returns empty string for date-only strings or midnight-only timestamps
+ * (e.g. 2026-03-31T00:00:00+00:00) so cleared times do not reappear.
+ */
 function toTimeInputValue(iso: string | null): string {
   if (!iso) return ''
   /* If date-only string (YYYY-MM-DD), return empty string */
   if (!iso.includes('T')) return ''
+
+  /* If time portion is exactly 00:00, treat as date-only (no time) */
+  const timeMatch = iso.match(/T(\d{2}):(\d{2})/)
+  if (timeMatch && timeMatch[1] === '00' && timeMatch[2] === '00') {
+    return ''
+  }
+
   const d = new Date(iso)
   const hours = d.getHours()
   const mins = d.getMinutes()
@@ -632,7 +642,11 @@ export function DatePickerModal({
                 <button
                   ref={startTimeTriggerRef}
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); setShowStartTime(true); if (!startTime) setStartTime('12:00'); setTimePickerOpen('start') }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowStartTime(true)
+                    setTimePickerOpen('start')
+                  }}
                   className="shrink-0 p-0.5 rounded text-bonsai-slate-500 hover:text-bonsai-slate-700 hover:bg-bonsai-slate-100"
                   aria-label="Open time picker"
                 >
@@ -649,7 +663,21 @@ export function DatePickerModal({
                         setStartTime(p)
                         setStartTimeEdit(formatTimeDisplay(p))
                       } else {
-                        setStartTimeEdit(startTime ? formatTimeDisplay(startTime) : '12:00 PM')
+                        const trimmed = startTimeEdit.trim()
+                        if (!trimmed) {
+                          setStartTime('')
+                          setStartTimeEdit('')
+                          setShowStartTime(false)
+                        } else {
+                          setStartTimeEdit(startTime ? formatTimeDisplay(startTime) : '')
+                        }
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        ;(e.currentTarget as HTMLInputElement).blur()
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
@@ -660,7 +688,10 @@ export function DatePickerModal({
                 ) : (
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); setShowStartTime(true); if (!startTime) setStartTime('12:00'); setStartTimeEdit('12:00 PM') }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowStartTime(true)
+                    }}
                     className="shrink-0 text-secondary text-bonsai-sage-600 hover:text-bonsai-sage-700 whitespace-nowrap"
                   >
                     Add time
@@ -710,7 +741,11 @@ export function DatePickerModal({
                 <button
                   ref={dueTimeTriggerRef}
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); setShowDueTime(true); if (!dueTime) setDueTime('12:00'); setTimePickerOpen('due') }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowDueTime(true)
+                    setTimePickerOpen('due')
+                  }}
                   className="shrink-0 p-0.5 rounded text-bonsai-slate-500 hover:text-bonsai-slate-700 hover:bg-bonsai-slate-100"
                   aria-label="Open time picker"
                 >
@@ -727,7 +762,21 @@ export function DatePickerModal({
                         setDueTime(p)
                         setDueTimeEdit(formatTimeDisplay(p))
                       } else {
-                        setDueTimeEdit(dueTime ? formatTimeDisplay(dueTime) : '12:00 PM')
+                        const trimmed = dueTimeEdit.trim()
+                        if (!trimmed) {
+                          setDueTime('')
+                          setDueTimeEdit('')
+                          setShowDueTime(false)
+                        } else {
+                          setDueTimeEdit(dueTime ? formatTimeDisplay(dueTime) : '')
+                        }
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        ;(e.currentTarget as HTMLInputElement).blur()
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
@@ -738,7 +787,10 @@ export function DatePickerModal({
                 ) : (
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); setShowDueTime(true); if (!dueTime) setDueTime('12:00'); setDueTimeEdit('12:00 PM') }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowDueTime(true)
+                    }}
                     className="shrink-0 text-secondary text-bonsai-sage-600 hover:text-bonsai-sage-700 whitespace-nowrap"
                   >
                     Add time

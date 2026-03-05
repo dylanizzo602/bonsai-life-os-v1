@@ -177,13 +177,20 @@ function TaskStatusIndicator({ status }: { status: DisplayStatus }) {
   )
 }
 
-/** Format ISO date string as "Jan 1, 2025" for tooltip display. Date-only (YYYY-MM-DD) parsed as local. */
+/** Format ISO date string as "Jan 1, 2025" for tooltip display.
+ * Treats midnight timestamps (e.g. 2026-03-31T00:00:00+00:00) as date-only
+ * so tooltips match the main date display and don't shift by timezone.
+ */
 function formatDateForTooltip(isoString: string | null): string | null {
   if (!isoString) return null
-  const isDateOnly = !isoString.includes('T')
+  const timeMatch = isoString.match(/T(\d{2}):(\d{2})/)
+  const hasExplicitTime =
+    !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
+  const isDateOnly = !isoString.includes('T') || !hasExplicitTime
   const d = isDateOnly
     ? (() => {
-        const [y, m, day] = isoString.split('-').map(Number)
+        const datePart = isoString.includes('T') ? isoString.slice(0, 10) : isoString
+        const [y, m, day] = datePart.split('-').map(Number)
         return new Date(y, (m ?? 1) - 1, day ?? 1)
       })()
     : new Date(isoString)
