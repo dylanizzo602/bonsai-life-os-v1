@@ -283,6 +283,22 @@ export function useGoal(goalId: string) {
     [],
   )
 
+  /* Delete goal: calls Supabase deleteGoal; caller should navigate back after success */
+  const handleDeleteGoal = useCallback(
+    async (id: string) => {
+      try {
+        setError(null)
+        await deleteGoal(id)
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : 'Failed to delete goal'
+        setError(errorMessage)
+        throw err
+      }
+    },
+    [],
+  )
+
   /* Recalculate progress from milestones */
   const handleRecalculateProgress = useCallback(async () => {
     if (!goalId) return
@@ -312,6 +328,7 @@ export function useGoal(goalId: string) {
     historyLoading,
     refetchHistory: fetchHistory,
     updateGoal: handleUpdateGoal,
+    deleteGoal: handleDeleteGoal,
     recalculateProgress: handleRecalculateProgress,
   }
 }

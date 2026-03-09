@@ -1,11 +1,13 @@
 /* Reflection types: TypeScript definitions for reflection entries and morning briefing responses */
 
-/** Morning briefing: four reflection questions answered in the briefing flow */
+/** Morning briefing: reflection questions answered in the briefing flow (includes calendar/week and failures list exercises) */
 export interface MorningBriefingResponses {
   memorableMoment?: string
   gratefulFor?: string
   didEverything?: string
   whatWouldMakeEasier?: string
+  calendarWeekInLife?: string
+  failuresList?: string
 }
 
 /** Reflection entry stored in DB (e.g. one completed morning briefing) */

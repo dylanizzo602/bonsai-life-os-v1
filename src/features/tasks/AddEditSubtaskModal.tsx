@@ -349,6 +349,7 @@ export function AddEditSubtaskModal({
             className="border-bonsai-slate-300"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            spellCheck
           />
         </div>
       </div>
@@ -526,6 +527,7 @@ export function AddEditSubtaskModal({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               aria-label="Notes or details"
+              spellCheck
             />
           </div>
 

@@ -5,6 +5,7 @@ import {
   getTaskChecklists,
   getTaskChecklistItems,
   createTaskChecklist,
+  updateTaskChecklist,
   createChecklistItem,
   toggleChecklistItemComplete,
 } from '../../../lib/supabase/tasks'
@@ -62,6 +63,36 @@ export function useTaskChecklists(taskId: string | null) {
     [fetchChecklists],
   )
 
+  /**
+   * Add an item: if no checklists exist, create one ("Checklist") and add the item; otherwise add to first checklist.
+   */
+  const addItemOrCreateChecklist = useCallback(
+    async (itemTitle: string) => {
+      if (!taskId || !itemTitle.trim()) return
+      if (checklists.length === 0) {
+        const newList = await createTaskChecklist({ task_id: taskId, title: 'Checklist' })
+        await createChecklistItem({ checklist_id: newList.id, title: itemTitle.trim() })
+      } else {
+        await createChecklistItem({
+          checklist_id: checklists[0].id,
+          title: itemTitle.trim(),
+        })
+      }
+      await fetchChecklists()
+    },
+    [taskId, checklists, fetchChecklists],
+  )
+
+  /** Rename a checklist by id */
+  const updateChecklistTitle = useCallback(
+    async (checklistId: string, title: string) => {
+      if (!title.trim()) return
+      await updateTaskChecklist(checklistId, { title: title.trim() })
+      await fetchChecklists()
+    },
+    [fetchChecklists],
+  )
+
   const toggleItem = useCallback(
     async (itemId: string, completed: boolean) => {
       await toggleChecklistItemComplete(itemId, completed)
@@ -77,5 +108,14 @@ export function useTaskChecklists(taskId: string | null) {
     [],
   )
 
-  return { checklists, loading, refetch: fetchChecklists, addChecklist, addItem, toggleItem }
+  return {
+    checklists,
+    loading,
+    refetch: fetchChecklists,
+    addChecklist,
+    addItem,
+    addItemOrCreateChecklist,
+    updateChecklistTitle,
+    toggleItem,
+  }
 }

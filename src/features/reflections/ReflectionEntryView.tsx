@@ -14,12 +14,14 @@ interface ReflectionEntryViewProps {
   onBack: () => void
 }
 
-/** Labels for the four morning briefing questions */
+/** Labels for morning briefing questions (including calendar/week and failures list exercises) */
 const QUESTION_LABELS: Record<keyof MorningBriefingResponses, string> = {
   memorableMoment: 'What is one memorable moment from yesterday?',
   gratefulFor: 'What is something you are grateful for?',
   didEverything: 'Did you do everything you were supposed to yesterday? If not, why?',
   whatWouldMakeEasier: 'What would make today easier?',
+  calendarWeekInLife: 'Calendar / week in your life: How did your week look? What would you change?',
+  failuresList: 'Failures list: What didn’t go as planned recently? What can you learn from it?',
 }
 
 /**

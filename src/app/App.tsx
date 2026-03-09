@@ -15,7 +15,7 @@ import { AuthScreen } from '../features/auth/AuthScreen'
 
 /**
  * Screen too small message component
- * Displays when viewport width is less than 320px
+ * Displays when viewport width is less than 300px
  */
 function ScreenTooSmallMessage() {
   return (
@@ -25,7 +25,7 @@ function ScreenTooSmallMessage() {
           Display Too Small
         </h1>
         <p className="text-body text-bonsai-slate-600">
-          Please view this application on a larger screen or device with a width of at least 320px.
+          Please view this application on a larger screen or device with a width of at least 300px.
         </p>
       </div>
     </div>
@@ -40,9 +40,9 @@ function App() {
   /* Auth state: determine whether to show auth screen or main app */
   const { session, loading } = useAuth()
 
-  /* Viewport width detection: Check if screen is too small (< 320px) */
+  /* Viewport width detection: Check if screen is too small (< 300px) */
   const viewportWidth = useViewportWidth()
-  const isScreenTooSmall = viewportWidth > 0 && viewportWidth < 320
+  const isScreenTooSmall = viewportWidth > 0 && viewportWidth < 300
 
   /* Navigation hook: Manage active section state */
   const { activeSection, setActiveSection } = useNavigation('home')
@@ -53,7 +53,12 @@ function App() {
       case 'home':
         return <HomePage onNavigate={setActiveSection} />
       case 'briefings':
-        return <BriefingsPage onNavigateToReflections={() => setActiveSection('reflections')} />
+        return (
+          <BriefingsPage
+            onNavigateToReflections={() => setActiveSection('reflections')}
+            onClose={() => setActiveSection('home')}
+          />
+        )
       case 'weekly-briefing':
         return <WeeklyBriefingPage />
       case 'goals':

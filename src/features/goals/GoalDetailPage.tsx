@@ -38,6 +38,7 @@ export function GoalDetailPage({ goalId, onBack }: GoalDetailPageProps) {
     history,
     historyLoading,
     updateGoal,
+    deleteGoal,
   } = useGoal(goalId)
 
   const {
@@ -195,13 +196,13 @@ export function GoalDetailPage({ goalId, onBack }: GoalDetailPageProps) {
               <div>
                 <p className="text-secondary text-bonsai-slate-600 mb-1">Start Date</p>
                 <p className="text-body font-medium text-bonsai-brown-700">
-                  {formatDate(goal.start_date)}
+                  {goal.start_date ? formatDate(goal.start_date) : '—'}
                 </p>
               </div>
               <div>
                 <p className="text-secondary text-bonsai-slate-600 mb-1">Target Date</p>
                 <p className="text-body font-medium text-bonsai-brown-700">
-                  {formatDate(goal.target_date)}
+                  {goal.target_date ? formatDate(goal.target_date) : '—'}
                 </p>
               </div>
             </div>
@@ -240,11 +241,12 @@ export function GoalDetailPage({ goalId, onBack }: GoalDetailPageProps) {
         <GoalHistorySection history={history} loading={historyLoading} />
       </div>
 
-      {/* Edit goal modal */}
+      {/* Edit goal modal: delete navigates back to goals list */}
       <AddEditGoalModal
         isOpen={editModalOpen}
         onClose={() => setEditModalOpen(false)}
         onUpdateGoal={updateGoal}
+        onDeleteGoal={goal ? async (id) => { await deleteGoal(id); onBack(); } : undefined}
         goal={goal}
       />
 

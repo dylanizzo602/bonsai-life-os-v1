@@ -29,8 +29,9 @@ export function ReflectionQuestionScreen({
   onBack,
   showBack = true,
 }: ReflectionQuestionScreenProps) {
+  /* Container: max-w-full and box-border so briefing text box is not cut off on the sides */
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col w-full max-w-full box-border px-1">
       <h3 className="text-body font-semibold text-bonsai-brown-700 mb-4">
         {question}
       </h3>

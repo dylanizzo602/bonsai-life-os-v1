@@ -1,5 +1,5 @@
 /* TaskList component: Main task management interface with task list and CRUD */
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { FullTaskItem } from './FullTaskItem'
 import { CompactTaskItem } from './CompactTaskItem'
 import { SubtaskList } from './SubtaskList'
@@ -19,6 +19,8 @@ import type { Reminder } from '../reminders/types'
 export interface TaskListProps {
   /** Tasks from useTasks */
   tasks: Task[]
+  /** Task IDs that are "available" (can be worked on); used to auto-expand when all available and show subtasks separately when parent not available */
+  availableTaskIds?: Set<string>
   /** Loading state */
   loading: boolean
   /** Error message */
@@ -106,6 +108,7 @@ export interface TaskListProps {
  */
 export function TaskList({
   tasks,
+  availableTaskIds = new Set(),
   loading,
   error,
   filters: _filters,
@@ -242,6 +245,27 @@ export function TaskList({
       setEnrichmentLoading(false)
     }
   }, [tasks, fetchSubtasks])
+
+  /* When enrichment first loads for current tasks: default-expand tasks that are available and have subtasks (so "all can be worked on" shows expanded). Only apply once per task set so user collapse is not overwritten. */
+  const taskIdsRef = useRef<string>('')
+  const appliedDefaultExpandRef = useRef(false)
+  useEffect(() => {
+    const taskIds = tasks.map((t) => t.id).join(',')
+    if (taskIds !== taskIdsRef.current) {
+      taskIdsRef.current = taskIds
+      appliedDefaultExpandRef.current = false
+    }
+    if (Object.keys(taskEnrichment).length === 0 || appliedDefaultExpandRef.current) return
+    appliedDefaultExpandRef.current = true
+    setExpandedTasks((prev) => {
+      const next = new Set(prev)
+      for (const task of tasks) {
+        const en = taskEnrichment[task.id]
+        if (en?.hasSubtasks && availableTaskIds.has(task.id)) next.add(task.id)
+      }
+      return next
+    })
+  }, [taskEnrichment, tasks, availableTaskIds])
 
   const toggleExpand = (taskId: string) => {
     setExpandedTasks((prev) => {

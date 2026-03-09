@@ -35,7 +35,8 @@ export function GoalGaugeCard({ goal, milestones = [], onClick }: GoalGaugeCardP
   const totalCount = milestones.length
 
   /* Format dates for display */
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return '—'
     const date = new Date(dateString + 'T12:00:00')
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }
@@ -58,8 +59,8 @@ export function GoalGaugeCard({ goal, milestones = [], onClick }: GoalGaugeCardP
           size={120}
           className="mb-3"
         >
-          <div className="px-2">
-            <h3 className="text-body font-semibold text-bonsai-brown-700 text-center line-clamp-2">
+          <div className="px-2 min-w-0">
+            <h3 className="text-body font-semibold text-bonsai-brown-700 text-center break-words">
               {goal.name}
             </h3>
           </div>

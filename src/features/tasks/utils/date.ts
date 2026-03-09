@@ -40,6 +40,50 @@ export function isPastStartDate(startDate: string | null | undefined): boolean {
   return endOfStart < Date.now()
 }
 
+/** Parse ISO to Date using local date for date-only/midnight so timezone does not shift the calendar day (e.g. Feb 28 UTC midnight stays Feb 28 local) */
+function parseISODateLocal(isoString: string | null | undefined): Date | null {
+  if (isoString == null || isoString === '') return null
+  const timeMatch = isoString.match(/T(\d{2}):(\d{2})/)
+  const hasExplicitTime =
+    !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
+  const isDateOnly = !isoString.includes('T') || !hasExplicitTime
+  if (isDateOnly) {
+    const datePart = isoString.includes('T') ? isoString.slice(0, 10) : isoString
+    const [y, m, day] = datePart.split('-').map(Number)
+    const d = new Date(y ?? 0, (m ?? 1) - 1, day ?? 1)
+    return isNaN(d.getTime()) ? null : d
+  }
+  const d = new Date(isoString)
+  return isNaN(d.getTime()) ? null : d
+}
+
+/** Ordinal suffix for day of month: 1st, 2nd, 3rd, 4th, ... */
+function ordinalSuffix(day: number): string {
+  if (day >= 11 && day <= 13) return 'th'
+  switch (day % 10) {
+    case 1: return 'st'
+    case 2: return 'nd'
+    case 3: return 'rd'
+    default: return 'th'
+  }
+}
+
+/** Format date with ordinal day for "Starts Oct 6th" style (date-only or midnight treated as local). */
+export function formatDateWithOrdinal(isoString: string | null | undefined): string | null {
+  const d = parseISODateLocal(isoString)
+  if (!d) return null
+  const month = d.toLocaleDateString('en-US', { month: 'short' })
+  const day = d.getDate()
+  return `${month} ${day}${ordinalSuffix(day)}`
+}
+
+/** Format as "Jan 22" using local date (date-only/midnight not shifted by timezone). For use in pills and inputs. */
+export function formatDateShort(isoString: string | null | undefined): string | null {
+  const d = parseISODateLocal(isoString)
+  if (!d) return null
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 /**
  * Format ISO date as "Jan 22" or "Jan 22 at 3:00pm" when time present.
  * Treats strings that only encode a midnight time (e.g. "2026-03-31T00:00:00+00:00")
@@ -47,27 +91,13 @@ export function isPastStartDate(startDate: string | null | undefined): boolean {
  * a phantom time from timezone conversion.
  */
 function formatDateWithOptionalTime(isoString: string | null | undefined): string | null {
-  if (isoString == null || isoString === '') return null
+  const d = parseISODateLocal(isoString)
+  if (!d) return null
 
-  // Detect explicit non-midnight time component directly from the string
-  const timeMatch = isoString.match(/T(\d{2}):(\d{2})/)
+  const timeMatch = isoString?.match(/T(\d{2}):(\d{2})/)
   const hasExplicitTime =
     !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
-
-  const isDateOnly = !isoString.includes('T') || !hasExplicitTime
-
-  const d = isDateOnly
-    ? (() => {
-        // When a time component is present but effectively midnight, only use the
-        // date portion (first 10 chars, YYYY-MM-DD) so that timezone offsets
-        // do not create a phantom time.
-        const datePart = isoString.includes('T') ? isoString.slice(0, 10) : isoString
-        const [y, m, day] = datePart.split('-').map(Number)
-        return new Date(y, (m ?? 1) - 1, day ?? 1)
-      })()
-    : new Date(isoString)
-
-  if (isNaN(d.getTime())) return null
+  const isDateOnly = !isoString?.includes('T') || !hasExplicitTime
 
   const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   if (isDateOnly) return dateStr
@@ -97,7 +127,7 @@ export function formatStartDueDisplay(
   const hasDue = dueDate != null && dueDate !== ''
   if (!hasStart && !hasDue) return null
   if (hasStart && !hasDue) {
-    const formatted = formatDateWithOptionalTime(startDate)
+    const formatted = formatDateWithOrdinal(startDate) ?? formatDateWithOptionalTime(startDate)
     if (!formatted) return null
     return isPastStartDate(startDate) ? `Started ${formatted}` : `Starts ${formatted}`
   }

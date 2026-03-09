@@ -63,6 +63,8 @@ const PRIORITY_ORDER: Record<Task['priority'], number> = {
 const AVAILABLE_DEFAULT_FILTER_CONDITIONS: FilterCondition[] = [
   { id: 'av-status', field: 'status', operator: 'is_not', value: 'Complete' },
   { id: 'av-deps', field: 'dependencies', operator: 'doesnt_have', value: 'Waiting on' },
+  /* Exclude tasks with no priority from Available view */
+  { id: 'av-priority', field: 'priority', operator: 'is_not', value: 'none' },
   { id: 'av-start', field: 'start_date', operator: 'is', value: 'Now & earlier' },
 ]
 
@@ -743,7 +745,7 @@ export function TasksPage() {
   }, [selectedSavedViewId])
 
   /* Filter pipeline: Archive/Trash first, then by view, then by filter (custom), then by search, then by sort. */
-  const { filteredTasks, filteredReminders, filteredHabitReminders } = useMemo(() => {
+  const { filteredTasks, filteredReminders, filteredHabitReminders, availableTaskIds } = useMemo(() => {
     /* Reminders: hide soft-deleted; exclude reminders that are linked to habits (we show those as recurring HabitReminderItem instead). */
     const habitReminderIds = new Set(
       habitsWithStreaks.map((h) => h.reminder_id).filter((id): id is string => id != null)
@@ -764,6 +766,7 @@ export function TasksPage() {
         filteredTasks: list,
         filteredReminders: [],
         filteredHabitReminders: [],
+        availableTaskIds: new Set<string>(),
       }
     }
     if (showDeleted) {
@@ -772,6 +775,7 @@ export function TasksPage() {
         filteredTasks: list,
         filteredReminders: [],
         filteredHabitReminders: [],
+        availableTaskIds: new Set<string>(),
       }
     }
 
@@ -957,6 +961,17 @@ export function TasksPage() {
         break
     }
 
+    /* Available task IDs: tasks that can be worked on (same logic as Available view); used for subtask expand/separate behavior */
+    const availableTaskIds = new Set(
+      viewTasks.filter((t) => {
+        if (t.status === 'archived' || t.status === 'deleted') return false
+        for (const c of AVAILABLE_DEFAULT_FILTER_CONDITIONS) {
+          if (!evaluateFilterCondition(c, t, blockedTaskIds, blockingTaskIds)) return false
+        }
+        return true
+      }).map((t) => t.id),
+    )
+
     /* By search: client-side match on task title/description and reminder name. */
     const q = searchQuery.trim().toLowerCase()
     if (q) {
@@ -965,14 +980,37 @@ export function TasksPage() {
           (t.title ?? '').toLowerCase().includes(q) ||
           (t.description ?? '').toLowerCase().includes(q),
       )
-      // Reminders are not filtered by search in plan for now; optionally filter:
-      // remindersFiltered = remindersFiltered.filter((r) => (r.name ?? '').toLowerCase().includes(q))
+      /* Search affects reminders and habit reminders: filter by name/title */
+      remindersFiltered = remindersFiltered.filter((r) =>
+        (r.name ?? '').toLowerCase().includes(q),
+      )
+      habitRemindersFiltered = habitRemindersFiltered.filter(({ habit }) =>
+        (habit.name ?? '').toLowerCase().includes(q),
+      )
+    }
+
+    /* All view default sort: when no custom sort is set, sort all tasks by due date (earliest first) */
+    if (viewMode === 'all' && sortBy.length === 0) {
+      viewTasks = [...viewTasks].sort((a, b) => {
+        const aDue = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER
+        const bDue = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER
+        if (aDue !== bDue) return aDue - bDue
+        const aStart = a.start_date ? new Date(a.start_date).getTime() : Number.MAX_SAFE_INTEGER
+        const bStart = b.start_date ? new Date(b.start_date).getTime() : Number.MAX_SAFE_INTEGER
+        return aStart - bStart
+      })
+      remindersFiltered = [...remindersFiltered].sort((a, b) => {
+        const aAt = a.remind_at ? new Date(a.remind_at).getTime() : Number.MAX_SAFE_INTEGER
+        const bAt = b.remind_at ? new Date(b.remind_at).getTime() : Number.MAX_SAFE_INTEGER
+        return aAt - bAt
+      })
     }
 
     return {
       filteredTasks: viewTasks,
       filteredReminders: remindersFiltered,
       filteredHabitReminders: habitRemindersFiltered,
+      availableTaskIds,
     }
   }, [
     tasks,
@@ -1310,12 +1348,13 @@ export function TasksPage() {
           }
         }}
         onApply={() => setViewMode('custom')}
-        defaultSortLabel={viewMode === 'all' && sortBy.length === 0 ? 'Default order (newest first)' : undefined}
+        defaultSortLabel={viewMode === 'all' && sortBy.length === 0 ? 'Default order (due date)' : undefined}
       />
 
       {/* Task list: tasks and reminders; Archive/Trash at bottom rendered inside TaskList */}
       <TaskList
         tasks={filteredTasks}
+        availableTaskIds={availableTaskIds}
         loading={loading}
         error={error}
         filters={filters}

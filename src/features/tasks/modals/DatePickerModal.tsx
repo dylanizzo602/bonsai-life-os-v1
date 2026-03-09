@@ -811,9 +811,9 @@ export function DatePickerModal({
           </div>
         </div>
 
-        {/* Suggested dates (left) or recurring settings; calendar (right); flex-1 min-h-0 so content fits viewport */}
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden md:grid-cols-[14rem_1fr] md:gap-8">
-          <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+        {/* Suggested dates (left) or recurring settings; calendar (right); flex-1 min-h-0 so content fits viewport; overflow-auto so date box in recurring section is not cut off */}
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-auto md:grid-cols-[14rem_1fr] md:gap-8">
+          <div className="flex min-h-0 min-w-0 flex-col overflow-visible">
             {showRecurringSection ? (
               <RecurringSettingsSection
                 value={recurrencePattern}

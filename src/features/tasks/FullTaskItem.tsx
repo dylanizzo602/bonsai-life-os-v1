@@ -394,10 +394,10 @@ export function FullTaskItem({
       }
       className="group flex items-center justify-between gap-4 rounded-lg border border-bonsai-slate-200 bg-white px-4 py-3 transition-colors hover:bg-bonsai-slate-50"
     >
-      {/* Left section: subtask arrow (desktop hover) or chevron, status, task name, then other icons */}
+      {/* Left section: subtask arrow (desktop hover) or chevron, status, task name, then other icons; minimal left padding so status circle has no excess whitespace */}
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {/* Left icons before task name: Subtask arrow (desktop hover) and status circle */}
-        <div ref={leftIconsBeforeRef} className="flex shrink-0 items-center gap-2">
+        {/* Left icons before task name: Subtask arrow (desktop hover) and status circle; gap-1.5 to reduce whitespace next to status circle */}
+        <div ref={leftIconsBeforeRef} className="flex shrink-0 items-center gap-1.5">
           {/* Subtask arrow: Tooltip = Expand/Collapse when task has subtasks, "Create subtask" when it doesn't; click expands and may focus add-subtask input */}
           {onToggleExpand && (
             <Tooltip
@@ -545,8 +545,8 @@ export function FullTaskItem({
               </span>
             </span>
           )}
-          {/* Tags: Clickable pills to open tag modal - only show when task has tags */}
-          {task.tags && task.tags.length > 0 && (
+          {/* Tags: Clickable pills to open tag modal - only show when task has tags (defensive: tags may be undefined from some fetch paths) */}
+          {(task.tags ?? []).length > 0 && (
             <button
               ref={tagButtonRef}
               type="button"
@@ -561,7 +561,7 @@ export function FullTaskItem({
               disabled={!onUpdateTask}
               title="Add or edit tags"
             >
-              {task.tags.slice(0, 3).map((t) => (
+              {(task.tags ?? []).slice(0, 3).map((t) => (
                 <span
                   key={t.id}
                   className={`rounded px-2 py-0.5 text-xs font-medium ${

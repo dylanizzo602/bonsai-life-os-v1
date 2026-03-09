@@ -76,6 +76,9 @@ export function OverdueScreen({
         </>
       ) : (
         <>
+          <p className="text-body font-semibold text-bonsai-brown-700 mb-2">
+            What you were supposed to do yesterday (tasks, reminders, habits)
+          </p>
           <p className="text-body font-medium text-bonsai-slate-700 mb-4">
             Here are overdue items from before today. Clear or update them, then continue.
           </p>

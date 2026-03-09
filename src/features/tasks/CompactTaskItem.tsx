@@ -12,6 +12,7 @@ import {
   TrophyIcon,
   ChevronDownIcon,
   HourglassIcon,
+  ParagraphIcon,
 } from '../../components/icons'
 import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { Tooltip } from '../../components/Tooltip'
@@ -241,9 +242,15 @@ export function CompactTaskItem({
         )}
       </div>
       {/* Bottom row: all icons and metadata in one row (horizontal scroll on tablet/mobile/compact) */}
-      <div className="mt-2 flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto text-xs text-bonsai-slate-600">
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-xs text-bonsai-slate-600">
         {/* Tag: show first tag if available; shrink-0 so row stays single line */}
         {(tagDisplay != null ? <span className={tagPillClass}>{tagDisplay.name}</span> : null)}
+        {/* Description icon when task has description (consistent with main task list) */}
+        {task.description?.trim() ? (
+          <span className="shrink-0 text-bonsai-slate-500" aria-label="Has description">
+            <ParagraphIcon className="w-3.5 h-3.5" />
+          </span>
+        ) : null}
         {/* Dependency icons: blocked and blocking */}
         {(isBlocked || isBlocking) && (
           <div className="flex shrink-0 items-center gap-1.5">

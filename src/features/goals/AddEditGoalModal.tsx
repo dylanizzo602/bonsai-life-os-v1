@@ -42,33 +42,32 @@ export function AddEditGoalModal({
       if (goal) {
         setName(goal.name)
         setDescription(goal.description ?? '')
-        setStartDate(goal.start_date)
-        setTargetDate(goal.target_date)
+        setStartDate(goal.start_date ?? '')
+        setTargetDate(goal.target_date ?? '')
         setIsActive(goal.is_active)
         setDeleteConfirm(false)
       } else {
-        /* Default dates: start = today, target = 30 days from today */
-        const today = new Date()
-        const target = new Date(today)
-        target.setDate(target.getDate() + 30)
+        /* Create mode: leave dates empty so they are optional */
         setName('')
         setDescription('')
-        setStartDate(today.toISOString().slice(0, 10))
-        setTargetDate(target.toISOString().slice(0, 10))
+        setStartDate('')
+        setTargetDate('')
         setIsActive(true)
       }
     }
   }, [isOpen, goal])
 
-  /* Handle form submission */
+  /* Handle form submission: only name required; start/target dates optional */
   const handleSubmit = async () => {
-    if (!name.trim() || !startDate || !targetDate) return
+    if (!name.trim()) return
+    /* If both dates set, require start <= target */
+    if (startDate && targetDate && startDate > targetDate) return
 
     const input: CreateGoalInput | UpdateGoalInput = {
       name: name.trim(),
       description: description.trim() || null,
-      start_date: startDate,
-      target_date: targetDate,
+      start_date: startDate.trim() || null,
+      target_date: targetDate.trim() || null,
       is_active: isActive,
     }
 
@@ -105,8 +104,8 @@ export function AddEditGoalModal({
     }
   }
 
-  /* Validate dates */
-  const isValid = name.trim() && startDate && targetDate && startDate <= targetDate
+  /* Validate: name required; if both dates set, start must be <= target */
+  const isValid = name.trim() && (!startDate || !targetDate || startDate <= targetDate)
 
   const titleNode = (
     <div>

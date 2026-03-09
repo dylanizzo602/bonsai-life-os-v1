@@ -50,9 +50,10 @@ export function HabitReminderItem({
   /* Overdue flag: true when remindAt is set and the notification time is in the past */
   const isRemindOverdue = Boolean(remindAt && isOverdue(remindAt))
 
+  /* Compact layout: flex-wrap on small screens so habit name, time, and actions are not cut off; single row on larger screens */
   return (
     <div
-      className="flex items-center gap-3 rounded-lg border border-bonsai-slate-200 bg-white p-3 md:p-4 hover:bg-bonsai-slate-50 transition-colors text-left"
+      className="flex flex-wrap items-center gap-2 rounded-lg border border-bonsai-slate-200 bg-white p-2.5 md:gap-3 md:p-4 hover:bg-bonsai-slate-50 transition-colors text-left min-w-0"
       role="article"
       aria-label={`Habit reminder: ${habit.name}, streak ${habit.currentStreak}`}
     >
@@ -66,15 +67,25 @@ export function HabitReminderItem({
         </span>
       </div>
 
-      {/* Habit name: flex-1, truncate if long */}
+      {/* Habit name: flex-1 min-w-0 so it can shrink; break-words so long names wrap instead of being cut off */}
       <div className="flex-1 min-w-0">
-        <span className="text-body text-bonsai-brown-700 truncate block">
+        <span className="text-body text-bonsai-brown-700 break-words block">
           {habit.name}
         </span>
       </div>
 
+      {/* Notification date: bell + time (show next to name so it stays visible on mobile) */}
+      <div
+        className={`flex shrink-0 items-center gap-1.5 text-secondary text-sm md:text-base ${
+          isRemindOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-500'
+        }`}
+      >
+        <BellIcon className="w-4 h-4 shrink-0" aria-hidden />
+        <span className="whitespace-nowrap">{formatNotificationDate(remindAt)}</span>
+      </div>
+
       {/* Actions: Complete and Skip buttons */}
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2 w-full sm:w-auto">
         <Button
           type="button"
           variant="secondary"
@@ -101,18 +112,6 @@ export function HabitReminderItem({
             Skip
           </Button>
         )}
-      </div>
-
-      {/* Notification date: bell icon + formatted time; red when overdue */}
-      <div
-        className={`flex shrink-0 items-center gap-1.5 text-secondary ${
-          isRemindOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-500'
-        }`}
-      >
-        <BellIcon className="w-4 h-4 md:w-5 md:h-5" aria-hidden />
-        <span className="whitespace-nowrap">
-          {formatNotificationDate(remindAt)}
-        </span>
       </div>
     </div>
   )

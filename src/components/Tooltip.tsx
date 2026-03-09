@@ -31,9 +31,10 @@ export function Tooltip({
   size,
   className = '',
 }: TooltipProps) {
-  /* State management: Track hover state and tooltip position */
+  /* State management: Track hover state, tooltip position, and arrow offset so arrow stays aligned with trigger after viewport clamp */
   const [isVisible, setIsVisible] = useState(false)
   const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 })
+  const [arrowOffset, setArrowOffset] = useState<number | null>(null)
   const triggerRef = useRef<HTMLSpanElement>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
 
@@ -95,6 +96,12 @@ export function Tooltip({
       left = Math.max(minLeft, Math.min(maxLeft, left))
       top = Math.max(minTop, Math.min(maxTop, top))
 
+      /* Arrow offset: position arrow so it points at trigger center (fixes misalignment when tooltip is clamped) */
+      const triggerCenterX = triggerRect.left + triggerRect.width / 2
+      const triggerCenterY = triggerRect.top + triggerRect.height / 2
+      const arrowOffsetX = triggerCenterX - (left - scrollX)
+      const arrowOffsetY = triggerCenterY - (top - scrollY)
+      setArrowOffset(position === 'top' || position === 'bottom' ? arrowOffsetX : arrowOffsetY)
       setTooltipPosition({ top, left })
     }
 
@@ -114,12 +121,24 @@ export function Tooltip({
   }
   const paddingClasses = size ? fixedPaddingClasses[size] : responsivePaddingClasses
 
-  /* Arrow positioning: CSS classes for arrow based on position with border matching tooltip */
+  /* Arrow positioning: when arrowOffset is set, position arrow so it points at trigger (stays aligned after clamp); otherwise center on tooltip */
+  const arrowPositionStyle =
+    arrowOffset != null
+      ? (position === 'top' || position === 'bottom'
+          ? { left: arrowOffset, transform: 'translateX(-50%)' }
+          : { top: arrowOffset, transform: 'translateY(-50%)' })
+      : undefined
   const arrowClasses = {
-    top: 'bottom-[-8px] left-1/2 -translate-x-1/2',
-    bottom: 'top-[-8px] left-1/2 -translate-x-1/2',
-    left: 'right-[-8px] top-1/2 -translate-y-1/2',
-    right: 'left-[-8px] top-1/2 -translate-y-1/2',
+    top: 'bottom-[-8px]',
+    bottom: 'top-[-8px]',
+    left: 'right-[-8px]',
+    right: 'left-[-8px]',
+  }
+  const arrowCenterClasses = {
+    top: 'left-1/2 -translate-x-1/2',
+    bottom: 'left-1/2 -translate-x-1/2',
+    left: 'top-1/2 -translate-y-1/2',
+    right: 'top-1/2 -translate-y-1/2',
   }
   
   /* Border classes: Remove border from the side where arrow appears to prevent overlap */
@@ -188,10 +207,13 @@ export function Tooltip({
     return true
   }
 
-  /* Hide tooltip when switching to tablet/mobile/compact so no tooltip lingers */
+  /* Hide tooltip when switching to tablet/mobile/compact so no tooltip lingers; reset arrow offset when hidden */
   useEffect(() => {
     if (!tooltipsEnabled) setIsVisible(false)
   }, [tooltipsEnabled])
+  useEffect(() => {
+    if (!isVisible) setArrowOffset(null)
+  }, [isVisible])
 
   /* Hover handlers: Show/hide tooltip on hover only on desktop; only if content is provided */
   const handleMouseEnter = () => {
@@ -233,11 +255,10 @@ export function Tooltip({
             {content}
           </div>
 
-          {/* Arrow pointer: Positioned based on tooltip position, styled to match tooltip */}
-          {/* Clean white arrow without border - border removed from tooltip box prevents overlap */}
+          {/* Arrow pointer: Positioned to align with trigger (arrowOffset) or centered on tooltip */}
           <div
-            className={`absolute ${arrowClasses[position]} w-0 h-0`}
-            style={arrowStyles[position]}
+            className={`absolute ${arrowClasses[position]} w-0 h-0 ${arrowPositionStyle ? '' : arrowCenterClasses[position]}`}
+            style={{ ...arrowStyles[position], ...arrowPositionStyle }}
           />
         </div>
       )}

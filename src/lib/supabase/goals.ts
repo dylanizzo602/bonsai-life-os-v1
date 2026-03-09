@@ -139,8 +139,8 @@ export async function createGoal(input: CreateGoalInput): Promise<Goal> {
   const insertData: Record<string, unknown> = {
     name: input.name,
     description: input.description ?? null,
-    start_date: input.start_date,
-    target_date: input.target_date,
+    start_date: input.start_date ?? null,
+    target_date: input.target_date ?? null,
     progress: input.progress ?? 0,
     is_active: input.is_active ?? true,
   }
@@ -186,8 +186,8 @@ export async function updateGoal(id: string, input: UpdateGoalInput): Promise<Go
   const updateData: Record<string, unknown> = {}
   if (input.name !== undefined) updateData.name = input.name
   if (input.description !== undefined) updateData.description = input.description
-  if (input.start_date !== undefined) updateData.start_date = input.start_date
-  if (input.target_date !== undefined) updateData.target_date = input.target_date
+  if (input.start_date !== undefined) updateData.start_date = input.start_date ?? null
+  if (input.target_date !== undefined) updateData.target_date = input.target_date ?? null
   if (input.progress !== undefined) updateData.progress = input.progress
    /* Allow toggling active/inactive state */
   if (input.is_active !== undefined) updateData.is_active = input.is_active

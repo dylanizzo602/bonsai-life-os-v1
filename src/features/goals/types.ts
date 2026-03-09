@@ -32,14 +32,14 @@ export interface GoalMilestone {
   task?: Task | null
 }
 
-/** Goal entity: main goal with name, dates, progress, and active flag */
+/** Goal entity: main goal with name, optional dates, progress, and active flag */
 export interface Goal {
   id: string
   user_id: string | null
   name: string
   description: string | null
-  start_date: string
-  target_date: string
+  start_date: string | null
+  target_date: string | null
   progress: number
   is_active: boolean
   created_at: string
@@ -76,8 +76,8 @@ export interface CreateGoalInput {
   name: string
   user_id?: string | null
   description?: string | null
-  start_date: string
-  target_date: string
+  start_date?: string | null
+  target_date?: string | null
   progress?: number
   is_active?: boolean
 }
@@ -86,8 +86,8 @@ export interface CreateGoalInput {
 export interface UpdateGoalInput {
   name?: string
   description?: string | null
-  start_date?: string
-  target_date?: string
+  start_date?: string | null
+  target_date?: string | null
   progress?: number
   is_active?: boolean
 }

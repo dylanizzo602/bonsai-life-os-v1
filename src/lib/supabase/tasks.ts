@@ -181,6 +181,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     parent_id: input.parent_id ?? null,
     goal_id: input.goal_id ?? null,
     recurrence_pattern: input.recurrence_pattern ?? null,
+    status: input.status ?? 'active',
   }
 
   const { data, error } = await supabase
@@ -466,6 +467,28 @@ export async function createTaskChecklist(
 
   if (error) {
     console.error('Error creating checklist:', error)
+    throw error
+  }
+
+  return data as TaskChecklist
+}
+
+/**
+ * Update a checklist (e.g. rename title)
+ */
+export async function updateTaskChecklist(
+  id: string,
+  updates: { title?: string; sort_order?: number },
+): Promise<TaskChecklist> {
+  const { data, error } = await supabase
+    .from('task_checklists')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Error updating checklist:', error)
     throw error
   }
 

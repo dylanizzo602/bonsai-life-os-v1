@@ -1,6 +1,7 @@
 /* DescriptionTooltip component: Tooltip that displays task description in a read-only box matching the modal style */
 import type { ReactNode } from 'react'
 import { Tooltip } from './Tooltip'
+import { descriptionToHtml } from '../features/tasks/utils/descriptionDisplay'
 
 interface DescriptionTooltipProps {
   /** Description text to display in the tooltip */
@@ -30,11 +31,12 @@ export function DescriptionTooltip({
       ? '1 attachment' 
       : `${attachmentCount} attachments`
 
-  /* Tooltip content: Styled box with description text and attachment count at bottom */
+  /* Tooltip content: Styled box with description (links clickable, line breaks preserved) and attachment count at bottom */
+  const descriptionHtml = descriptionToHtml(description)
   const tooltipContent = (
     <div className="w-full min-w-[200px] max-w-[400px] px-3 py-2 text-sm text-bonsai-slate-700">
-      {/* Description text: Preserves whitespace and line breaks */}
-      <div className="whitespace-pre-wrap mb-2">{description}</div>
+      {/* Description: Rendered HTML with clickable links and <br /> for newlines */}
+      <div className="mb-2 break-words" dangerouslySetInnerHTML={{ __html: descriptionHtml }} />
       {/* Attachment count: Shown at bottom with paperclip icon */}
       <div className="flex items-center gap-1.5 text-xs text-bonsai-slate-500 pt-2 border-t border-bonsai-slate-200">
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

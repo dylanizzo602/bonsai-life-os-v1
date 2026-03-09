@@ -10,15 +10,19 @@ import type { Task } from '../../tasks/types'
 import { Button } from '../../../components/Button'
 
 export interface LineUpWidgetProps {
+  /** When provided, use these tasks (e.g. from parent useTasks) so edits from lineup update the same source and widget re-renders */
+  tasks?: Task[]
   onOpenEditTask?: (task: Task) => void
   onOpenAddToLineup?: () => void
 }
 
 /**
  * Line Up widget: tasks in today's lineup in compact view; remove from lineup; add to lineup (navigate or picker).
+ * When tasks prop is provided, uses it so edits from this widget update the same list (fixes lineup not updating after edit).
  */
-export function LineUpWidget({ onOpenEditTask, onOpenAddToLineup }: LineUpWidgetProps) {
-  const { tasks } = useTasks()
+export function LineUpWidget({ tasks: tasksProp, onOpenEditTask, onOpenAddToLineup }: LineUpWidgetProps) {
+  const tasksFromHook = useTasks().tasks
+  const tasks = tasksProp ?? tasksFromHook
   const [orderedIds, setOrderedIds] = useState<string[]>([])
 
   /* Load lineup from localStorage on mount */

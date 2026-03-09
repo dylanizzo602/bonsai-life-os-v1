@@ -19,6 +19,8 @@ import {
   TagIcon,
   HourglassIcon,
 } from '../../components/icons'
+import { parseRecurrencePattern, getNextOccurrence } from '../../lib/recurrence'
+import { formatDateShort } from './utils/date'
 import { DatePickerModal } from './modals/DatePickerModal'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { TagModal } from './modals/TagModal'
@@ -205,11 +207,21 @@ export function AddEditTaskModal({
   const [attachmentModalOpen, setAttachmentModalOpen] = useState(false)
   const [previewAttachment, setPreviewAttachment] = useState<TaskAttachment | null>(null)
   const [newChecklistTitle, setNewChecklistTitle] = useState('')
+  const [newChecklistItem, setNewChecklistItem] = useState('')
   const [newItemTitles, setNewItemTitles] = useState<Record<string, string>>({})
+  const [editingChecklistId, setEditingChecklistId] = useState<string | null>(null)
+  const [editingChecklistTitle, setEditingChecklistTitle] = useState('')
 
   const isEditMode = Boolean(task?.id)
-  const { checklists, loading: checklistsLoading, addChecklist, addItem, toggleItem } =
-    useTaskChecklists(task?.id ?? null)
+  const {
+    checklists,
+    loading: checklistsLoading,
+    addChecklist,
+    addItem,
+    addItemOrCreateChecklist,
+    updateChecklistTitle,
+    toggleItem,
+  } = useTaskChecklists(task?.id ?? null)
   const {
     searchTags,
     createTag,
@@ -235,10 +247,12 @@ export function AddEditTaskModal({
       setAttachments(Array.isArray(task.attachments) ? task.attachments : [])
       setStatus(getDisplayStatus(task.status))
     } else {
+      /* Add mode: default start and due to today (date-only, local) so user has a clear starting point */
+      const todayYMD = new Date().toISOString().slice(0, 10)
       setTitle(initialTitle ?? '')
       setDescription('')
-      setStartDate(null)
-      setDueDate(null)
+      setStartDate(todayYMD)
+      setDueDate(todayYMD)
       setRecurrencePattern(null)
       setPriority('medium')
       setGoalId(null)
@@ -279,11 +293,22 @@ export function AddEditTaskModal({
     if (!onCreateTask) return
     setSubmitting(true)
     try {
+      /* When saving a recurring task with no start/due, set to next instance from today */
+      let effectiveStart = start_date || null
+      let effectiveDue = due_date || null
+      if (recurrence_pattern && (!effectiveStart || !effectiveDue)) {
+        const todayYMD = new Date().toISOString().slice(0, 10)
+        const pattern = parseRecurrencePattern(recurrence_pattern)
+        const nextYMD = pattern ? getNextOccurrence(pattern, todayYMD) : null
+        const fallback = nextYMD ?? todayYMD
+        if (!effectiveDue) effectiveDue = fallback
+        if (!effectiveStart) effectiveStart = fallback
+      }
       const input: CreateTaskInput = {
         title: title.trim(),
         description: description.trim() || null,
-        start_date: start_date || null,
-        due_date: due_date || null,
+        start_date: effectiveStart,
+        due_date: effectiveDue,
         recurrence_pattern: recurrence_pattern ?? null,
         priority,
         time_estimate,
@@ -317,12 +342,8 @@ export function AddEditTaskModal({
     }
   }
 
-  /* Format date for pill display */
-  const formatDate = (iso: string | null) => {
-    if (!iso) return null
-    const d = new Date(iso)
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  }
+  /* Format date for pill display (use local date so Feb 28 UTC midnight shows as Feb 28) */
+  const formatDate = formatDateShort
   const formatEstimate = (min: number | null) =>
     min == null ? null : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`.replace(/ 0m$/, '')
 
@@ -372,23 +393,39 @@ export function AddEditTaskModal({
             className="border-bonsai-slate-300"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            spellCheck
           />
         </div>
       </div>
 
       {/* Metadata pills: open sub-modals */}
       <div className="flex flex-wrap gap-2 mb-4">
-        <button
-          ref={datePickerButtonRef}
-          type="button"
-          onClick={() => setDatePickerOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
-        >
-          <CalendarIcon className="w-4 h-4 text-bonsai-slate-600" />
-          {formatDate(start_date) || formatDate(due_date)
-            ? `Due: ${formatDate(due_date) ?? formatDate(start_date)}`
-            : 'Add start/due date'}
-        </button>
+        <div className="inline-flex items-center gap-1">
+          <button
+            ref={datePickerButtonRef}
+            type="button"
+            onClick={() => setDatePickerOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
+          >
+            <CalendarIcon className="w-4 h-4 text-bonsai-slate-600" />
+            {formatDate(start_date) || formatDate(due_date)
+              ? `Due: ${formatDate(due_date) ?? formatDate(start_date)}`
+              : 'Add start/due date'}
+          </button>
+          {(start_date || due_date) && (
+            <button
+              type="button"
+              onClick={() => {
+                setStartDate(null)
+                setDueDate(null)
+              }}
+              className="rounded-full px-2 py-1.5 text-sm font-medium text-bonsai-slate-500 hover:text-bonsai-slate-700 hover:bg-bonsai-slate-100 transition-colors"
+              aria-label="Clear start and due date"
+            >
+              Clear
+            </button>
+          )}
+        </div>
         <button
           ref={priorityButtonRef}
           type="button"
@@ -396,11 +433,13 @@ export function AddEditTaskModal({
           className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
         >
           <FlagIcon className="w-4 h-4 text-bonsai-slate-600" />
-          {priority !== 'medium' && priority !== 'none'
-            ? `Priority: ${priority}`
+          {priority === 'medium'
+            ? 'Priority: Normal'
             : priority === 'none'
               ? 'Priority: None'
-              : 'Set priority'}
+              : priority !== 'none'
+                ? `Priority: ${priority}`
+                : 'Set priority'}
         </button>
         <button
           ref={tagButtonRef}
@@ -551,6 +590,7 @@ export function AddEditTaskModal({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               aria-label="Notes or details"
+              spellCheck
             />
           </div>
 
@@ -639,16 +679,17 @@ export function AddEditTaskModal({
               <p className="text-sm text-bonsai-slate-500">Create the task first to add checklists.</p>
             ) : (
               <>
+                {/* Single prompt: add a new checklist item; on first add creates checklist and adds item */}
                 <div className="flex gap-2 mb-3">
                   <Input
-                    placeholder="Create a new checklist"
+                    placeholder="Add a new checklist item"
                     className="border-bonsai-slate-300 flex-1"
-                    value={newChecklistTitle}
-                    onChange={(e) => setNewChecklistTitle(e.target.value)}
+                    value={newChecklistItem}
+                    onChange={(e) => setNewChecklistItem(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
-                        addChecklist(newChecklistTitle)
-                        setNewChecklistTitle('')
+                        addItemOrCreateChecklist(newChecklistItem)
+                        setNewChecklistItem('')
                       }
                     }}
                   />
@@ -656,10 +697,10 @@ export function AddEditTaskModal({
                     variant="secondary"
                     size="sm"
                     onClick={() => {
-                      addChecklist(newChecklistTitle)
-                      setNewChecklistTitle('')
+                      addItemOrCreateChecklist(newChecklistItem)
+                      setNewChecklistItem('')
                     }}
-                    disabled={!newChecklistTitle.trim() || checklistsLoading}
+                    disabled={!newChecklistItem.trim() || checklistsLoading}
                   >
                     Add
                   </Button>
@@ -670,7 +711,43 @@ export function AddEditTaskModal({
                   <ul className="space-y-3">
                     {checklists.map((c) => (
                       <li key={c.id} className="rounded-lg border border-bonsai-slate-200 p-2">
-                        <p className="text-sm font-medium text-bonsai-slate-700 mb-2">{c.title}</p>
+                        {/* Checklist title: editable on click or via Rename */}
+                        <div className="flex items-center gap-2 mb-2">
+                          {editingChecklistId === c.id ? (
+                            <Input
+                              className="border-bonsai-slate-300 flex-1 text-sm font-medium"
+                              value={editingChecklistTitle}
+                              onChange={(e) => setEditingChecklistTitle(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  updateChecklistTitle(c.id, editingChecklistTitle)
+                                  setEditingChecklistId(null)
+                                }
+                                if (e.key === 'Escape') setEditingChecklistId(null)
+                              }}
+                              autoFocus
+                            />
+                          ) : (
+                            <p className="text-sm font-medium text-bonsai-slate-700 flex-1">
+                              {c.title}
+                            </p>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (editingChecklistId === c.id) {
+                                updateChecklistTitle(c.id, editingChecklistTitle)
+                                setEditingChecklistId(null)
+                              } else {
+                                setEditingChecklistId(c.id)
+                                setEditingChecklistTitle(c.title)
+                              }
+                            }}
+                          >
+                            {editingChecklistId === c.id ? 'Save' : 'Rename'}
+                          </Button>
+                        </div>
                         <ul className="space-y-1 mb-2">
                           {c.items.map((item) => (
                             <li key={item.id} className="flex items-center gap-2">
@@ -721,6 +798,32 @@ export function AddEditTaskModal({
                     ))}
                   </ul>
                 )}
+                {/* Create another list: optional row when user wants a second checklist */}
+                <div className="flex gap-2 mt-3">
+                  <Input
+                    placeholder="Create another list"
+                    className="border-bonsai-slate-300 flex-1"
+                    value={newChecklistTitle}
+                    onChange={(e) => setNewChecklistTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        addChecklist(newChecklistTitle)
+                        setNewChecklistTitle('')
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      addChecklist(newChecklistTitle)
+                      setNewChecklistTitle('')
+                    }}
+                    disabled={!newChecklistTitle.trim() || checklistsLoading}
+                  >
+                    Add list
+                  </Button>
+                </div>
               </>
             )}
           </div>
