@@ -8,6 +8,8 @@ import {
   updateTaskChecklist,
   createChecklistItem,
   toggleChecklistItemComplete,
+  updateChecklistItem,
+  deleteChecklistItem,
 } from '../../../lib/supabase/tasks'
 import type { TaskChecklist, TaskChecklistItem } from '../types'
 
@@ -108,6 +110,25 @@ export function useTaskChecklists(taskId: string | null) {
     [],
   )
 
+  /** Rename a single checklist item by id */
+  const updateItemTitle = useCallback(
+    async (itemId: string, title: string) => {
+      if (!title.trim()) return
+      await updateChecklistItem(itemId, { title: title.trim() })
+      await fetchChecklists()
+    },
+    [fetchChecklists],
+  )
+
+  /** Delete a checklist item by id */
+  const deleteItem = useCallback(
+    async (itemId: string) => {
+      await deleteChecklistItem(itemId)
+      await fetchChecklists()
+    },
+    [fetchChecklists],
+  )
+
   return {
     checklists,
     loading,
@@ -117,5 +138,7 @@ export function useTaskChecklists(taskId: string | null) {
     addItemOrCreateChecklist,
     updateChecklistTitle,
     toggleItem,
+    updateItemTitle,
+    deleteItem,
   }
 }

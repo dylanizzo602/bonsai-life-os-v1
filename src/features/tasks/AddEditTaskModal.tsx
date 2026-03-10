@@ -211,6 +211,8 @@ export function AddEditTaskModal({
   const [newItemTitles, setNewItemTitles] = useState<Record<string, string>>({})
   const [editingChecklistId, setEditingChecklistId] = useState<string | null>(null)
   const [editingChecklistTitle, setEditingChecklistTitle] = useState('')
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [editingItemTitle, setEditingItemTitle] = useState('')
 
   const isEditMode = Boolean(task?.id)
   const {
@@ -221,6 +223,8 @@ export function AddEditTaskModal({
     addItemOrCreateChecklist,
     updateChecklistTitle,
     toggleItem,
+    updateItemTitle,
+    deleteItem,
   } = useTaskChecklists(task?.id ?? null)
   const {
     searchTags,
@@ -755,15 +759,60 @@ export function AddEditTaskModal({
                                 checked={item.completed}
                                 onChange={(e) => toggleItem(item.id, e.target.checked)}
                               />
-                              <span
-                                className={
-                                  item.completed
-                                    ? 'text-sm text-bonsai-slate-500 line-through'
-                                    : 'text-sm text-bonsai-slate-700'
-                                }
+                              {editingItemId === item.id ? (
+                                <Input
+                                  className="border-bonsai-slate-300 flex-1 text-sm"
+                                  value={editingItemTitle}
+                                  onChange={(e) => setEditingItemTitle(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      updateItemTitle(item.id, editingItemTitle)
+                                      setEditingItemId(null)
+                                    }
+                                    if (e.key === 'Escape') {
+                                      setEditingItemId(null)
+                                    }
+                                  }}
+                                  autoFocus
+                                />
+                              ) : (
+                                <span
+                                  className={
+                                    item.completed
+                                      ? 'text-sm text-bonsai-slate-500 line-through flex-1'
+                                      : 'text-sm text-bonsai-slate-700 flex-1'
+                                  }
+                                >
+                                  {item.title}
+                                </span>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  if (editingItemId === item.id) {
+                                    updateItemTitle(item.id, editingItemTitle)
+                                    setEditingItemId(null)
+                                  } else {
+                                    setEditingItemId(item.id)
+                                    setEditingItemTitle(item.title)
+                                  }
+                                }}
                               >
-                                {item.title}
-                              </span>
+                                {editingItemId === item.id ? 'Save' : 'Rename'}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  deleteItem(item.id)
+                                  if (editingItemId === item.id) {
+                                    setEditingItemId(null)
+                                  }
+                                }}
+                              >
+                                Delete
+                              </Button>
                             </li>
                           ))}
                         </ul>

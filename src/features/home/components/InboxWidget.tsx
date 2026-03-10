@@ -2,21 +2,37 @@
 
 import { useState } from 'react'
 import { DashboardWidget } from './DashboardWidget'
-import { useInbox } from '../hooks/useInbox'
-import type { InboxItem } from '../types'
+import type { CreateInboxItemInput, InboxItem } from '../types'
 import { Button } from '../../../components/Button'
 import { Input } from '../../../components/Input'
 import { PlusIcon } from '../../../components/icons'
 
 export interface InboxWidgetProps {
+  /** Current inbox items to display */
+  items: InboxItem[]
+  /** Loading state while inbox items are fetched */
+  loading: boolean
+  /** Error message if inbox failed to load */
+  error: string | null
+  /** Handler to add a new inbox item */
+  onAddItem: (input: CreateInboxItemInput) => Promise<InboxItem>
+  /** Handler to delete an inbox item */
+  onDeleteItem: (id: string) => Promise<void>
+  /** Callback when the user chooses to convert an inbox item into a task */
   onConvertToTask: (item: InboxItem) => void
 }
 
 /**
  * Inbox widget: add items (name only), list with hover "Convert to task" and delete.
  */
-export function InboxWidget({ onConvertToTask }: InboxWidgetProps) {
-  const { items, loading, error, addItem, deleteItem } = useInbox()
+export function InboxWidget({
+  items,
+  loading,
+  error,
+  onAddItem,
+  onDeleteItem,
+  onConvertToTask,
+}: InboxWidgetProps) {
   const [newName, setNewName] = useState('')
   const [hoverId, setHoverId] = useState<string | null>(null)
 
@@ -24,7 +40,7 @@ export function InboxWidget({ onConvertToTask }: InboxWidgetProps) {
     const name = newName.trim()
     if (!name) return
     try {
-      await addItem({ name })
+      await onAddItem({ name })
       setNewName('')
     } catch {
       // error state from hook
@@ -82,7 +98,7 @@ export function InboxWidget({ onConvertToTask }: InboxWidgetProps) {
                   </Button>
                   <button
                     type="button"
-                    onClick={() => deleteItem(item.id)}
+                    onClick={() => onDeleteItem(item.id)}
                     className="rounded p-1 text-bonsai-slate-500 hover:bg-bonsai-slate-200 hover:text-bonsai-slate-700"
                     aria-label={`Delete ${item.name}`}
                   >

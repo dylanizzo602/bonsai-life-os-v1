@@ -580,6 +580,40 @@ export async function toggleChecklistItemComplete(
 }
 
 /**
+ * Update a checklist item (e.g. rename title or adjust sort_order).
+ */
+export async function updateChecklistItem(
+  id: string,
+  updates: { title?: string; sort_order?: number },
+): Promise<TaskChecklistItem> {
+  const { data, error } = await supabase
+    .from('task_checklist_items')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Error updating checklist item:', error)
+    throw error
+  }
+
+  return data as TaskChecklistItem
+}
+
+/**
+ * Delete a checklist item by id.
+ */
+export async function deleteChecklistItem(id: string): Promise<void> {
+  const { error } = await supabase.from('task_checklist_items').delete().eq('id', id)
+
+  if (error) {
+    console.error('Error deleting checklist item:', error)
+    throw error
+  }
+}
+
+/**
  * Create a task dependency (blocker blocks blocked)
  */
 export async function createTaskDependency(

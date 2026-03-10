@@ -54,7 +54,13 @@ export function HomePage({ onNavigate }: HomePageProps) {
     onAddDependency,
     onRemoveDependency,
   } = useTasks()
-  const { deleteItem: deleteInboxItem } = useInbox()
+  const {
+    items: inboxItems,
+    loading: inboxLoading,
+    error: inboxError,
+    addItem: addInboxItem,
+    deleteItem: deleteInboxItem,
+  } = useInbox()
 
   /* Customize widgets: show move up/down and hide controls */
   const [isCustomizing, setIsCustomizing] = useState(false)
@@ -199,7 +205,16 @@ export function HomePage({ onNavigate }: HomePageProps) {
                     onOpenAddToLineup={handleAddToLineup}
                   />
                 )}
-                {id === 'inbox' && <InboxWidget onConvertToTask={openConvertToTask} />}
+                {id === 'inbox' && (
+                  <InboxWidget
+                    items={inboxItems}
+                    loading={inboxLoading}
+                    error={inboxError}
+                    onAddItem={addInboxItem}
+                    onDeleteItem={deleteInboxItem}
+                    onConvertToTask={openConvertToTask}
+                  />
+                )}
                 {id === 'habits' && <HabitsWidget onViewAll={() => onNavigate?.('habits')} />}
                 {id === 'reflections' && (
                   <ReflectionsWidget onReadEntry={() => onNavigate?.('reflections')} />
