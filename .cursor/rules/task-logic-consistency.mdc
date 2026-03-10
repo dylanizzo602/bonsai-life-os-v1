@@ -1,0 +1,59 @@
+---
+description: Ensure task behavior and date/overdue logic stay consistent across desktop, tablet, and mobile task UIs.
+alwaysApply: true
+---
+
+# Task Logic Consistency Across Devices
+
+All task-related logic must be **shared** across desktop, tablet, and mobile views so behavior is consistent everywhere.
+
+## Core Principles
+
+- **Single source of truth**:
+  - Reuse shared helpers (e.g. `formatStartDueDisplay`, `getDueStatus`) and hooks (e.g. `useTasks`) for:
+    - Due/overdue/due-soon classification
+    - Start/due date display text (including “Today” wording)
+    - Status transitions (open/in progress/completed)
+    - Filtering and visibility rules (e.g. Available view, hiding completed subtasks)
+  - Do **not** re-implement these behaviors inside individual components for specific breakpoints.
+
+- **Consistent behavior across breakpoints**:
+  - `FullTaskItem` (desktop), `TabletTaskItem` (tablet), and `CompactTaskItem` (mobile/compact) must:
+    - Use the same helpers for date formatting and due status.
+    - Apply the same color semantics for due states:
+      - Overdue ⇒ red text.
+      - Due within 24 hours or due **today** ⇒ yellow/amber text.
+      - Everything else ⇒ neutral text.
+    - Respect the same rules for when tasks/subtasks appear or are hidden in a given view.
+  - Visual layout may differ per breakpoint, but **business logic and state transitions must not**.
+
+- **Shared filtering behavior**:
+  - Task filters and view modes (e.g. Available, All, Custom) are defined in `TasksPage` and must be applied uniformly:
+    - Subtasks shown via `SubtaskList` should receive props (e.g. `hideCompletedSubtasks`) derived from the same filters and view mode as their parent tasks.
+    - Do not special-case subtasks differently on mobile vs desktop.
+
+- **Completion and refresh behavior**:
+  - All completion actions (desktop row, tablet item, etc.) must:
+    - Go through the same shared handlers exposed by `useTasks` (e.g. `toggleComplete`, `updateTask`) or other central hooks.
+    - Update the shared task state so the UI reflects changes immediately without requiring a manual page refresh.
+  - If a new completion entry point is added (e.g. a new button in a modal), it should call the same shared completion handler instead of duplicating logic.
+
+## When Implementing or Editing Task UIs
+
+- Prefer:
+  - Adding or updating logic in shared helpers/hooks under `src/features/tasks/` and `src/lib/supabase/` **once**.
+  - Having each UI component (desktop/tablet/mobile) consume those helpers via imports and props.
+
+- Avoid:
+  - Copy-pasting date, overdue, or filter logic into individual components.
+  - Having different breakpoints decide overdue/due-soon status using different code paths.
+  - Divergent visibility rules for subtasks between desktop, tablet, and mobile.
+
+## Example (Overdue / Due Soon)
+
+- ✅ **GOOD** (shared helper):
+  - `FullTaskItem`, `TabletTaskItem`, and `CompactTaskItem` all import and use `getDueStatus` from `./utils/date` and apply colors based on that single enum.
+
+- ❌ **BAD** (duplicated logic):
+  - `FullTaskItem` uses `getDueStatus` but `TabletTaskItem` calls `isOverdue` directly and hardcodes red styling.
+

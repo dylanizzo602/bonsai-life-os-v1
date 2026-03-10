@@ -13,6 +13,7 @@ import {
   ChevronDownIcon,
   HourglassIcon,
   ParagraphIcon,
+  TasksIcon,
 } from '../../components/icons'
 import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { Tooltip } from '../../components/Tooltip'
@@ -28,6 +29,8 @@ export interface CompactTaskItemProps {
   task: Task
   /** Whether this task has subtasks (shows chevron and allows expand/collapse) */
   hasSubtasks?: boolean
+  /** Total number of subtasks linked to this task (for subtask count indicator) */
+  subtaskCount?: number
   /** Whether subtasks section is expanded */
   expanded?: boolean
   /** Toggle expand/collapse when chevron is clicked */
@@ -139,6 +142,7 @@ function getPriorityFlagClasses(priority: TaskPriority): string {
 export function CompactTaskItem({
   task,
   hasSubtasks = false,
+  subtaskCount = 0,
   expanded = false,
   onToggleExpand,
   isBlocked = false,
@@ -192,10 +196,10 @@ export function CompactTaskItem({
           : undefined
       }
     >
-      {/* Top row: chevron (if has subtasks), status circle, and task name */}
+      {/* Top row: chevron (when expand/collapse is supported), status circle, and task name */}
       <div className="flex items-center gap-2">
-        {/* Chevron: show when task has subtasks; click toggles expand without opening edit */}
-        {hasSubtasks && (
+        {/* Chevron: show whenever onToggleExpand is provided; click toggles expand without opening edit */}
+        {onToggleExpand && (
           <button
             type="button"
             onClick={(e) => {
@@ -204,7 +208,7 @@ export function CompactTaskItem({
             }}
             className="shrink-0 flex items-center justify-center w-6 h-6 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-800 transition-colors"
             aria-expanded={expanded}
-            aria-label={expanded ? 'Collapse subtasks' : 'Expand subtasks'}
+            aria-label={expanded ? 'Collapse subtasks' : hasSubtasks ? 'Expand subtasks' : 'Show subtasks'}
           >
             <ChevronDownIcon
               className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`}
@@ -244,9 +248,16 @@ export function CompactTaskItem({
         )}
       </div>
       {/* Bottom row: all icons and metadata in one row (horizontal scroll on tablet/mobile/compact) */}
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-xs text-bonsai-slate-600">
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1 text-xs text-bonsai-slate-600">
         {/* Tag: show first tag if available; shrink-0 so row stays single line */}
         {(tagDisplay != null ? <span className={tagPillClass}>{tagDisplay.name}</span> : null)}
+        {/* Subtask count indicator: shows total subtasks when present, using a distinct tasks icon */}
+        {hasSubtasks && subtaskCount > 0 && (
+          <span className="flex shrink-0 items-center gap-0.5 text-bonsai-slate-600">
+            <TasksIcon className="w-3.5 h-3.5" aria-hidden />
+            <span>{subtaskCount}</span>
+          </span>
+        )}
         {/* Description icon when task has description (consistent with main task list) */}
         {task.description?.trim() ? (
           <span className="shrink-0 text-bonsai-slate-500" aria-label="Has description">

@@ -591,6 +591,7 @@ export function TaskList({
                   <CompactTaskItem
                     task={task}
                     hasSubtasks={enrichment.hasSubtasks}
+                    subtaskCount={enrichment.subtaskCount}
                     expanded={isExpanded}
                     onToggleExpand={() => toggleExpand(task.id)}
                     onClick={() => editingNameTaskId !== task.id && onOpenEditModal?.(task)}

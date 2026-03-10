@@ -6,6 +6,7 @@ import { CompactTaskItem } from './CompactTaskItem'
 import { AddEditSubtaskModal } from './AddEditSubtaskModal'
 import { getTaskChecklists, getTaskChecklistItems, getTaskDependencies as fetchTaskDependencies } from '../../lib/supabase/tasks'
 import type { Task } from './types'
+import { TaskContextPopover } from './modals/TaskContextPopover'
 
 interface SubtaskListProps {
   /** Parent task ID */
@@ -72,6 +73,8 @@ export function SubtaskList({
     blockingCount: number
     blockedByCount: number
   }>>({})
+  const [contextSubtask, setContextSubtask] = useState<Task | null>(null)
+  const [contextPosition, setContextPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
 
   /* Load subtasks when taskId changes */
   useEffect(() => {
@@ -220,6 +223,11 @@ export function SubtaskList({
               <CompactTaskItem
                 key={subtask.id}
                 task={subtask}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setContextSubtask(subtask)
+                  setContextPosition({ x: e.clientX, y: e.clientY })
+                }}
                 onClick={() => openEditModal(subtask)}
                 isBlocked={enrichment.isBlocked}
                 isBlocking={enrichment.isBlocking}
@@ -261,6 +269,41 @@ export function SubtaskList({
           onAddDependency={onAddDependency}
           onRemoveDependency={onRemoveDependency}
           onDependenciesChanged={loadEnrichment}
+        />
+      )}
+      {/* Subtask context menu: Right-click on a subtask shows Rename / Duplicate / Mark deleted (no lineup/archiving) */}
+      {contextSubtask && (
+        <TaskContextPopover
+          isOpen={true}
+          onClose={() => setContextSubtask(null)}
+          x={contextPosition.x}
+          y={contextPosition.y}
+          task={contextSubtask}
+          onRename={(t) => {
+            setContextSubtask(null)
+            setEditingSubtask(t)
+            setEditModalOpen(true)
+          }}
+          onDuplicate={async (t) => {
+            try {
+              const duplicated = await onCreateSubtask(taskId, `${t.title} (copy)`)
+              setSubtasks((prev) => [...prev, duplicated])
+            } catch (err) {
+              console.error('Error duplicating subtask:', err)
+            } finally {
+              setContextSubtask(null)
+            }
+          }}
+          onMarkDeleted={async (t) => {
+            try {
+              await _onDeleteTask(t.id)
+              setSubtasks((prev) => prev.filter((s) => s.id !== t.id))
+            } catch (err) {
+              console.error('Error deleting subtask:', err)
+            } finally {
+              setContextSubtask(null)
+            }
+          }}
         />
       )}
     </div>

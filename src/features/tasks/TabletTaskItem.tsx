@@ -12,12 +12,14 @@ import {
   RepeatIcon,
   FlagIcon,
   TrophyIcon,
+  ChevronDownIcon,
+  TasksIcon,
 } from '../../components/icons'
 import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { Tooltip } from '../../components/Tooltip'
 import { TimeEstimateTooltip } from './modals/TimeEstimateTooltip'
 import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
-import { isOverdue, formatStartDueDisplay } from './utils/date'
+import { getDueStatus, formatStartDueDisplay } from './utils/date'
 import type { Task, TaskPriority, TaskStatus } from './types'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
@@ -26,6 +28,10 @@ type DisplayStatus = 'open' | 'in_progress' | 'complete'
 export interface TabletTaskItemProps {
   /** Task data to display */
   task: Task
+  /** Whether this task has subtasks (shows chevron and allows expand/collapse) */
+  hasSubtasks?: boolean
+  /** Total number of subtasks linked to this task (for subtask count indicator) */
+  subtaskCount?: number
   /** Checklist completed/total when task has checklists */
   checklistSummary?: { completed: number; total: number }
   /** Total time in minutes (task estimate + sum of subtask estimates) for tooltip display */
@@ -58,6 +64,12 @@ export interface TabletTaskItemProps {
   formatDueDate?: (iso: string | null | undefined) => string | null
   /** Optional status update handler (used to complete/reopen tasks, including recurring) */
   onUpdateStatus?: (taskId: string, status: TaskStatus) => Promise<void>
+  /** Whether subtasks section is expanded (for tablet expand/collapse) */
+  expanded?: boolean
+  /** Toggle expand/collapse when chevron is tapped */
+  onToggleExpand?: () => void
+  /** Called when expanding to add a first subtask (optional; focuses add input) */
+  onExpandForSubtask?: () => void
 }
 
 /** Map TaskStatus to display status for the status circle */
@@ -153,6 +165,8 @@ export function TabletTaskItem({
   blockingCount: _blockingCount = 0,
   blockedByCount: _blockedByCount = 0,
   isShared = false,
+  hasSubtasks = false,
+  subtaskCount = 0,
   onClick,
   onContextMenu,
   inlineEditTitle,
@@ -160,11 +174,16 @@ export function TabletTaskItem({
   onDependencyClick,
   formatDueDate: _formatDueDate,
   onUpdateStatus,
+  expanded = false,
+  onToggleExpand,
+  onExpandForSubtask,
 }: TabletTaskItemProps) {
   const displayStatus = getDisplayStatus(task.status)
   /* Date display: single line for start/due (Starts Jan 1, Due Jan 3 at 5pm, Jan 1 - Jan 3 at 5pm, etc.) */
   const dateDisplay = formatStartDueDisplay(task.start_date, task.due_date)
-  const isDueOverdue = Boolean(task.due_date && isOverdue(task.due_date))
+  const dueStatus = getDueStatus(task.due_date)
+  const isDueOverdue = dueStatus === 'overdue'
+  const isDueSoon = dueStatus === 'dueSoon'
   const isRecurring = Boolean(task.recurrence_pattern)
   const priority: TaskPriority = task.priority ?? 'medium'
 
@@ -186,8 +205,27 @@ export function TabletTaskItem({
           : undefined
       }
     >
-      {/* Top row: status circle and task name */}
+      {/* Top row: subtask chevron (when expand/collapse is supported), status circle, and task name */}
       <div className="flex items-center gap-2">
+        {/* Subtask chevron: tap to expand/collapse subtasks on tablet */}
+        {onToggleExpand && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              const wasExpanded = expanded
+              onToggleExpand()
+              if (!wasExpanded && !hasSubtasks) onExpandForSubtask?.()
+            }}
+            className="shrink-0 flex items-center justify-center w-6 h-6 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-800 transition-colors"
+            aria-expanded={expanded}
+            aria-label={expanded ? 'Collapse subtasks' : hasSubtasks ? 'Expand subtasks' : 'Show subtasks'}
+          >
+            <ChevronDownIcon
+              className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+        )}
         {/* Status circle: tap toggles between Open and Complete using shared status handler (same behavior as desktop status picker) */}
         <button
           type="button"
@@ -254,11 +292,11 @@ export function TabletTaskItem({
           </button>
         )}
       </div>
-      {/* Bottom row: all icons and metadata in one row (no wrap; horizontal scroll on tablet/mobile) */}
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-xs text-bonsai-slate-600">
+      {/* Bottom row: all icons and metadata in one tight horizontal row (no wrap; minimal gaps) */}
+      <div className="mt-1 flex min-w-0 flex-nowrap items-center justify-start gap-0.5 overflow-x-auto text-xs text-bonsai-slate-600">
         {/* Dependency icons: blocked and blocking icons immediately after task name */}
         {(isBlocked || isBlocking) && (
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1">
             {/* Blocked icon: No tooltip in tablet view */}
             {isBlocked && (
               <button
@@ -288,6 +326,13 @@ export function TabletTaskItem({
               </button>
             )}
           </div>
+        )}
+        {/* Subtask count indicator: shows total subtasks when present, distinct from reminder/recurrence icons */}
+        {hasSubtasks && subtaskCount > 0 && (
+          <span className="flex shrink-0 items-center gap-0.5 text-bonsai-slate-600">
+            <TasksIcon className="w-3.5 h-3.5" />
+            <span>{subtaskCount}</span>
+          </span>
         )}
         {/* Description icon: No tooltip in tablet view */}
         {task.description?.trim() && (
@@ -362,7 +407,7 @@ export function TabletTaskItem({
             </span>
           </Tooltip>
         )}
-        {/* Date/time: tooltip with frequency when recurring; visual layout matches normal tasks */}
+        {/* Date/time: tooltip with frequency when recurring; visual layout matches normal tasks; color shows overdue (red) vs due-soon (yellow) */}
         {dateDisplay && (
           isRecurring ? (
             <Tooltip
@@ -374,13 +419,29 @@ export function TabletTaskItem({
               position="top"
               size="sm"
             >
-              <span className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${isDueOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-600'}`}>
+              <span
+                className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${
+                  isDueOverdue
+                    ? 'text-red-600 font-medium'
+                    : isDueSoon
+                      ? 'text-amber-600 font-medium'
+                      : 'text-bonsai-slate-600'
+                }`}
+              >
                 <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
                 <span className="truncate">{dateDisplay}</span>
               </span>
             </Tooltip>
           ) : (
-            <span className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${isDueOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-600'}`}>
+            <span
+              className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${
+                isDueOverdue
+                  ? 'text-red-600 font-medium'
+                  : isDueSoon
+                    ? 'text-amber-600 font-medium'
+                    : 'text-bonsai-slate-600'
+              }`}
+            >
               <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
               <span className="truncate">{dateDisplay}</span>
             </span>

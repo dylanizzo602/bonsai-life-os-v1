@@ -267,7 +267,7 @@ export function AddEditTaskModal({
     }
   }, [isOpen, task, initialTitle])
 
-  /* Submit: create or update task with all form fields */
+  /* Submit: create or update task with all form fields (invoked by callers that still want explicit save) */
   const handleSubmit = async () => {
     if (!title.trim()) return
     if (isEditMode && task && onUpdateTask) {
@@ -362,24 +362,14 @@ export function AddEditTaskModal({
       title={isEditMode ? 'Edit Task' : 'Add Task'}
       fullScreenOnMobile
       footer={
-        <>
+        <div className="flex w-full items-center justify-between">
+          <span className="text-secondary text-bonsai-slate-500">
+            Changes are automatically saved
+          </span>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            Close
           </Button>
-          <Button
-            variant="primary"
-            onClick={handleSubmit}
-            disabled={submitting || !title.trim()}
-          >
-            {submitting
-              ? isEditMode
-                ? 'Saving...'
-                : 'Adding...'
-              : isEditMode
-                ? 'Save'
-                : 'Add Task'}
-          </Button>
-        </>
+        </div>
       }
     >
       {/* Main task input: Status circle on left, input field on right */}

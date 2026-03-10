@@ -45,41 +45,27 @@ export type DueStatus = 'none' | 'dueSoon' | 'overdue'
 
 /**
  * Get due status for a given due date:
- * - 'overdue': now is after the end of the due date (same semantics as isOverdue).
- * - 'dueSoon': due is within the next 24 hours but not yet overdue.
+ * - 'overdue': due calendar day is strictly before today.
+ * - 'dueSoon': due calendar day is today, or in the future but within the next 24 hours.
  * - 'none': all other cases (no due date or further in the future).
  */
 export function getDueStatus(dueDate: string | null | undefined): DueStatus {
   if (!dueDate) return 'none'
-  const nowMs = Date.now()
-  const isDateOnly = !dueDate.includes('T')
+  const due = parseISODateLocal(dueDate)
+  if (!due) return 'none'
 
-  const endOfDue =
-    isDateOnly
-      ? (() => {
-          const [y, m, day] = dueDate.split('-').map(Number)
-          const d = new Date(y, (m ?? 1) - 1, day ?? 1)
-          d.setHours(23, 59, 59, 999)
-          return d.getTime()
-        })()
-      : new Date(dueDate).getTime()
+  const today = new Date()
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0)
+  const todayKey = todayStart.getFullYear() * 10000 + (todayStart.getMonth() + 1) * 100 + todayStart.getDate()
+  const dueKey = due.getFullYear() * 10000 + (due.getMonth() + 1) * 100 + due.getDate()
 
-  if (Number.isNaN(endOfDue)) return 'none'
-  if (endOfDue < nowMs) return 'overdue'
+  if (dueKey < todayKey) return 'overdue'
+  if (dueKey === todayKey) return 'dueSoon'
 
-  // For date-only values, use start of the day; for datetime, use the exact time.
-  const startOfWindow =
-    isDateOnly
-      ? (() => {
-          const [y, m, day] = dueDate.split('-').map(Number)
-          const d = new Date(y, (m ?? 1) - 1, day ?? 1)
-          d.setHours(0, 0, 0, 0)
-          return d.getTime()
-        })()
-      : endOfDue
-
+  // Future date: mark as dueSoon when the start of that day is within the next 24 hours.
+  const dueStart = new Date(due.getFullYear(), due.getMonth(), due.getDate(), 0, 0, 0, 0)
   const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000
-  const diff = startOfWindow - nowMs
+  const diff = dueStart.getTime() - today.getTime()
 
   if (diff >= 0 && diff <= TWENTY_FOUR_HOURS_MS) return 'dueSoon'
   return 'none'

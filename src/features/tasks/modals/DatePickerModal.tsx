@@ -330,13 +330,13 @@ function getCalendarCells(viewMonth: Date): CalendarCell[] {
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
-/** Format today's date as DD/MM/YYYY for input placeholders without changing selected value */
+/** Format today's date as MM/DD/YYYY for input placeholders without changing selected value */
 function formatTodayPlaceholder(): string {
   const today = new Date()
-  const dd = String(today.getDate()).padStart(2, '0')
   const mm = String(today.getMonth() + 1).padStart(2, '0')
+  const dd = String(today.getDate()).padStart(2, '0')
   const yyyy = today.getFullYear()
-  return `${dd}/${mm}/${yyyy}`
+  return `${mm}/${dd}/${yyyy}`
 }
 
 /** Calendar icon for date fields */

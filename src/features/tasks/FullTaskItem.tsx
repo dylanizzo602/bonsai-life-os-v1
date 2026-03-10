@@ -14,6 +14,7 @@ import {
   UsersIcon,
   RepeatIcon,
   HourglassIcon,
+  TasksIcon,
 } from '../../components/icons'
 import { Tooltip } from '../../components/Tooltip'
 import { InlineTitleInput } from '../../components/InlineTitleInput'
@@ -370,10 +371,15 @@ export function FullTaskItem({
         blockingCount={blockingCount}
         blockedByCount={blockedByCount}
         isShared={isShared}
+        hasSubtasks={hasSubtasks}
+        subtaskCount={subtaskCount}
         onClick={onClick}
         onContextMenu={onContextMenu}
         inlineEditTitle={inlineEditTitle}
         onUpdateStatus={onUpdateStatus}
+        expanded={expanded}
+        onToggleExpand={onToggleExpand}
+        onExpandForSubtask={onExpandForSubtask}
       />
     )
   }
@@ -540,7 +546,7 @@ export function FullTaskItem({
           {/* Subtask count: Small indicator showing total linked subtasks when present */}
           {hasSubtasks && subtaskCount > 0 && (
             <span className="flex shrink-0 items-center gap-0.5 text-secondary text-bonsai-slate-600">
-              <ChecklistIcon className="w-4 h-4 md:w-5 md:h-5" />
+              <TasksIcon className="w-4 h-4 md:w-5 md:h-5" />
               <span className="text-xs md:text-sm">{subtaskCount}</span>
             </span>
           )}
