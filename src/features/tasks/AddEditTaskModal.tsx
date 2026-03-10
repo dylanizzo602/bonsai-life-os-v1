@@ -437,7 +437,7 @@ export function AddEditTaskModal({
             ? 'Priority: Normal'
             : priority === 'none'
               ? 'Priority: None'
-              : priority !== 'none'
+              : priority
                 ? `Priority: ${priority}`
                 : 'Set priority'}
         </button>
