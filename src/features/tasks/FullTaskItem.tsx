@@ -30,7 +30,7 @@ import { TagModal } from './modals/TagModal'
 import { TaskDependenciesPopover } from './modals/TaskDependenciesPopover'
 import { TabletTaskItem } from './TabletTaskItem'
 import { useTags } from './hooks/useTags'
-import { isOverdue, formatStartDueDisplay, isPastStartDate } from './utils/date'
+import { getDueStatus, formatStartDueDisplay, isPastStartDate } from './utils/date'
 import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
 import type { Task, TaskPriority, TaskStatus, UpdateTaskInput } from './types'
 
@@ -42,6 +42,8 @@ export interface FullTaskItemProps {
   task: Task
   /** Whether this task has subtasks (shows chevron and allows expand) */
   hasSubtasks?: boolean
+  /** Total number of subtasks linked to this task (for subtask count indicator) */
+  subtaskCount?: number
   /** Number of subtasks that are not completed (for unresolved-items confirm modal) */
   incompleteSubtaskCount?: number
   /** Checklist completed/total when task has checklists */
@@ -231,6 +233,7 @@ function getPriorityLabel(priority: TaskPriority): string {
 export function FullTaskItem({
   task,
   hasSubtasks = false,
+  subtaskCount = 0,
   incompleteSubtaskCount = 0,
   checklistSummary,
   totalTimeWithSubtasks,
@@ -286,7 +289,9 @@ export function FullTaskItem({
   /* Date button ref: Used to position the date picker popover */
   const dateButtonRef = useRef<HTMLButtonElement>(null)
   const dateDisplay = formatStartDueDisplay(task.start_date, task.due_date)
-  const isDueOverdue = Boolean(task.due_date && isOverdue(task.due_date))
+  const dueStatus = getDueStatus(task.due_date)
+  const isDueOverdue = dueStatus === 'overdue'
+  const isDueSoon = dueStatus === 'dueSoon'
   const isRecurring = Boolean(task.recurrence_pattern)
   /* medium = "normal" for display; ensure priority is valid for flag classes */
   const priority: TaskPriority = task.priority ?? 'medium'
@@ -530,8 +535,15 @@ export function FullTaskItem({
           )}
         </div>
         
-        {/* Left icons after task name: Description, checklist, tag, shared */}
+        {/* Left icons after task name: Subtask count, description, checklist, tag, shared */}
         <div ref={leftIconsAfterRef} className="flex shrink-0 items-center gap-2">
+          {/* Subtask count: Small indicator showing total linked subtasks when present */}
+          {hasSubtasks && subtaskCount > 0 && (
+            <span className="flex shrink-0 items-center gap-0.5 text-secondary text-bonsai-slate-600">
+              <ChecklistIcon className="w-4 h-4 md:w-5 md:h-5" />
+              <span className="text-xs md:text-sm">{subtaskCount}</span>
+            </span>
+          )}
           {/* Description icon: Shows tooltip with description on hover */}
           {task.description?.trim() && (
             <DescriptionTooltip 
@@ -676,7 +688,15 @@ export function FullTaskItem({
               >
                 <CalendarIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" aria-hidden />
                 {dateDisplay ? (
-                  <span className={`truncate ${isDueOverdue ? 'text-red-600 font-medium' : ''}`}>
+                  <span
+                    className={`truncate ${
+                      isDueOverdue
+                        ? 'text-red-600 font-medium'
+                        : isDueSoon
+                          ? 'text-amber-600 font-medium'
+                          : ''
+                    }`}
+                  >
                     {dateDisplay}
                   </span>
                 ) : (

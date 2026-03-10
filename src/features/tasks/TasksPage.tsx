@@ -1387,6 +1387,7 @@ export function TasksPage() {
         remindersLoading={remindersLoading}
         remindersError={remindersError}
         habitReminders={filteredHabitReminders}
+        hideCompletedSubtasks={viewMode === 'available' || viewMode === 'all'}
         onHabitMarkComplete={async (habit, remindAt) => {
           const occurrenceDate = remindAt ? remindAt.slice(0, 10) : todayYMD
           await setHabitEntry(habit.id, occurrenceDate, 'completed')

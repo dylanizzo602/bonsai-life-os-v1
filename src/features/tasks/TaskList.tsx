@@ -100,6 +100,8 @@ export interface TaskListProps {
   onHabitMarkComplete?: (habit: HabitWithStreaks, remindAt: string | null) => void
   /** Skip habit for the occurrence at remindAt; then advance reminder to next occurrence */
   onHabitSkip?: (habit: HabitWithStreaks, remindAt: string | null) => void
+  /** When true, hide completed/closed subtasks to match the current view filters (e.g. Available/All views) */
+  hideCompletedSubtasks?: boolean
 }
 
 /**
@@ -149,6 +151,7 @@ export function TaskList({
   habitReminders = [],
   onHabitMarkComplete,
   onHabitSkip,
+  hideCompletedSubtasks = false,
 }: TaskListProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
   /* Context menu state: which task or reminder is open and at what position */
@@ -164,6 +167,8 @@ export function TaskList({
   const [taskEnrichment, setTaskEnrichment] = useState<Record<string, {
     checklistSummary?: { completed: number; total: number }
     hasSubtasks: boolean
+    /** Total number of subtasks linked to this task (for subtask count indicator) */
+    subtaskCount: number
     /** Number of subtasks that are not completed (for unresolved-items modal) */
     incompleteSubtaskCount: number
     /** Sum of subtask time_estimate in minutes (for "total with subtasks" display) */
@@ -198,6 +203,7 @@ export function TaskList({
               }),
             ])
             const subtasks = Array.isArray(subtasksResult) ? subtasksResult : []
+            const subtaskCount = subtasks.length
             const incompleteSubtaskCount = subtasks.filter((s) => s.status !== 'completed').length
             const subtaskTimeTotal = subtasks.reduce((sum, st) => sum + (st.time_estimate ?? 0), 0)
             let completed = 0
@@ -209,7 +215,8 @@ export function TaskList({
             }
             enrichment[task.id] = {
               checklistSummary: total > 0 ? { completed, total } : undefined,
-              hasSubtasks: subtasks.length > 0,
+              hasSubtasks: subtaskCount > 0,
+              subtaskCount,
               incompleteSubtaskCount,
               subtaskTimeTotal,
               isBlocked: deps.blockedBy.length > 0,
@@ -221,6 +228,7 @@ export function TaskList({
             console.error(`Error loading enrichment for task ${task.id}:`, err)
             enrichment[task.id] = {
               hasSubtasks: false,
+              subtaskCount: 0,
               incompleteSubtaskCount: 0,
               subtaskTimeTotal: 0,
               isBlocked: false,
@@ -403,6 +411,7 @@ export function TaskList({
                 const task = item.task
               const enrichment = taskEnrichment[task.id] ?? {
                 hasSubtasks: false,
+                subtaskCount: 0,
                 incompleteSubtaskCount: 0,
                 subtaskTimeTotal: 0,
                 isBlocked: false,
@@ -436,6 +445,7 @@ export function TaskList({
                         : undefined
                     }
                     hasSubtasks={enrichment.hasSubtasks}
+                    subtaskCount={enrichment.subtaskCount}
                     incompleteSubtaskCount={enrichment.incompleteSubtaskCount}
                     checklistSummary={enrichment.checklistSummary}
                     totalTimeWithSubtasks={totalTimeWithSubtasks}
@@ -509,6 +519,7 @@ export function TaskList({
                         onRemoveDependency={onRemoveDependency}
                         focusAddInput={justExpandedForSubtask === task.id}
                         onFocusAddInputConsumed={() => setJustExpandedForSubtask(null)}
+                        hideCompletedSubtasks={hideCompletedSubtasks}
                       />
                     </div>
                   )}
@@ -566,6 +577,7 @@ export function TaskList({
                 const task = item.task
               const enrichment = taskEnrichment[task.id] ?? {
                 hasSubtasks: false,
+                subtaskCount: 0,
                 incompleteSubtaskCount: 0,
                 subtaskTimeTotal: 0,
                 isBlocked: false,
@@ -616,6 +628,7 @@ export function TaskList({
                         getTaskDependencies={getTaskDependencies}
                         onAddDependency={onAddDependency}
                         onRemoveDependency={onRemoveDependency}
+                        hideCompletedSubtasks={hideCompletedSubtasks}
                       />
                     </div>
                   )}
@@ -673,6 +686,7 @@ export function TaskList({
                 const task = item.task
               const enrichment = taskEnrichment[task.id] ?? {
                 hasSubtasks: false,
+                subtaskCount: 0,
                 incompleteSubtaskCount: 0,
                 subtaskTimeTotal: 0,
                 isBlocked: false,
@@ -707,6 +721,7 @@ export function TaskList({
                         : undefined
                     }
                     hasSubtasks={enrichment.hasSubtasks}
+                    subtaskCount={enrichment.subtaskCount}
                     incompleteSubtaskCount={enrichment.incompleteSubtaskCount}
                     checklistSummary={enrichment.checklistSummary}
                     totalTimeWithSubtasks={totalTimeWithSubtasks}
@@ -775,6 +790,7 @@ export function TaskList({
                         getTaskDependencies={getTaskDependencies}
                         onAddDependency={onAddDependency}
                         onRemoveDependency={onRemoveDependency}
+                        hideCompletedSubtasks={hideCompletedSubtasks}
                       />
                     </div>
                   )}

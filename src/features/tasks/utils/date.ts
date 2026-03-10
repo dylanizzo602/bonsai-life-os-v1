@@ -40,6 +40,51 @@ export function isPastStartDate(startDate: string | null | undefined): boolean {
   return endOfStart < Date.now()
 }
 
+/** Classification for due dates: none (no special status), dueSoon (within 24h), overdue (past end of due day). */
+export type DueStatus = 'none' | 'dueSoon' | 'overdue'
+
+/**
+ * Get due status for a given due date:
+ * - 'overdue': now is after the end of the due date (same semantics as isOverdue).
+ * - 'dueSoon': due is within the next 24 hours but not yet overdue.
+ * - 'none': all other cases (no due date or further in the future).
+ */
+export function getDueStatus(dueDate: string | null | undefined): DueStatus {
+  if (!dueDate) return 'none'
+  const nowMs = Date.now()
+  const isDateOnly = !dueDate.includes('T')
+
+  const endOfDue =
+    isDateOnly
+      ? (() => {
+          const [y, m, day] = dueDate.split('-').map(Number)
+          const d = new Date(y, (m ?? 1) - 1, day ?? 1)
+          d.setHours(23, 59, 59, 999)
+          return d.getTime()
+        })()
+      : new Date(dueDate).getTime()
+
+  if (Number.isNaN(endOfDue)) return 'none'
+  if (endOfDue < nowMs) return 'overdue'
+
+  // For date-only values, use start of the day; for datetime, use the exact time.
+  const startOfWindow =
+    isDateOnly
+      ? (() => {
+          const [y, m, day] = dueDate.split('-').map(Number)
+          const d = new Date(y, (m ?? 1) - 1, day ?? 1)
+          d.setHours(0, 0, 0, 0)
+          return d.getTime()
+        })()
+      : endOfDue
+
+  const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000
+  const diff = startOfWindow - nowMs
+
+  if (diff >= 0 && diff <= TWENTY_FOUR_HOURS_MS) return 'dueSoon'
+  return 'none'
+}
+
 /** Parse ISO to Date using local date for date-only/midnight so timezone does not shift the calendar day (e.g. Feb 28 UTC midnight stays Feb 28 local) */
 function parseISODateLocal(isoString: string | null | undefined): Date | null {
   if (isoString == null || isoString === '') return null
@@ -55,6 +100,18 @@ function parseISODateLocal(isoString: string | null | undefined): Date | null {
   }
   const d = new Date(isoString)
   return isNaN(d.getTime()) ? null : d
+}
+
+/** Return true when an ISO string refers to today's local calendar day (ignoring time). */
+function isTodayISO(isoString: string | null | undefined): boolean {
+  const d = parseISODateLocal(isoString)
+  if (!d) return false
+  const today = new Date()
+  return (
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate()
+  )
 }
 
 /** Ordinal suffix for day of month: 1st, 2nd, 3rd, 4th, ... */
@@ -127,18 +184,79 @@ export function formatStartDueDisplay(
   const hasDue = dueDate != null && dueDate !== ''
   if (!hasStart && !hasDue) return null
   if (hasStart && !hasDue) {
+    const isToday = isTodayISO(startDate)
     const formatted = formatDateWithOrdinal(startDate) ?? formatDateWithOptionalTime(startDate)
-    if (!formatted) return null
+    if (!formatted && !isToday) return null
+    if (isToday) {
+      return isPastStartDate(startDate) ? 'Started Today' : 'Starts Today'
+    }
     return isPastStartDate(startDate) ? `Started ${formatted}` : `Starts ${formatted}`
   }
   if (!hasStart && hasDue) {
+    const isToday = isTodayISO(dueDate)
+    if (isToday) {
+      const d = parseISODateLocal(dueDate)
+      if (!d) return 'Due Today'
+      const timeMatch = dueDate?.match(/T(\d{2}):(\d{2})/)
+      const hasExplicitTime =
+        !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
+      if (!dueDate?.includes('T') || !hasExplicitTime) {
+        return 'Due Today'
+      }
+      const timeStr = d.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      })
+      return `Due Today at ${timeStr}`
+    }
     const formatted = formatDateWithOptionalTime(dueDate)
     return formatted ? `Due ${formatted}` : null
   }
   /* hasStart && hasDue */
+  const isDueToday = isTodayISO(dueDate)
   const dueFormatted = formatDateWithOptionalTime(dueDate)
-  if (!dueFormatted) return null
-  if (isPastStartDate(startDate)) return `Due ${dueFormatted}`
+  if (!dueFormatted && !isDueToday) return null
+
+  if (isPastStartDate(startDate)) {
+    if (isDueToday) {
+      const d = parseISODateLocal(dueDate)
+      if (!d) return 'Due Today'
+      const timeMatch = dueDate?.match(/T(\d{2}):(\d{2})/)
+      const hasExplicitTime =
+        !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
+      if (!dueDate?.includes('T') || !hasExplicitTime) {
+        return 'Due Today'
+      }
+      const timeStr = d.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      })
+      return `Due Today at ${timeStr}`
+    }
+    return `Due ${dueFormatted}`
+  }
+
   const startFormatted = formatDateWithOptionalTime(startDate)
+  if (isDueToday) {
+    const d = parseISODateLocal(dueDate)
+    let todayLabel = 'Today'
+    if (d) {
+      const timeMatch = dueDate?.match(/T(\d{2}):(\d{2})/)
+      const hasExplicitTime =
+        !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
+      if (dueDate?.includes('T') && hasExplicitTime) {
+        const timeStr = d.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        })
+        todayLabel = `Today at ${timeStr}`
+      }
+    }
+    return startFormatted ? `${startFormatted} - ${todayLabel}` : `Due ${todayLabel}`
+  }
+
   return startFormatted ? `${startFormatted} - ${dueFormatted}` : `Due ${dueFormatted}`
 }

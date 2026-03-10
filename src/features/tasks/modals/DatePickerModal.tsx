@@ -330,6 +330,15 @@ function getCalendarCells(viewMonth: Date): CalendarCell[] {
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
+/** Format today's date as DD/MM/YYYY for input placeholders without changing selected value */
+function formatTodayPlaceholder(): string {
+  const today = new Date()
+  const dd = String(today.getDate()).padStart(2, '0')
+  const mm = String(today.getMonth() + 1).padStart(2, '0')
+  const yyyy = today.getFullYear()
+  return `${dd}/${mm}/${yyyy}`
+}
+
 /** Calendar icon for date fields */
 function CalendarIcon({ className }: { className?: string }) {
   return (
@@ -617,7 +626,7 @@ export function DatePickerModal({
           >
             <CalendarIcon className="w-4 h-4 text-bonsai-slate-500 shrink-0" />
             <div className="flex-1 min-w-0 flex items-center gap-2 flex-nowrap">
-              {/* Date input: Editable; accepts YYYY-MM-DD, today, tomorrow, MM/DD/YYYY */}
+              {/* Date input: Editable; accepts YYYY-MM-DD, today, tomorrow, MM/DD/YYYY; placeholder shows today's date as DD/MM/YYYY */}
               <input
                 type="text"
                 value={startDateEdit}
@@ -633,7 +642,7 @@ export function DatePickerModal({
                   }
                 }}
                 onClick={(e) => { e.stopPropagation(); setFocusedField('start') }}
-                placeholder="1/2/26"
+                placeholder={formatTodayPlaceholder()}
                 className="min-w-0 flex-1 bg-transparent border-0 py-0 text-secondary text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-0"
                 aria-label="Start date"
               />
@@ -716,7 +725,7 @@ export function DatePickerModal({
           >
             <CalendarIcon className="w-4 h-4 text-bonsai-slate-500 shrink-0" />
             <div className="flex-1 min-w-0 flex items-center gap-2 flex-nowrap">
-              {/* Date input: Editable; accepts YYYY-MM-DD, today, tomorrow, MM/DD/YYYY */}
+              {/* Date input: Editable; accepts YYYY-MM-DD, today, tomorrow, MM/DD/YYYY; placeholder shows today's date as DD/MM/YYYY */}
               <input
                 type="text"
                 value={dueDateEdit}
@@ -732,7 +741,7 @@ export function DatePickerModal({
                   }
                 }}
                 onClick={(e) => { e.stopPropagation(); setFocusedField('due') }}
-                placeholder="1/2/26"
+                placeholder={formatTodayPlaceholder()}
                 className="min-w-0 flex-1 bg-transparent border-0 py-0 text-secondary text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-0"
                 aria-label="Due date"
               />

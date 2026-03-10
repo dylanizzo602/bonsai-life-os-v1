@@ -17,7 +17,7 @@ import {
 import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { Tooltip } from '../../components/Tooltip'
 import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
-import { isOverdue, formatStartDueDisplay } from './utils/date'
+import { getDueStatus, formatStartDueDisplay } from './utils/date'
 import type { Task, TaskPriority, TaskStatus } from './types'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
@@ -153,7 +153,9 @@ export function CompactTaskItem({
   const displayStatus = getDisplayStatus(task.status)
   /* Date display: single line for start/due (Starts Jan 1, Due Jan 3 at 5pm, Jan 1 - Jan 3 at 5pm, etc.) */
   const dateDisplay = formatStartDueDisplay(task.start_date, task.due_date)
-  const isDueOverdue = Boolean(task.due_date && isOverdue(task.due_date))
+  const dueStatus = getDueStatus(task.due_date)
+  const isDueOverdue = dueStatus === 'overdue'
+  const isDueSoon = dueStatus === 'dueSoon'
   const isRecurring = Boolean(task.recurrence_pattern)
   const priority: TaskPriority = task.priority ?? 'medium'
   const tagDisplay = task.tags?.[0] ?? null
@@ -310,7 +312,7 @@ export function CompactTaskItem({
           </Tooltip>
         )}
         {/* Start/due date: tooltip with frequency when recurring; visual layout matches normal tasks */}
-        {dateDisplay && (
+          {dateDisplay && (
           isRecurring ? (
             <Tooltip
               content={
@@ -321,13 +323,29 @@ export function CompactTaskItem({
               position="top"
               size="sm"
             >
-              <span className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${isDueOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-600'}`}>
+              <span
+                className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${
+                  isDueOverdue
+                    ? 'text-red-600 font-medium'
+                    : isDueSoon
+                      ? 'text-amber-600 font-medium'
+                      : 'text-bonsai-slate-600'
+                }`}
+              >
                 <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
                 <span className="truncate">{dateDisplay}</span>
               </span>
             </Tooltip>
           ) : (
-            <span className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${isDueOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-600'}`}>
+            <span
+              className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${
+                isDueOverdue
+                  ? 'text-red-600 font-medium'
+                  : isDueSoon
+                    ? 'text-amber-600 font-medium'
+                    : 'text-bonsai-slate-600'
+              }`}
+            >
               <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
               <span className="truncate">{dateDisplay}</span>
             </span>

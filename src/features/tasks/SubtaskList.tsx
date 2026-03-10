@@ -35,6 +35,8 @@ interface SubtaskListProps {
   focusAddInput?: boolean
   /** Called after focus has been applied so parent can clear focusAddInput */
   onFocusAddInputConsumed?: () => void
+  /** When true, hide completed/closed subtasks to respect parent task filters (e.g. Available view) */
+  hideCompletedSubtasks?: boolean
 }
 
 /**
@@ -54,6 +56,7 @@ export function SubtaskList({
   onRemoveDependency,
   focusAddInput = false,
   onFocusAddInputConsumed,
+  hideCompletedSubtasks = false,
 }: SubtaskListProps) {
   const [subtasks, setSubtasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
@@ -202,7 +205,11 @@ export function SubtaskList({
         <p className="text-sm text-bonsai-slate-500 italic">No subtasks yet</p>
       ) : (
         <div className="space-y-2">
-          {subtasks.map((subtask) => {
+          {subtasks
+            .filter((subtask) =>
+              hideCompletedSubtasks ? subtask.status !== 'completed' : true,
+            )
+            .map((subtask) => {
             const enrichment = subtaskEnrichment[subtask.id] ?? {
               isBlocked: false,
               isBlocking: false,
