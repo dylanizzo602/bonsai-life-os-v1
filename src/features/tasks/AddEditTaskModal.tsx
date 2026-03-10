@@ -135,7 +135,7 @@ export interface AddEditTaskModalProps {
   updateTask?: (id: string, input: UpdateTaskInput) => Promise<Task>
   /** Delete task (for subtasks) */
   deleteTask?: (id: string) => Promise<void>
-  /** Toggle task completion (for subtasks) */
+  /** Toggle task completion (for subtasks only; main task completion happens in the list views) */
   toggleComplete?: (id: string, completed: boolean) => Promise<Task>
   /** Fetch all tasks (for dependency modal) */
   getTasks?: () => Promise<Task[]>
@@ -273,7 +273,7 @@ export function AddEditTaskModal({
     if (isEditMode && task && onUpdateTask) {
       setSubmitting(true)
       try {
-        await onUpdateTask(task.id, {
+        const baseUpdate: UpdateTaskInput = {
           title: title.trim(),
           description: description.trim() || null,
           start_date: start_date || null,
@@ -283,8 +283,12 @@ export function AddEditTaskModal({
           goal_id: goal_id || null,
           time_estimate,
           attachments: attachments.length ? attachments : undefined,
-          status: getTaskStatus(status),
-        })
+        }
+        /* Edit mode: update task fields only. Status changes are handled via task list status controls,
+         * so we do not modify status here to avoid conflicting with recurring logic.
+         */
+        await onUpdateTask(task.id, baseUpdate)
+
         await setTagsForTask(task.id, tags.map((t) => t.id))
         onClose()
       } catch {
@@ -510,14 +514,6 @@ export function AddEditTaskModal({
         triggerRef={statusButtonRef}
         onSelect={async (newStatus) => {
           setStatus(newStatus)
-          /* In edit mode, persist status immediately so the change is saved without requiring Save */
-          if (isEditMode && task?.id && onUpdateTask) {
-            try {
-              await onUpdateTask(task.id, { status: getTaskStatus(newStatus) })
-            } catch {
-              // Error handled by parent; keep local state so user can try Save or pick again
-            }
-          }
         }}
       />
       <PriorityPickerModal

@@ -260,10 +260,15 @@ export async function deleteTask(id: string): Promise<void> {
   }
 }
 
-/** Parse YYYY-MM-DD or ISO string to date-only for recurrence */
+/** Parse YYYY-MM-DD or ISO string to date-only for recurrence (timezone-safe) */
 function toDateOnly(iso: string | null): string | null {
   if (!iso) return null
+  // If it's already a plain date string, return as-is
   if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso
+  // If it starts with a date portion (e.g. 2026-03-10T00:00:00+00:00), slice the first 10 chars
+  const prefix = iso.slice(0, 10)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(prefix)) return prefix
+  // Fallback: use Date, but this should rarely be needed
   const d = new Date(iso)
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -331,10 +336,13 @@ export async function toggleTaskComplete(id: string, completed: boolean): Promis
     return { ...updated, tags, attachments: Array.isArray(updated.attachments) ? updated.attachments : [] }
   }
 
-  /* Recurring: advance due_date, maintain start_date offset, set status=active */
-  const dueYMD = toDateOnly(task.due_date)
-  if (!dueYMD) {
-    /* No due date: just mark completed (fallback) */
+  /* Recurring: advance dates and set status=active.
+   * Anchor on due_date when present; otherwise fall back to start_date so
+   * recurring tasks with only a start date still advance like reminders.
+   */
+  const anchorYMD = toDateOnly(task.due_date ?? task.start_date)
+  if (!anchorYMD) {
+    /* No anchor date at all: just mark completed (fallback) */
     const { data, error } = await supabase
       .from('tasks')
       .update({ status: 'completed', completed_at: new Date().toISOString() })
@@ -347,7 +355,7 @@ export async function toggleTaskComplete(id: string, completed: boolean): Promis
     return { ...updated, tags, attachments: Array.isArray(updated.attachments) ? updated.attachments : [] }
   }
 
-  const nextDueYMD = getNextOccurrence(pattern, dueYMD)
+  const nextDueYMD = getNextOccurrence(pattern, anchorYMD)
   if (!nextDueYMD) {
     /* No next occurrence (e.g. past until): mark completed */
     const { data, error } = await supabase
@@ -362,13 +370,17 @@ export async function toggleTaskComplete(id: string, completed: boolean): Promis
     return { ...updated, tags, attachments: Array.isArray(updated.attachments) ? updated.attachments : [] }
   }
 
-  /* Compute start offset: days from start to due */
+  /* Compute start offset: days from start to due (or 0 when only start exists) */
   const startYMD = toDateOnly(task.start_date)
   let nextStartYMD: string | null = null
   if (startYMD) {
-    const startDate = new Date(startYMD + 'T12:00:00')
-    const dueDate = new Date(dueYMD + 'T12:00:00')
-    const offsetDays = Math.round((dueDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000))
+    let offsetDays = 0
+    const dueYMD = toDateOnly(task.due_date ?? task.start_date)
+    if (dueYMD && task.due_date) {
+      const startDate = new Date(startYMD + 'T12:00:00')
+      const dueDate = new Date(dueYMD + 'T12:00:00')
+      offsetDays = Math.round((dueDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000))
+    }
     nextStartYMD = addDays(nextDueYMD, -offsetDays)
   }
 
@@ -378,7 +390,6 @@ export async function toggleTaskComplete(id: string, completed: boolean): Promis
     due_date: nextDueYMD,
     start_date: nextStartYMD,
   }
-
   const { data, error } = await supabase
     .from('tasks')
     .update(updateData)

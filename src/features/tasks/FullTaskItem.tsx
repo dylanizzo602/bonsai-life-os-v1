@@ -350,7 +350,10 @@ export function FullTaskItem({
     }
   }, [hasSubtasks, checklistSummary, task.tags, isBlocked, isBlocking, isShared, task.description, task.time_estimate, dateDisplay])
 
-  /* Tablet mode: use TabletTaskItem component for consistent icon layout */
+  /* Tablet mode: use TabletTaskItem component for consistent icon layout.
+   * Status behavior matches desktop: status circle uses shared onUpdateStatus handler,
+   * so recurring tasks complete via the same toggleTaskComplete path.
+   */
   if (tablet) {
     return (
       <TabletTaskItem
@@ -365,13 +368,17 @@ export function FullTaskItem({
         onClick={onClick}
         onContextMenu={onContextMenu}
         inlineEditTitle={inlineEditTitle}
+        onUpdateStatus={onUpdateStatus}
       />
     )
   }
 
-  /* Row click: Open edit modal unless the click was on the subtask expand button */
+  /* Row click: Open edit modal unless the click was on the subtask expand button
+   * or another interactive control (status circle, date, priority, etc.).
+   */
   const handleRowClick = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('[data-subtask-expand]')) return
+    const target = e.target as HTMLElement
+    if (target.closest('[data-subtask-expand]') || target.closest('[data-task-interactive]')) return
     onClick?.()
   }
 
@@ -442,6 +449,7 @@ export function FullTaskItem({
               <button
                 ref={statusButtonRef}
                 type="button"
+                data-task-interactive
                 onClick={(e) => {
                   e.stopPropagation()
                   /* Open status picker popover */
@@ -592,7 +600,7 @@ export function FullTaskItem({
         </div>
       </div>
 
-      {/* Right section: time estimate, date/time or repeat icon, priority flag */}
+      {/* Right section: time estimate, recurring icon, date/time, priority flag */}
       <div ref={rightSectionRef} className="flex shrink-0 items-center gap-2">
         {task.time_estimate != null && task.time_estimate > 0 && (
           <TimeEstimateTooltip
@@ -621,6 +629,22 @@ export function FullTaskItem({
             </button>
           </TimeEstimateTooltip>
         )}
+        {/* Recurring icon: subtle repeat glyph when task has recurrence */}
+        {isRecurring && (
+          <Tooltip
+            content={
+              <span className="text-secondary text-bonsai-slate-800">
+                {formatRecurrenceForTooltip(parseRecurrencePattern(task.recurrence_pattern))}
+              </span>
+            }
+            position="top"
+            size="sm"
+          >
+            <span className="shrink-0 text-bonsai-slate-500" aria-label="Recurring task">
+              <RepeatIcon className="w-4 h-4 md:w-5 md:h-5" aria-hidden />
+            </span>
+          </Tooltip>
+        )}
         {(dateDisplay || onUpdateTask) && (
           (() => {
             /* Tooltip content: For recurring, show frequency; otherwise start/due dates */
@@ -641,6 +665,7 @@ export function FullTaskItem({
               <button
                 ref={dateButtonRef}
                 type="button"
+                data-task-interactive
                 onClick={(e) => {
                   e.stopPropagation()
                   if (onUpdateTask) setIsDatePickerModalOpen(true)
@@ -649,11 +674,7 @@ export function FullTaskItem({
                 aria-label={dateDisplay ? 'Edit start/due date' : 'Add start/due date'}
                 disabled={!onUpdateTask}
               >
-                {isRecurring ? (
-                  <RepeatIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" aria-hidden />
-                ) : (
-                  <CalendarIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" aria-hidden />
-                )}
+                <CalendarIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" aria-hidden />
                 {dateDisplay ? (
                   <span className={`truncate ${isDueOverdue ? 'text-red-600 font-medium' : ''}`}>
                     {dateDisplay}
@@ -675,6 +696,7 @@ export function FullTaskItem({
         <button
           ref={priorityButtonRef}
           type="button"
+          data-task-interactive
           onClick={(e) => {
             e.stopPropagation()
             /* Open priority picker when flag is clicked (or trophy if goal-linked) */

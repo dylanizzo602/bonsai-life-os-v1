@@ -449,7 +449,11 @@ export function TaskList({
                     onTagsUpdated={refetch}
                     onUpdateStatus={async (taskId, status) => {
                       try {
-                        await updateTask(taskId, { status })
+                        if (status === 'completed') {
+                          await toggleComplete(taskId, true)
+                        } else {
+                          await updateTask(taskId, { status })
+                        }
                       } catch (error) {
                         console.error('Failed to update task status:', error)
                         throw error
@@ -468,7 +472,7 @@ export function TaskList({
                             if (!item.completed) await toggleChecklistItemComplete(item.id, true)
                           }
                         }
-                        await updateTask(taskId, { status: 'completed' })
+                        await toggleComplete(taskId, true)
                         refetch?.()
                         await loadEnrichment()
                       } catch (error) {
@@ -713,7 +717,11 @@ export function TaskList({
                     onTagsUpdated={refetch}
                     onUpdateStatus={async (taskId, status) => {
                       try {
-                        await updateTask(taskId, { status })
+                        if (status === 'completed') {
+                          await toggleComplete(taskId, true)
+                        } else {
+                          await updateTask(taskId, { status })
+                        }
                       } catch (error) {
                         console.error('Failed to update task status:', error)
                         throw error
@@ -732,7 +740,7 @@ export function TaskList({
                             if (!item.completed) await toggleChecklistItemComplete(item.id, true)
                           }
                         }
-                        await updateTask(taskId, { status: 'completed' })
+                        await toggleComplete(taskId, true)
                         refetch?.()
                         await loadEnrichment()
                       } catch (error) {

@@ -56,6 +56,8 @@ export interface TabletTaskItemProps {
   onDependencyClick?: () => void
   /** Format date for display (e.g. Jan 22 at 12pm) */
   formatDueDate?: (iso: string | null | undefined) => string | null
+  /** Optional status update handler (used to complete/reopen tasks, including recurring) */
+  onUpdateStatus?: (taskId: string, status: TaskStatus) => Promise<void>
 }
 
 /** Map TaskStatus to display status for the status circle */
@@ -157,6 +159,7 @@ export function TabletTaskItem({
   onRemove,
   onDependencyClick,
   formatDueDate: _formatDueDate,
+  onUpdateStatus,
 }: TabletTaskItemProps) {
   const displayStatus = getDisplayStatus(task.status)
   /* Date display: single line for start/due (Starts Jan 1, Due Jan 3 at 5pm, Jan 1 - Jan 3 at 5pm, etc.) */
@@ -185,10 +188,44 @@ export function TabletTaskItem({
     >
       {/* Top row: status circle and task name */}
       <div className="flex items-center gap-2">
-        {/* Status circle */}
-        <div className="shrink-0">
+        {/* Status circle: tap toggles between Open and Complete using shared status handler (same behavior as desktop status picker) */}
+        <button
+          type="button"
+          onClick={async (e) => {
+            e.stopPropagation()
+            if (!onUpdateStatus) return
+            const nextStatus: TaskStatus =
+              displayStatus === 'complete' ? 'active' : 'completed'
+            try {
+              // #region agent log
+              fetch('http://127.0.0.1:7825/ingest/5e4e8d61-5cc8-4de4-815f-8096cfa9d88f', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Debug-Session-Id': 'd50153',
+                },
+                body: JSON.stringify({
+                  sessionId: 'd50153',
+                  runId: 'run1',
+                  hypothesisId: 'H4',
+                  location: 'src/features/tasks/TabletTaskItem.tsx:statusTap',
+                  message: 'Tablet status circle tapped',
+                  data: { taskId: task.id, fromStatus: task.status, nextStatus },
+                  timestamp: Date.now(),
+                }),
+              }).catch(() => {});
+              // #endregion agent log
+              await onUpdateStatus(task.id, nextStatus)
+            } catch (err) {
+              console.error('Failed to update task status (tablet):', err)
+            }
+          }}
+          className="shrink-0 flex items-center justify-center rounded-full hover:bg-bonsai-slate-100 transition-colors p-1 disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label="Toggle task status"
+          disabled={!onUpdateStatus}
+        >
           <TaskStatusIndicator status={displayStatus} />
-        </div>
+        </button>
         {/* Task name: or inline edit input when renaming */}
         {inlineEditTitle ? (
           <InlineTitleInput
@@ -309,7 +346,23 @@ export function TabletTaskItem({
             </span>
           </TimeEstimateTooltip>
         )}
-        {/* Date/time or repeat icon: tooltip with frequency when recurring */}
+        {/* Recurring icon: repeat glyph to mark recurring tasks in tablet view */}
+        {isRecurring && (
+          <Tooltip
+            content={
+              <span className="text-secondary text-bonsai-slate-800">
+                {formatRecurrenceForTooltip(parseRecurrencePattern(task.recurrence_pattern))}
+              </span>
+            }
+            position="top"
+            size="sm"
+          >
+            <span className="shrink-0 text-bonsai-slate-500" aria-label="Recurring task">
+              <RepeatIcon className="w-3.5 h-3.5" aria-hidden />
+            </span>
+          </Tooltip>
+        )}
+        {/* Date/time: tooltip with frequency when recurring; visual layout matches normal tasks */}
         {dateDisplay && (
           isRecurring ? (
             <Tooltip
@@ -322,7 +375,7 @@ export function TabletTaskItem({
               size="sm"
             >
               <span className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${isDueOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-600'}`}>
-                <RepeatIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
                 <span className="truncate">{dateDisplay}</span>
               </span>
             </Tooltip>

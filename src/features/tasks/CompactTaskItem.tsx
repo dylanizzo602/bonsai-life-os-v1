@@ -293,7 +293,23 @@ export function CompactTaskItem({
               : `${Math.floor(task.time_estimate / 60)}h${task.time_estimate % 60 ? ` ${task.time_estimate % 60}m` : ''}`}
           </span>
         )}
-        {/* Start/due date: tooltip with frequency when recurring */}
+        {/* Recurring icon: repeat glyph to mark recurring tasks in compact view */}
+        {isRecurring && (
+          <Tooltip
+            content={
+              <span className="text-secondary text-bonsai-slate-800">
+                {formatRecurrenceForTooltip(parseRecurrencePattern(task.recurrence_pattern))}
+              </span>
+            }
+            position="top"
+            size="sm"
+          >
+            <span className="shrink-0 text-bonsai-slate-500" aria-label="Recurring task">
+              <RepeatIcon className="w-3.5 h-3.5" aria-hidden />
+            </span>
+          </Tooltip>
+        )}
+        {/* Start/due date: tooltip with frequency when recurring; visual layout matches normal tasks */}
         {dateDisplay && (
           isRecurring ? (
             <Tooltip
@@ -306,7 +322,7 @@ export function CompactTaskItem({
               size="sm"
             >
               <span className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${isDueOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-600'}`}>
-                <RepeatIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
                 <span className="truncate">{dateDisplay}</span>
               </span>
             </Tooltip>
