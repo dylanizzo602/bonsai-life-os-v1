@@ -186,8 +186,10 @@ export function RichTextEditor({
       content: value || '',
       editorProps: {
         attributes: {
+          /* Editor content attributes: typography, spacing, and spell check enabled for rich text */
           class:
             'min-h-[280px] text-body text-bonsai-slate-800 focus:outline-none [&_p]:mb-2 [&_ul]:list-disc [&_ol]:list-decimal [&_li]:ml-4 [&_h1]:text-page-title [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-semibold [&_strong]:font-bold [&_em]:italic',
+          spellcheck: 'true',
         },
       },
     },

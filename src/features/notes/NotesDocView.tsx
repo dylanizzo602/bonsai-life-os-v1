@@ -140,12 +140,13 @@ export function NotesDocView({
           Back to list
         </Button>
 
-        {/* Doc title: editable, saves on blur */}
+        {/* Doc title: editable, saves on blur with spell check enabled for user text */}
         <input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={handleTitleBlur}
+          spellCheck
           className="mb-1 w-full border-0 bg-transparent text-page-title font-bold text-bonsai-brown-700 focus:outline-none focus:ring-0"
           placeholder="Untitled"
           aria-label="Note title"

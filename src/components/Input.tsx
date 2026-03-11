@@ -19,7 +19,7 @@ interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'>
  * Responsive by default (Tailwind breakpoints); optional size override when fixed size is needed.
  */
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, size, className = '', ...props }, ref) => {
+  ({ label, error, size, className = '', type, spellCheck, ...props }, ref) => {
   /* Base input styles: full width, border, focus ring */
   const baseInputClasses =
     'w-full border rounded-lg focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent'
@@ -32,6 +32,13 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     md: 'px-4 py-2.5 text-base',
     lg: 'px-4 py-3 text-base',
   }
+  /* Spell check behavior: enabled by default for text-like inputs, disabled for password/email unless overridden */
+  const effectiveSpellCheck =
+    spellCheck !== undefined
+      ? spellCheck
+      : type === 'password' || type === 'email'
+        ? false
+        : true
   const sizeClasses = size ? fixedSizeClasses[size] : responsiveSizeClasses
   const inputClasses = `${baseInputClasses} ${sizeClasses} ${
     error ? 'border-red-500' : 'border-bonsai-slate-300'
@@ -53,7 +60,13 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           {label}
         </label>
       )}
-      <input ref={ref} className={inputClasses} {...props} />
+      <input
+        ref={ref}
+        type={type}
+        spellCheck={effectiveSpellCheck}
+        className={inputClasses}
+        {...props}
+      />
       {error && <p className="mt-1 text-secondary text-red-600">{error}</p>}
     </div>
   )

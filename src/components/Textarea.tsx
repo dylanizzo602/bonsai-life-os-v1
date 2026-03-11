@@ -14,18 +14,21 @@ interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
  * Uses text-body for consistent typography.
  */
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ label, error, className = '', ...props }, ref) => {
+  ({ label, error, className = '', spellCheck, ...props }, ref) => {
     /* Base styles: full width, border, focus ring, body typography */
     const baseClasses =
       'w-full border rounded-lg focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent px-3 py-2 md:px-4 md:py-2.5 lg:px-4 lg:py-3 text-body min-h-[120px]'
     const borderClasses = error ? 'border-red-500' : 'border-bonsai-slate-300'
     const labelClasses = 'block text-secondary font-medium text-bonsai-slate-700 mb-1'
+    /* Spell check behavior: enabled by default for multi-line text, overridable via prop */
+    const effectiveSpellCheck = spellCheck ?? true
 
     return (
       <div className="w-full">
         {label && <label className={labelClasses}>{label}</label>}
         <textarea
           ref={ref}
+          spellCheck={effectiveSpellCheck}
           className={`${baseClasses} ${borderClasses} ${className}`}
           {...props}
         />
