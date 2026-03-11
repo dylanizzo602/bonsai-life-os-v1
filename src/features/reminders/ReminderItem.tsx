@@ -87,18 +87,20 @@ export function ReminderItem({
           aria-label={reminder.completed ? 'Mark incomplete' : 'Mark complete'}
         />
       </div>
-      {/* Reminder name: takes remaining space; or inline edit input when renaming */}
+      {/* Reminder name: takes remaining space; or inline edit input when renaming. Match task text size/style. */}
       <div className="flex-1 min-w-0" onClick={(e) => inlineEditName && e.stopPropagation()}>
         {inlineEditName ? (
           <InlineTitleInput
             value={inlineEditName.value}
             onSave={inlineEditName.onSave}
             onCancel={inlineEditName.onCancel}
-            className="w-full text-body text-bonsai-brown-700 border border-bonsai-sage-400 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500"
+            className="w-full text-sm font-medium text-bonsai-slate-800 border border-bonsai-sage-400 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500"
           />
         ) : (
           <span
-            className={`text-body text-bonsai-brown-700 ${reminder.completed ? 'line-through text-bonsai-slate-500' : ''}`}
+            className={`text-sm font-medium truncate ${
+              reminder.completed ? 'line-through text-bonsai-slate-500' : 'text-bonsai-slate-800'
+            }`}
           >
             {reminder.name}
           </span>

@@ -529,7 +529,7 @@ export function TaskList({
               return null
             })}
           </div>
-          {/* Mobile (< md): compact task items; reminders as ReminderItem; habit reminders as HabitReminderItem */}
+          {/* Mobile (< md): compact task items; reminders as ReminderItem; habit reminders as HabitReminderItem (compact density) */}
           <div className="md:hidden space-y-2">
             {combinedItems.map((item) => {
               if (item.type === 'habit_reminder' && item.habitReminder && onHabitMarkComplete && onHabitSkip) {
@@ -541,6 +541,7 @@ export function TaskList({
                     remindAt={remindAt}
                     onMarkComplete={() => onHabitMarkComplete(habit, remindAt)}
                     onSkip={() => onHabitSkip(habit, remindAt)}
+                    density="compact"
                   />
                 )
               }
@@ -639,7 +640,7 @@ export function TaskList({
               return null
             })}
           </div>
-          {/* Tablet (md to lg): tablet task items; reminders as ReminderItem; habit reminders as HabitReminderItem */}
+          {/* Tablet (md to lg): tablet task items; reminders as ReminderItem; habit reminders as HabitReminderItem (compact density) */}
           <div className="hidden md:block lg:hidden space-y-2">
             {combinedItems.map((item) => {
               if (item.type === 'habit_reminder' && item.habitReminder && onHabitMarkComplete && onHabitSkip) {
@@ -651,6 +652,7 @@ export function TaskList({
                     remindAt={remindAt}
                     onMarkComplete={() => onHabitMarkComplete(habit, remindAt)}
                     onSkip={() => onHabitSkip(habit, remindAt)}
+                    density="compact"
                   />
                 )
               }

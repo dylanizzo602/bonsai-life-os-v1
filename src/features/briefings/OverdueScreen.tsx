@@ -106,7 +106,7 @@ export function OverdueScreen({
               />
             ))}
           </div>
-          {/* Habit reminders */}
+          {/* Habit reminders: use compact density to match CompactTaskItem layout */}
           {overdueHabitReminders && overdueHabitReminders.length > 0 && (
             <div className="space-y-2 mb-4">
               {overdueHabitReminders.map(({ habit, remindAt }) => (
@@ -116,6 +116,7 @@ export function OverdueScreen({
                   remindAt={remindAt}
                   onMarkComplete={() => onHabitMarkComplete?.(habit, remindAt)}
                   onSkip={() => onHabitSkip?.(habit, remindAt)}
+                  density="compact"
                 />
               ))}
             </div>

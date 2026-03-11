@@ -34,6 +34,12 @@ export interface HabitReminderItemProps {
   onSkip: () => void
   /** Optional: hide Skip button (e.g. for weekly habits where skip is not allowed) */
   hideSkip?: boolean
+  /**
+   * Optional density override:
+   * - 'default' = roomier row (desktop-style)
+   * - 'compact' = tighter padding and spacing for mobile/tablet and dense lists.
+   */
+  density?: 'default' | 'compact'
 }
 
 /**
@@ -46,14 +52,21 @@ export function HabitReminderItem({
   onMarkComplete,
   onSkip,
   hideSkip = false,
+  density = 'default',
 }: HabitReminderItemProps) {
   /* Overdue flag: true when remindAt is set and the notification time is in the past */
   const isRemindOverdue = Boolean(remindAt && isOverdue(remindAt))
 
+  /* Container layout: default = roomier padding (desktop), compact = tighter padding for dense mobile/tablet views */
+  const containerClasses =
+    density === 'compact'
+      ? 'flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-bonsai-slate-200 bg-white px-3 py-2 hover:bg-bonsai-slate-50 transition-colors text-left min-w-0'
+      : 'flex flex-wrap items-center gap-2 rounded-lg border border-bonsai-slate-200 bg-white p-2.5 md:gap-3 md:p-4 hover:bg-bonsai-slate-50 transition-colors text-left min-w-0'
+
   /* Compact layout: flex-wrap on small screens so habit name, time, and actions are not cut off; single row on larger screens */
   return (
     <div
-      className="flex flex-wrap items-center gap-2 rounded-lg border border-bonsai-slate-200 bg-white p-2.5 md:gap-3 md:p-4 hover:bg-bonsai-slate-50 transition-colors text-left min-w-0"
+      className={containerClasses}
       role="article"
       aria-label={`Habit reminder: ${habit.name}, streak ${habit.currentStreak}`}
     >
@@ -67,9 +80,9 @@ export function HabitReminderItem({
         </span>
       </div>
 
-      {/* Habit name: flex-1 min-w-0 so it can shrink; break-words so long names wrap instead of being cut off */}
+      {/* Habit name: flex-1 min-w-0 so it can shrink; match task text size/style and truncate when long */}
       <div className="flex-1 min-w-0">
-        <span className="text-body text-bonsai-brown-700 break-words block">
+        <span className="block truncate text-sm font-medium text-bonsai-slate-800">
           {habit.name}
         </span>
       </div>
@@ -84,8 +97,8 @@ export function HabitReminderItem({
         <span className="whitespace-nowrap">{formatNotificationDate(remindAt)}</span>
       </div>
 
-      {/* Actions: Complete and Skip buttons */}
-      <div className="flex shrink-0 items-center gap-2 w-full sm:w-auto">
+      {/* Actions: Complete and Skip buttons; compact density keeps buttons tight while still full-width on small screens */}
+      <div className="flex shrink-0 items-center gap-2 w-full sm:w-auto justify-end">
         <Button
           type="button"
           variant="secondary"
