@@ -23,6 +23,8 @@ export interface TaskContextPopoverProps {
   onArchive?: (task: Task) => void
   /** Mark task as deleted (soft delete; sets status to deleted) */
   onMarkDeleted?: (task: Task) => void
+  /** Unlink a subtask from its parent so it becomes a top-level task */
+  onUnlinkFromParent?: (task: Task) => void
   /** Today's Lineup task IDs (show "Add to Today's Lineup" / "Remove from Today's Lineup") */
   lineUpTaskIds?: Set<string>
   onAddToLineUp?: (taskId: string) => void
@@ -49,6 +51,7 @@ export function TaskContextPopover({
   lineUpTaskIds,
   onAddToLineUp,
   onRemoveFromLineUp,
+  onUnlinkFromParent,
 }: TaskContextPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
 
@@ -121,6 +124,11 @@ export function TaskContextPopover({
     onMarkDeleted?.(task)
     onClose()
   }
+  const handleUnlinkFromParent = () => {
+    if (!task.parent_id) return
+    onUnlinkFromParent?.(task)
+    onClose()
+  }
   const inLineUp = lineUpTaskIds?.has(task.id) ?? false
   const handleAddToLineUp = () => {
     onAddToLineUp?.(task.id)
@@ -185,6 +193,16 @@ export function TaskContextPopover({
         >
           {isArchived ? 'Unarchive' : 'Archive'}
         </button>
+        {task.parent_id && onUnlinkFromParent && (
+          <button
+            type="button"
+            role="menuitem"
+            onClick={handleUnlinkFromParent}
+            className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors rounded-none last:rounded-b-xl"
+          >
+            Unlink from parent
+          </button>
+        )}
         {onMarkDeleted && (
           <button
             type="button"

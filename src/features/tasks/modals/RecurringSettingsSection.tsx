@@ -3,6 +3,7 @@
 import { useEffect, useCallback } from 'react'
 import { Checkbox } from '../../../components/Checkbox'
 import type { RecurrencePattern, RecurrenceFreq } from '../../../lib/recurrence'
+import { formatRecurrenceForTooltip } from '../../../lib/recurrence'
 
 const DAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -199,8 +200,13 @@ export function RecurringSettingsSection({
   /* Root: min-w-0 and overflow-visible so date inputs and dropdowns are not clipped in narrow date picker column */
   return (
     <div className="flex flex-col gap-3 min-w-0 overflow-visible">
-      {/* Heading */}
+      {/* Heading and current summary: show human-readable description of the recurrence when set */}
       <h3 className="text-body font-bold text-bonsai-brown-700 shrink-0">Reoccurring</h3>
+      {value && (
+        <p className="text-secondary text-bonsai-slate-700">
+          {formatRecurrenceForTooltip(value) || 'Custom recurrence pattern'}
+        </p>
+      )}
 
       {/* Frequency: Every N + unit dropdown (one row, no wrap) */}
       <div className="flex items-center gap-2 shrink-0">

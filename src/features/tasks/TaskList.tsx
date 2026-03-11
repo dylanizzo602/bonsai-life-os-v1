@@ -562,6 +562,7 @@ export function TaskList({
                         focusAddInput={justExpandedForSubtask === task.id}
                         onFocusAddInputConsumed={() => setJustExpandedForSubtask(null)}
                         hideCompletedSubtasks={hideCompletedSubtasks}
+                        onSubtasksChanged={loadEnrichment}
                       />
                     </div>
                   )}
@@ -674,6 +675,7 @@ export function TaskList({
                         onAddDependency={onAddDependency}
                         onRemoveDependency={onRemoveDependency}
                         hideCompletedSubtasks={hideCompletedSubtasks}
+                        onSubtasksChanged={loadEnrichment}
                       />
                     </div>
                   )}
@@ -838,6 +840,7 @@ export function TaskList({
                         onAddDependency={onAddDependency}
                         onRemoveDependency={onRemoveDependency}
                         hideCompletedSubtasks={hideCompletedSubtasks}
+                        onSubtasksChanged={loadEnrichment}
                       />
                     </div>
                   )}

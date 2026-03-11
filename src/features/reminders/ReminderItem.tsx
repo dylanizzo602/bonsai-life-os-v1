@@ -13,12 +13,35 @@ import type { Reminder, UpdateReminderInput } from './types'
 /** Format remind_at for list display */
 function formatRemindDate(iso: string | null): string {
   if (!iso) return 'No date'
-  const d = new Date(iso)
-  const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  if (!iso.includes('T')) return dateStr
-  const hour12 = d.getHours() % 12 || 12
-  const min = d.getMinutes()
-  const ampm = d.getHours() < 12 ? 'AM' : 'PM'
+  // Normalize date from the ISO string itself (ignore timezone when deriving the day)
+  const ymd = iso.slice(0, 10)
+  const [yStr, mStr, dStr] = ymd.split('-')
+  const y = Number(yStr)
+  const m = Number(mStr)
+  const dDay = Number(dStr)
+  const dateForDisplay = Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(dDay)
+    ? new Date(Date.UTC(y, m - 1, dDay))
+    : new Date(iso)
+
+  const dateStr = dateForDisplay.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
+
+  // Detect whether this reminder should be treated as date-only (no explicit time)
+  const timeMatch = iso.match(/T(\d{2}):(\d{2}):(\d{2})/)
+  if (!timeMatch) return dateStr
+  const hours = Number(timeMatch[1])
+  const minutes = Number(timeMatch[2])
+  const hasExplicitTime = !(hours === 0 && minutes === 0)
+  if (!hasExplicitTime) return dateStr
+
+  // For reminders with an explicit time, show local time
+  const local = new Date(iso)
+  const hour12 = local.getHours() % 12 || 12
+  const min = local.getMinutes()
+  const ampm = local.getHours() < 12 ? 'AM' : 'PM'
   return `${dateStr}, ${hour12}:${String(min).padStart(2, '0')} ${ampm}`
 }
 

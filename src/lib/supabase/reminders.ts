@@ -20,11 +20,13 @@ export async function getReminders(): Promise<Reminder[]> {
   }
 
   /* Ensure deleted and recurrence_pattern for pre-migration rows */
-  return ((data ?? []) as (Reminder & { deleted?: boolean; recurrence_pattern?: string | null })[]).map((r) => ({
-    ...r,
-    deleted: r.deleted ?? false,
-    recurrence_pattern: r.recurrence_pattern ?? null,
-  })) as Reminder[]
+  return ((data ?? []) as (Reminder & { deleted?: boolean; recurrence_pattern?: string | null })[]).map(
+    (r) => ({
+      ...r,
+      deleted: r.deleted ?? false,
+      recurrence_pattern: r.recurrence_pattern ?? null,
+    }),
+  ) as Reminder[]
 }
 
 /**

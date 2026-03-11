@@ -72,7 +72,18 @@ export function useTasks(initialFilters?: TaskFilters) {
     try {
       setError(null)
       const updatedTask = await updateTask(id, input)
-      setTasks((prev) => prev.map((task) => (task.id === id ? updatedTask : task)))
+      /* Update task list: replace when present; when a previously hidden task (e.g. subtask) becomes a top-level task,
+       * insert it into the main list so it appears (used by "Unlink from parent"). */
+      setTasks((prev) => {
+        const exists = prev.some((task) => task.id === id)
+        if (exists) {
+          return prev.map((task) => (task.id === id ? updatedTask : task))
+        }
+        if (updatedTask.parent_id === null && updatedTask.status !== 'deleted') {
+          return [updatedTask, ...prev]
+        }
+        return prev
+      })
       return updatedTask
     } catch (err) {
       const errorMessage =
@@ -101,31 +112,6 @@ export function useTasks(initialFilters?: TaskFilters) {
     try {
       setError(null)
       const updatedTask = await toggleTaskComplete(id, completed)
-      // #region agent log
-      fetch('http://127.0.0.1:7825/ingest/5e4e8d61-5cc8-4de4-815f-8096cfa9d88f', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Debug-Session-Id': 'd50153',
-        },
-        body: JSON.stringify({
-          sessionId: 'd50153',
-          runId: 'run1',
-          hypothesisId: 'H3',
-          location: 'src/features/tasks/hooks/useTasks.ts:handleToggleComplete',
-          message: 'toggleComplete resolved',
-          data: {
-            id,
-            completed,
-            updatedStatus: updatedTask.status,
-            updatedStartDate: updatedTask.start_date,
-            updatedDueDate: updatedTask.due_date,
-            recurrence_pattern: updatedTask.recurrence_pattern,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion agent log
       setTasks((prev) => prev.map((task) => (task.id === id ? updatedTask : task)))
       return updatedTask
     } catch (err) {

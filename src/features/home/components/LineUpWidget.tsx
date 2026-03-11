@@ -121,12 +121,14 @@ export function LineUpWidget({ tasks: tasksProp, onOpenEditTask }: LineUpWidgetP
         )}
       </DashboardWidget>
 
+      {/* Add-to-lineup modal: task search sized so all up-to-three results are visible without scrolling */}
       <Modal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         title="Add task to today's lineup"
+        disableBodyScroll
       >
-        <div className="space-y-4">
+        <div className="space-y-4 min-h-[220px] md:min-h-[260px]">
           <p className="text-secondary text-bonsai-slate-700">
             Search for an existing task to add it to today&apos;s lineup.
           </p>

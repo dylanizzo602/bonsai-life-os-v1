@@ -225,6 +225,7 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
   if (input.goal_id !== undefined) updateData.goal_id = input.goal_id
   if (input.recurrence_pattern !== undefined)
     updateData.recurrence_pattern = input.recurrence_pattern
+  if (input.parent_id !== undefined) updateData.parent_id = input.parent_id
 
   const { data, error } = await supabase
     .from('tasks')

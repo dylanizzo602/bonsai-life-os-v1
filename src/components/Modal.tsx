@@ -17,13 +17,24 @@ interface ModalProps {
   noCard?: boolean
   /** When true, modal is full-screen on mobile (< 768px), centered with max-width on tablet/desktop */
   fullScreenOnMobile?: boolean
+  /** When true, modal body grows to fit content without its own scroll; page scrolls instead if needed */
+  disableBodyScroll?: boolean
 }
 
 /**
- * Reusable modal component with backdrop and close functionality
- * Supports ESC key to close and click outside to close
+ * Reusable modal component with backdrop and close functionality.
+ * Supports ESC key to close and click outside to close; optionally disables internal body scrolling so height fits content.
  */
-export function Modal({ isOpen, onClose, title, children, footer, noCard = false, fullScreenOnMobile = false }: ModalProps) {
+export function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
+  footer,
+  noCard = false,
+  fullScreenOnMobile = false,
+  disableBodyScroll = false,
+}: ModalProps) {
   /* Close modal on ESC key press */
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -66,6 +77,9 @@ export function Modal({ isOpen, onClose, title, children, footer, noCard = false
   const cardClass = fullScreenOnMobile
     ? 'bg-white shadow-xl w-full min-h-full md:min-h-0 md:max-h-[90vh] md:max-w-2xl md:rounded-lg rounded-none overflow-hidden flex flex-col'
     : 'bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col'
+  const bodyClass = disableBodyScroll
+    ? 'p-4 md:p-5 lg:p-6'
+    : 'flex-1 overflow-y-auto p-4 md:p-5 lg:p-6'
 
   return (
     <div className={containerClass} onClick={onClose}>
@@ -99,7 +113,7 @@ export function Modal({ isOpen, onClose, title, children, footer, noCard = false
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-5 lg:p-6">{children}</div>
+        <div className={bodyClass}>{children}</div>
 
         {footer && (
           <div className="border-t border-bonsai-slate-200 p-4 md:p-5 lg:p-6 flex justify-end gap-2">

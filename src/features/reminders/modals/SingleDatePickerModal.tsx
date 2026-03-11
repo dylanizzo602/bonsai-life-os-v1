@@ -33,8 +33,19 @@ function toDateInputValue(iso: string | null): string {
 function toTimeInputValue(iso: string | null): string {
   if (!iso) return ''
   if (!iso.includes('T')) return ''
+  // Extract the UTC time portion from the raw string first
+  const timeMatch = iso.match(/T(\d{2}):(\d{2})/)
+  if (!timeMatch) return ''
+  const utcHours = Number(timeMatch[1])
+  const utcMinutes = Number(timeMatch[2])
+  // If the stored value is exactly midnight UTC, treat it as a date-only reminder
+  if (utcHours === 0 && utcMinutes === 0) return ''
+
+  // For real times, show the same wall-clock time the user chose (local time)
   const d = new Date(iso)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const hours = d.getHours()
+  const minutes = d.getMinutes()
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
 }
 
 /** Format HH:mm for display as "4:00 PM" */
@@ -370,7 +381,8 @@ export function SingleDatePickerModal({
       const d = toDateInputValue(value)
       const t = toTimeInputValue(value)
       setDate(d)
-      setTime(t || '09:00')
+      // When no explicit time is present, keep time empty and hide the time field
+      setTime(t || '')
       setDateEdit(d ? formatDateDisplay(d) : '')
       setTimeEdit(t ? formatTimeDisplay(t) : '')
       setShowTime(!!t)
@@ -402,13 +414,28 @@ export function SingleDatePickerModal({
 
   const handleSave = async () => {
     const recurrenceStr = serializeRecurrencePattern(recurrencePattern)
+
+    // When the user has the time field visible, prefer the latest text input
+    // value (timeEdit) if it parses successfully; this ensures that pressing
+    // Save without blurring the time field still uses the new time.
+    let effectiveTime = time
+    if (showTime && timeEdit) {
+      const parsedFromEdit = parseTimeInput(timeEdit)
+      if (parsedFromEdit) {
+        effectiveTime = parsedFromEdit
+      }
+    }
+
     if (!date) {
       const result = onSave(null, recurrenceStr)
       if (result instanceof Promise) await result
       onClose()
       return
     }
-    const iso = toISO(date, showTime ? time : '09:00')
+
+    // When no time is shown, treat this as a date-only reminder (no explicit time)
+    const iso = showTime ? toISO(date, effectiveTime || '09:00') : date
+
     const result = onSave(iso, recurrenceStr)
     if (result instanceof Promise) {
       try {
@@ -429,8 +456,6 @@ export function SingleDatePickerModal({
         const { time: t } = getOneHourFromNow()
         setTime(t)
         setShowTime(true)
-      } else if (!showTime) {
-        setTime('09:00')
       }
     } else {
       setDate('')
@@ -511,23 +536,36 @@ export function SingleDatePickerModal({
               <ClockIcon className="w-4 h-4" />
             </button>
             {showTime ? (
-              <input
-                type="text"
-                value={timeEdit}
-                onChange={(e) => setTimeEdit(e.target.value)}
-                onBlur={() => {
-                  const p = parseTimeInput(timeEdit)
-                  if (p) {
-                    setTime(p)
-                    setTimeEdit(formatTimeDisplay(p))
-                  } else {
-                    setTimeEdit(time ? formatTimeDisplay(time) : '9:00 AM')
-                  }
-                }}
-                placeholder="12:00 PM"
-                className={timeInputClass}
-                aria-label="Time"
-              />
+              <>
+                <input
+                  type="text"
+                  value={timeEdit}
+                  onChange={(e) => setTimeEdit(e.target.value)}
+                  onBlur={() => {
+                    const p = parseTimeInput(timeEdit)
+                    if (p) {
+                      setTime(p)
+                      setTimeEdit(formatTimeDisplay(p))
+                    } else {
+                      setTimeEdit(time ? formatTimeDisplay(time) : '9:00 AM')
+                    }
+                  }}
+                  placeholder="12:00 PM"
+                  className={timeInputClass}
+                  aria-label="Time"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTime(false)
+                    setTime('')
+                    setTimeEdit('')
+                  }}
+                  className="text-secondary text-bonsai-slate-500 hover:text-bonsai-slate-700 text-xs"
+                >
+                  Remove
+                </button>
+              </>
             ) : (
               <button
                 type="button"

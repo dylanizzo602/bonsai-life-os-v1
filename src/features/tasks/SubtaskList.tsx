@@ -7,6 +7,8 @@ import { AddEditSubtaskModal } from './AddEditSubtaskModal'
 import { getTaskChecklists, getTaskChecklistItems, getTaskDependencies as fetchTaskDependencies } from '../../lib/supabase/tasks'
 import type { Task } from './types'
 import { TaskContextPopover } from './modals/TaskContextPopover'
+import { TaskSearchSelect } from '../../components/TaskSearchSelect'
+import type { TaskOption } from '../../components/TaskSearchSelect'
 
 interface SubtaskListProps {
   /** Parent task ID */
@@ -38,6 +40,10 @@ interface SubtaskListProps {
   onFocusAddInputConsumed?: () => void
   /** When true, hide completed/closed subtasks to respect parent task filters (e.g. Available view) */
   hideCompletedSubtasks?: boolean
+  /** Optional callback when subtasks change so parent can refresh enrichment (subtask counts, unresolved items, etc.) */
+  onSubtasksChanged?: () => void
+  /** When true, allow creating/linking subtasks; when false, list is read-only (used outside edit modal) */
+  allowCreateAndLink?: boolean
 }
 
 /**
@@ -58,6 +64,8 @@ export function SubtaskList({
   focusAddInput = false,
   onFocusAddInputConsumed,
   hideCompletedSubtasks = false,
+  onSubtasksChanged,
+  allowCreateAndLink = false,
 }: SubtaskListProps) {
   const [subtasks, setSubtasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
@@ -75,6 +83,30 @@ export function SubtaskList({
   }>>({})
   const [contextSubtask, setContextSubtask] = useState<Task | null>(null)
   const [contextPosition, setContextPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+
+  /* Task linking: build task options for linking existing tasks as new subtasks using shared search-select component */
+  const getTasksForLinking = useCallback(async (): Promise<TaskOption[]> => {
+    if (!getTasks) return []
+    const all = await getTasks()
+    return all
+      .filter((t) => t.parent_id === null)
+      .map((t) => ({ id: t.id, title: t.title }))
+  }, [getTasks])
+
+  /* Link existing task: update its parent_id to this task and refresh subtasks/enrichment */
+  const handleLinkExistingTask = useCallback(
+    async (option: TaskOption) => {
+      try {
+        await onUpdateTask(option.id, { parent_id: taskId })
+        const updated = await fetchSubtasks(taskId)
+        setSubtasks(updated)
+        onSubtasksChanged?.()
+      } catch (err) {
+        console.error('Error linking existing task as subtask:', err)
+      }
+    },
+    [onUpdateTask, fetchSubtasks, taskId, onSubtasksChanged],
+  )
 
   /* Load subtasks when taskId changes */
   useEffect(() => {
@@ -157,16 +189,14 @@ export function SubtaskList({
     return () => cancelAnimationFrame(id)
   }, [focusAddInput, loading, onFocusAddInputConsumed])
 
-  /* Create subtask: opens modal for full editing */
+  /* Create subtask: append to local list and optionally notify parent so enrichment can refresh */
   const handleCreate = async () => {
     if (!newSubtaskTitle.trim()) return
     try {
       const newSubtask = await onCreateSubtask(taskId, newSubtaskTitle.trim())
       setSubtasks((prev) => [...prev, newSubtask])
       setNewSubtaskTitle('')
-      /* Open edit modal for the newly created subtask */
-      setEditingSubtask(newSubtask)
-      setEditModalOpen(true)
+      onSubtasksChanged?.()
     } catch (err) {
       console.error('Error creating subtask:', err)
     }
@@ -191,6 +221,7 @@ export function SubtaskList({
       try {
         const updated = await fetchSubtasks(taskId)
         setSubtasks(updated)
+        onSubtasksChanged?.()
       } catch (err) {
         console.error('Error reloading subtasks:', err)
       }
@@ -236,22 +267,38 @@ export function SubtaskList({
           })}
         </div>
       )}
-      {/* Add subtask input: shown under the last subtask */}
-      <div className="flex gap-2">
-        <Input
-          ref={addInputRef}
-          placeholder="Add a subtask..."
-          value={newSubtaskTitle}
-          onChange={(e) => setNewSubtaskTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleCreate()
-          }}
-          className="flex-1"
-        />
-        <Button onClick={handleCreate} size="sm" variant="primary">
-          Add
-        </Button>
-      </div>
+      {/* Add subtask and link existing: only available when explicitly enabled (edit task modal) */}
+      {allowCreateAndLink && (
+        <>
+          <div className="flex gap-2">
+            <Input
+              ref={addInputRef}
+              placeholder="Add a subtask..."
+              value={newSubtaskTitle}
+              onChange={(e) => setNewSubtaskTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreate()
+              }}
+              className="flex-1"
+            />
+            <Button onClick={handleCreate} size="sm" variant="primary">
+              Add
+            </Button>
+          </div>
+          {getTasks && (
+            <div className="mt-2">
+              <TaskSearchSelect
+                getTasks={getTasksForLinking}
+                onSelectTask={handleLinkExistingTask}
+                excludeTaskIds={[taskId, ...subtasks.map((s) => s.id)]}
+                placeholder="Link existing task as subtask..."
+                aria-label="Link existing task as subtask"
+                className="w-full"
+              />
+            </div>
+          )}
+        </>
+      )}
 
       {/* Edit subtask modal */}
       {editingSubtask && (
@@ -298,11 +345,25 @@ export function SubtaskList({
             try {
               await _onDeleteTask(t.id)
               setSubtasks((prev) => prev.filter((s) => s.id !== t.id))
+              onSubtasksChanged?.()
             } catch (err) {
               console.error('Error deleting subtask:', err)
             } finally {
               setContextSubtask(null)
             }
+          }}
+          onUnlinkFromParent={(t) => {
+            ;(async () => {
+              try {
+                await onUpdateTask(t.id, { parent_id: null })
+                setSubtasks((prev) => prev.filter((s) => s.id !== t.id))
+                onSubtasksChanged?.()
+              } catch (err) {
+                console.error('Error unlinking subtask from parent:', err)
+              } finally {
+                setContextSubtask(null)
+              }
+            })()
           }}
         />
       )}

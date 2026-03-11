@@ -1,6 +1,7 @@
 /* TabletTaskItem component: Reusable tablet task display with consistent icon layout.
- * Tablet task items never use hover tooltips; icons are display-only for touch and small screens. */
+* Tablet task items never use hover tooltips; icons are display-only for touch and small screens. */
 
+import { useState, useRef } from 'react'
 import {
   ChecklistIcon,
   CalendarIcon,
@@ -18,6 +19,7 @@ import {
 import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { Tooltip } from '../../components/Tooltip'
 import { TimeEstimateTooltip } from './modals/TimeEstimateTooltip'
+import { StatusPickerModal } from './modals/StatusPickerModal'
 import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
 import { getDueStatus, formatStartDueDisplay } from './utils/date'
 import type { Task, TaskPriority, TaskStatus } from './types'
@@ -77,6 +79,13 @@ function getDisplayStatus(status: TaskStatus): DisplayStatus {
   if (status === 'completed') return 'complete'
   if (status === 'in_progress') return 'in_progress'
   return 'open'
+}
+
+/** Map display status back to TaskStatus */
+function getTaskStatus(displayStatus: DisplayStatus): TaskStatus {
+  if (displayStatus === 'complete') return 'completed'
+  if (displayStatus === 'in_progress') return 'in_progress'
+  return 'active'
 }
 
 /**
@@ -187,6 +196,11 @@ export function TabletTaskItem({
   const isRecurring = Boolean(task.recurrence_pattern)
   const priority: TaskPriority = task.priority ?? 'medium'
 
+  /* Modal state: Track whether status picker modal is open on tablet */
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
+  /* Status button ref: Used to position the status popover on tablet */
+  const statusButtonRef = useRef<HTMLButtonElement>(null)
+
   return (
     <div
       className="tablet-task-item rounded-lg border border-dashed border-bonsai-slate-200 bg-white px-3 py-2 shadow-sm"
@@ -226,37 +240,14 @@ export function TabletTaskItem({
             />
           </button>
         )}
-        {/* Status circle: tap toggles between Open and Complete using shared status handler (same behavior as desktop status picker) */}
+        {/* Status circle: tap opens status picker modal (same options as desktop) */}
         <button
+          ref={statusButtonRef}
           type="button"
-          onClick={async (e) => {
+          onClick={(e) => {
             e.stopPropagation()
             if (!onUpdateStatus) return
-            const nextStatus: TaskStatus =
-              displayStatus === 'complete' ? 'active' : 'completed'
-            try {
-              // #region agent log
-              fetch('http://127.0.0.1:7825/ingest/5e4e8d61-5cc8-4de4-815f-8096cfa9d88f', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'X-Debug-Session-Id': 'd50153',
-                },
-                body: JSON.stringify({
-                  sessionId: 'd50153',
-                  runId: 'run1',
-                  hypothesisId: 'H4',
-                  location: 'src/features/tasks/TabletTaskItem.tsx:statusTap',
-                  message: 'Tablet status circle tapped',
-                  data: { taskId: task.id, fromStatus: task.status, nextStatus },
-                  timestamp: Date.now(),
-                }),
-              }).catch(() => {});
-              // #endregion agent log
-              await onUpdateStatus(task.id, nextStatus)
-            } catch (err) {
-              console.error('Failed to update task status (tablet):', err)
-            }
+            setIsStatusModalOpen(true)
           }}
           className="shrink-0 flex items-center justify-center rounded-full hover:bg-bonsai-slate-100 transition-colors p-1 disabled:opacity-50 disabled:cursor-not-allowed"
           aria-label="Toggle task status"
@@ -462,6 +453,24 @@ export function TabletTaskItem({
           )}
         </span>
       </div>
+
+      {/* Status picker popover for tablet: uses same options as desktop, driven by onUpdateStatus */}
+      {onUpdateStatus && (
+        <StatusPickerModal
+          isOpen={isStatusModalOpen}
+          onClose={() => setIsStatusModalOpen(false)}
+          value={displayStatus}
+          triggerRef={statusButtonRef}
+          onSelect={async (newDisplayStatus) => {
+            try {
+              const nextTaskStatus = getTaskStatus(newDisplayStatus)
+              await onUpdateStatus(task.id, nextTaskStatus)
+            } catch (error) {
+              console.error('Failed to update task status (tablet picker):', error)
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

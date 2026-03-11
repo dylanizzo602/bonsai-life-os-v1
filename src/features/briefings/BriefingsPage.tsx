@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTasks } from '../tasks/hooks/useTasks'
 import { useReminders } from '../reminders/hooks/useReminders'
 import { useHabits } from '../habits/hooks/useHabits'
+import { useInbox } from '../home/hooks/useInbox'
 import { getDependenciesForTaskIds } from '../../lib/supabase/tasks'
 import { saveOrUpdateMorningBriefingEntryForToday } from '../../lib/supabase/reflections'
 import {
@@ -16,6 +17,7 @@ import type { HabitWithStreaks } from '../habits/types'
 import { BriefingProgressBar } from './BriefingProgressBar'
 import { GreetingScreen } from './GreetingScreen'
 import { OverdueScreen } from './OverdueScreen'
+import { InboxReviewScreen } from './InboxReviewScreen'
 import { PlanDayScreen } from './PlanDayScreen'
 import { ReflectionQuestionScreen } from './ReflectionQuestionScreen'
 import { CompletionScreen } from './CompletionScreen'
@@ -23,9 +25,10 @@ import { OverviewScreen } from './OverviewScreen'
 import { AddEditTaskModal } from '../tasks/AddEditTaskModal'
 import { AddEditReminderModal } from '../reminders'
 import type { Reminder } from '../reminders/types'
+import type { InboxItem } from '../home/types'
 
-/** Total steps in the flow (greeting + overdue + plan + 4 reflection + completion) */
-const TOTAL_STEPS = 8
+/** Total steps in the flow (greeting + overdue + inbox review + plan + 4 reflection + completion) */
+const TOTAL_STEPS = 9
 
 /** Reflection question keys and labels (one per step 3–6; failures list and week-in-a-life removed) */
 const REFLECTION_QUESTIONS: { key: keyof MorningBriefingResponses; label: string }[] = [
@@ -93,6 +96,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     tasks,
     loading: tasksLoading,
     refetch: refetchTasks,
+    createTask,
     updateTask,
     toggleComplete,
     fetchSubtasks,
@@ -118,6 +122,14 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     setEntry: setHabitEntry,
     refetch: refetchHabits,
   } = useHabits()
+
+  /* Inbox items: used for inbox review step to convert items into tasks or delete them */
+  const {
+    items: inboxItems,
+    loading: inboxLoading,
+    error: inboxError,
+    deleteItem: deleteInboxItem,
+  } = useInbox()
 
   /* Blocked/blocking task IDs for "available" filter */
   const [blockedTaskIds, setBlockedTaskIds] = useState<Set<string>>(new Set())
@@ -231,14 +243,68 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     return list
   }, [tasks, blockedTaskIds])
 
-  /* Edit task/reminder modals (used on overdue step) */
+  /* Edit task/reminder modals (used on overdue step and inbox review convert-to-task) */
   const [editTask, setEditTask] = useState<Task | null>(null)
   const [editReminder, setEditReminder] = useState<Reminder | null>(null)
+  const [taskModalOpen, setTaskModalOpen] = useState(false)
+  const [initialTitle, setInitialTitle] = useState<string>('')
+  const [inboxItemToRemoveOnCreate, setInboxItemToRemoveOnCreate] = useState<InboxItem | null>(
+    null,
+  )
+
+  /* Open task modal for editing an existing task (from overdue step) */
+  const openEditTask = useCallback((task: Task) => {
+    setEditTask(task)
+    setInitialTitle('')
+    setInboxItemToRemoveOnCreate(null)
+    setTaskModalOpen(true)
+  }, [])
+
+  /* Open task modal to convert an inbox item into a new task (from inbox review step) */
+  const openConvertInboxItem = useCallback((item: InboxItem) => {
+    setEditTask(null)
+    setInitialTitle(item.name)
+    setInboxItemToRemoveOnCreate(item)
+    setTaskModalOpen(true)
+  }, [])
+
+  /* Close task modal and reset related state */
+  const closeTaskModal = useCallback(() => {
+    setTaskModalOpen(false)
+    setEditTask(null)
+    setInitialTitle('')
+    setInboxItemToRemoveOnCreate(null)
+  }, [])
+
+  /* Create task handler: used when converting an inbox item; deletes inbox item after successful create */
+  const handleCreateTask = useCallback(
+    async (input: Parameters<typeof createTask>[0]) => {
+      const created = await createTask(input)
+      if (inboxItemToRemoveOnCreate) {
+        await deleteInboxItem(inboxItemToRemoveOnCreate.id)
+        setInboxItemToRemoveOnCreate(null)
+      }
+      await refetchTasks()
+      closeTaskModal()
+      return created
+    },
+    [createTask, inboxItemToRemoveOnCreate, deleteInboxItem, refetchTasks, closeTaskModal],
+  )
+
+  /* Update task handler: refresh tasks after updating from the overdue step */
+  const handleUpdateTask = useCallback(
+    async (id: string, input: Parameters<typeof updateTask>[1]) => {
+      const updated = await updateTask(id, input)
+      await refetchTasks()
+      return updated
+    },
+    [updateTask, refetchTasks],
+  )
 
   /* Save reflection entry once when moving to completion (step 6); use shared helper so only one entry exists per day */
   const saveEntryAndGoToCompletion = useCallback(async () => {
     if (savedEntryId) {
-      setStep(7)
+      setStep(8)
       return
     }
     const title = `Morning briefing – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
@@ -248,7 +314,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     })
     setSavedEntryId(entry.id)
     setSavedEntryTitle(entry.title ?? title)
-    setStep(7)
+    setStep(8)
   }, [reflectionAnswers, savedEntryId])
 
   /* View overview: show saved entry; create or update today's entry first so we never create duplicates */
@@ -307,7 +373,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
           overdueReminders={overdueReminders}
           overdueHabitReminders={overdueHabitReminders}
           loading={tasksLoading || remindersLoading}
-          onEditTask={setEditTask}
+          onEditTask={openEditTask}
           onEditReminder={setEditReminder}
           onUpdateReminder={updateReminder}
           onToggleReminderComplete={toggleReminderComplete}
@@ -330,67 +396,75 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
       )}
 
       {step === 2 && (
+        <InboxReviewScreen
+          items={inboxItems}
+          loading={inboxLoading}
+          error={inboxError}
+          onConvertToTask={openConvertInboxItem}
+          onDeleteItem={deleteInboxItem}
+          onNext={() => setStep(3)}
+        />
+      )}
+
+      {step === 3 && (
         <PlanDayScreen
           availableTasks={availableTasks}
           lineUpTaskIds={lineUpTaskIds}
           onAddToLineUp={addToLineUp}
           onRemoveFromLineUp={removeFromLineUp}
-          onNext={() => setStep(3)}
+          onNext={() => setStep(4)}
         />
       )}
 
-      {step >= 3 && step <= 6 && (
+      {step >= 4 && step <= 7 && (
         <ReflectionQuestionScreen
-          question={REFLECTION_QUESTIONS[step - 3].label}
-          value={reflectionAnswers[REFLECTION_QUESTIONS[step - 3].key] ?? ''}
+          question={REFLECTION_QUESTIONS[step - 4].label}
+          value={reflectionAnswers[REFLECTION_QUESTIONS[step - 4].key] ?? ''}
           onChange={(value) =>
             setReflectionAnswers((prev) => ({
               ...prev,
-              [REFLECTION_QUESTIONS[step - 3].key]: value,
+              [REFLECTION_QUESTIONS[step - 4].key]: value,
             }))
           }
           onNext={() => {
-            if (step === 6) saveEntryAndGoToCompletion()
+            if (step === 7) saveEntryAndGoToCompletion()
             else setStep(step + 1)
           }}
-          onBack={step > 3 ? () => setStep(step - 1) : undefined}
-          showBack={step > 3}
+          onBack={step > 4 ? () => setStep(step - 1) : undefined}
+          showBack={step > 4}
         />
       )}
 
-      {step === 7 && (
+      {step === 8 && (
         <CompletionScreen onViewOverview={handleViewOverview} onClose={onClose} />
       )}
 
-      {/* Progress bar: show for steps 1–7 (not greeting); total 8 steps */}
-      {step >= 1 && step <= 7 && (
+      {/* Progress bar: show for steps 1–8 (not greeting); total 9 steps */}
+      {step >= 1 && step <= 8 && (
         <BriefingProgressBar
           currentStep={step}
           totalSteps={TOTAL_STEPS}
         />
       )}
 
-      {/* Edit task modal (overdue step) */}
-      {editTask && (
-        <AddEditTaskModal
-          isOpen={true}
-          onClose={() => {
-            setEditTask(null)
-            refetchTasks()
-          }}
-          task={editTask}
-          onUpdateTask={updateTask}
-          fetchSubtasks={fetchSubtasks}
-          createSubtask={createSubtask}
-          updateTask={updateTask}
-          deleteTask={deleteTask}
-          toggleComplete={toggleComplete}
-          getTasks={getTasks}
-          getTaskDependencies={getTaskDependencies}
-          onAddDependency={onAddDependency}
-          onRemoveDependency={onRemoveDependency}
-        />
-      )}
+      {/* Add/Edit task modal (overdue step edit and inbox convert-to-task) */}
+      <AddEditTaskModal
+        isOpen={taskModalOpen}
+        onClose={closeTaskModal}
+        task={editTask}
+        initialTitle={initialTitle}
+        onCreateTask={handleCreateTask}
+        onUpdateTask={handleUpdateTask}
+        fetchSubtasks={fetchSubtasks}
+        createSubtask={createSubtask}
+        updateTask={updateTask}
+        deleteTask={deleteTask}
+        toggleComplete={toggleComplete}
+        getTasks={getTasks}
+        getTaskDependencies={getTaskDependencies}
+        onAddDependency={onAddDependency}
+        onRemoveDependency={onRemoveDependency}
+      />
 
       {/* Edit reminder modal (overdue step) */}
       {editReminder && (

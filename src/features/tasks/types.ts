@@ -110,6 +110,8 @@ export interface UpdateTaskInput {
   category?: string | null
   goal_id?: string | null
   recurrence_pattern?: string | null
+  /** Parent task id for subtasks; null to unlink and make task top-level */
+  parent_id?: string | null
 }
 
 /** Input for creating a checklist on a task */

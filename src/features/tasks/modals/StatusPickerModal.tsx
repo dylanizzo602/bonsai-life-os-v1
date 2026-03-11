@@ -86,9 +86,6 @@ export function StatusPickerModal({ isOpen, onClose, value, onSelect, triggerRef
   const popoverRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState({ top: 0, left: 0 })
 
-  /* Position calculation: Center on mobile/tablet (< 1024px); anchor to trigger on desktop */
-  const DESKTOP_BREAKPOINT = 1024
-
   useEffect(() => {
     if (!isOpen || !popoverRef.current) return
 
@@ -99,25 +96,25 @@ export function StatusPickerModal({ isOpen, onClose, value, onSelect, triggerRef
       const viewportWidth = window.innerWidth
       const viewportHeight = window.innerHeight
 
-      /* Mobile/tablet: center popover in viewport */
-      if (viewportWidth < DESKTOP_BREAKPOINT) {
-        let top = (viewportHeight - popoverRect.height) / 2
-        let left = (viewportWidth - popoverRect.width) / 2
-        top = Math.max(padding, Math.min(top, viewportHeight - popoverRect.height - padding))
-        left = Math.max(padding, Math.min(left, viewportWidth - popoverRect.width - padding))
+      /* When a trigger is provided (desktop, tablet, or mobile), anchor popover to it with viewport boundary detection.
+       * Fallback: center in viewport only when no triggerRef is available (defensive). */
+      if (triggerRef.current) {
+        const triggerRect = triggerRef.current.getBoundingClientRect()
+        let top = triggerRect.bottom + 4
+        let left = triggerRect.left
+        if (left + popoverRect.width > viewportWidth - padding) left = viewportWidth - popoverRect.width - padding
+        if (left < padding) left = padding
+        if (top + popoverRect.height > viewportHeight - padding) top = triggerRect.top - popoverRect.height - 4
+        if (top < padding) top = padding
         setPosition({ top, left })
         return
       }
 
-      /* Desktop: position below trigger with viewport boundary detection */
-      if (!triggerRef.current) return
-      const triggerRect = triggerRef.current.getBoundingClientRect()
-      let top = triggerRect.bottom + 4
-      let left = triggerRect.left
-      if (left + popoverRect.width > viewportWidth - padding) left = viewportWidth - popoverRect.width - padding
-      if (left < padding) left = padding
-      if (top + popoverRect.height > viewportHeight - padding) top = triggerRect.top - popoverRect.height - 4
-      if (top < padding) top = padding
+      /* Fallback: center in viewport when no trigger is available */
+      let top = (viewportHeight - popoverRect.height) / 2
+      let left = (viewportWidth - popoverRect.width) / 2
+      top = Math.max(padding, Math.min(top, viewportHeight - popoverRect.height - padding))
+      left = Math.max(padding, Math.min(left, viewportWidth - popoverRect.width - padding))
       setPosition({ top, left })
     }
 

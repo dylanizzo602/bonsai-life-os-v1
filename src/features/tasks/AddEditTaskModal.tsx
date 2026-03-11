@@ -209,6 +209,8 @@ export function AddEditTaskModal({
   const [newChecklistTitle, setNewChecklistTitle] = useState('')
   const [newChecklistItem, setNewChecklistItem] = useState('')
   const [newItemTitles, setNewItemTitles] = useState<Record<string, string>>({})
+  /* Checklist view: toggle whether completed/closed checklist items are visible (default: show closed) */
+  const [showCompletedChecklistItems, setShowCompletedChecklistItems] = useState(true)
   const [editingChecklistId, setEditingChecklistId] = useState<string | null>(null)
   const [editingChecklistTitle, setEditingChecklistTitle] = useState('')
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
@@ -361,15 +363,31 @@ export function AddEditTaskModal({
       onClose={onClose}
       title={isEditMode ? 'Edit Task' : 'Add Task'}
       fullScreenOnMobile
+      /* Footer: In edit mode, show auto-save message and Close button; in add mode, keep explicit Save */
       footer={
-        <div className="flex w-full items-center justify-between">
-          <span className="text-secondary text-bonsai-slate-500">
-            Changes are automatically saved
-          </span>
-          <Button variant="secondary" onClick={onClose}>
-            Close
-          </Button>
-        </div>
+        isEditMode ? (
+          <div className="flex w-full items-center justify-between">
+            <span className="text-secondary text-bonsai-slate-500">
+              Changes are automatically saved
+            </span>
+            <Button variant="secondary" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        ) : (
+          <>
+            <Button variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSubmit}
+              disabled={submitting || !title.trim()}
+            >
+              {submitting ? 'Saving...' : 'Save Task'}
+            </Button>
+          </>
+        )
       }
     >
       {/* Main task input: Status circle on left, input field on right */}
@@ -488,10 +506,23 @@ export function AddEditTaskModal({
         onClose={() => setDatePickerOpen(false)}
         startDate={start_date}
         dueDate={due_date}
-        onSave={(start, due, rec) => {
+        onSave={async (start, due, rec) => {
+          /* When editing an existing task, persist date and recurrence changes immediately (including reopen checklist flag) */
           setStartDate(start)
           setDueDate(due)
           setRecurrencePattern(rec ?? null)
+
+          if (isEditMode && task && onUpdateTask) {
+            try {
+              await onUpdateTask(task.id, {
+                start_date: start,
+                due_date: due,
+                recurrence_pattern: rec ?? null,
+              })
+            } catch (error) {
+              console.error('Failed to update task dates/recurrence from DatePickerModal:', error)
+            }
+          }
         }}
         triggerRef={datePickerButtonRef}
         recurrencePattern={recurrence_pattern}
@@ -504,6 +535,25 @@ export function AddEditTaskModal({
         triggerRef={statusButtonRef}
         onSelect={async (newStatus) => {
           setStatus(newStatus)
+
+          // In edit mode, immediately persist status changes using the shared task handlers
+          if (isEditMode && task && onUpdateTask) {
+            const nextTaskStatus = getTaskStatus(newStatus)
+            try {
+              if (nextTaskStatus === 'completed') {
+                // Use shared completion handler for consistent recurring behavior when available
+                if (toggleComplete) {
+                  await toggleComplete(task.id, true)
+                } else {
+                  await onUpdateTask(task.id, { status: 'completed' })
+                }
+              } else {
+                await onUpdateTask(task.id, { status: nextTaskStatus })
+              }
+            } catch (error) {
+              console.error('Failed to update task status from modal:', error)
+            }
+          }
         }}
       />
       <PriorityPickerModal
@@ -701,107 +751,133 @@ export function AddEditTaskModal({
                   <ul className="space-y-3">
                     {checklists.map((c) => (
                       <li key={c.id} className="rounded-lg border border-bonsai-slate-200 p-2">
-                        {/* Checklist title: editable on click or via Rename */}
-                        <div className="flex items-center gap-2 mb-2">
-                          {editingChecklistId === c.id ? (
-                            <Input
-                              className="border-bonsai-slate-300 flex-1 text-sm font-medium"
-                              value={editingChecklistTitle}
-                              onChange={(e) => setEditingChecklistTitle(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
+                        {/* Checklist title row: name on the left with completed/total count on the right, editable via Rename */}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2 flex-1">
+                            {editingChecklistId === c.id ? (
+                              <Input
+                                className="border-bonsai-slate-300 flex-1 text-sm font-medium"
+                                value={editingChecklistTitle}
+                                onChange={(e) => setEditingChecklistTitle(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    updateChecklistTitle(c.id, editingChecklistTitle)
+                                    setEditingChecklistId(null)
+                                  }
+                                  if (e.key === 'Escape') setEditingChecklistId(null)
+                                }}
+                                autoFocus
+                              />
+                            ) : (
+                              <p className="text-sm font-medium text-bonsai-slate-700 flex-1">
+                                {c.title}
+                              </p>
+                            )}
+                            {/* Checklist count: completed items over total items for quick progress glance */}
+                            <span className="text-xs text-bonsai-slate-500">
+                              {c.items.filter((item) => item.completed).length}/{c.items.length}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                if (editingChecklistId === c.id) {
                                   updateChecklistTitle(c.id, editingChecklistTitle)
                                   setEditingChecklistId(null)
+                                } else {
+                                  setEditingChecklistId(c.id)
+                                  setEditingChecklistTitle(c.title)
                                 }
-                                if (e.key === 'Escape') setEditingChecklistId(null)
                               }}
-                              autoFocus
-                            />
-                          ) : (
-                            <p className="text-sm font-medium text-bonsai-slate-700 flex-1">
-                              {c.title}
-                            </p>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              if (editingChecklistId === c.id) {
-                                updateChecklistTitle(c.id, editingChecklistTitle)
-                                setEditingChecklistId(null)
-                              } else {
-                                setEditingChecklistId(c.id)
-                                setEditingChecklistTitle(c.title)
-                              }
-                            }}
-                          >
-                            {editingChecklistId === c.id ? 'Save' : 'Rename'}
-                          </Button>
+                            >
+                              {editingChecklistId === c.id ? 'Save' : 'Rename'}
+                            </Button>
+                          </div>
                         </div>
                         <ul className="space-y-1 mb-2">
-                          {c.items.map((item) => (
-                            <li key={item.id} className="flex items-center gap-2">
-                              <Checkbox
-                                checked={item.completed}
-                                onChange={(e) => toggleItem(item.id, e.target.checked)}
-                              />
-                              {editingItemId === item.id ? (
-                                <Input
-                                  className="border-bonsai-slate-300 flex-1 text-sm"
-                                  value={editingItemTitle}
-                                  onChange={(e) => setEditingItemTitle(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
+                          {c.items
+                            .filter((item) =>
+                              showCompletedChecklistItems ? true : !item.completed,
+                            )
+                            .map((item) => (
+                              <li key={item.id} className="flex items-center gap-2">
+                                <Checkbox
+                                  checked={item.completed}
+                                  onChange={(e) => toggleItem(item.id, e.target.checked)}
+                                />
+                                {editingItemId === item.id ? (
+                                  <Input
+                                    className="border-bonsai-slate-300 flex-1 text-sm"
+                                    value={editingItemTitle}
+                                    onChange={(e) => setEditingItemTitle(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        updateItemTitle(item.id, editingItemTitle)
+                                        setEditingItemId(null)
+                                      }
+                                      if (e.key === 'Escape') {
+                                        setEditingItemId(null)
+                                      }
+                                    }}
+                                    autoFocus
+                                  />
+                                ) : (
+                                  <span
+                                    className={
+                                      item.completed
+                                        ? 'text-sm text-bonsai-slate-500 line-through flex-1'
+                                        : 'text-sm text-bonsai-slate-700 flex-1'
+                                    }
+                                  >
+                                    {item.title}
+                                  </span>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    if (editingItemId === item.id) {
                                       updateItemTitle(item.id, editingItemTitle)
                                       setEditingItemId(null)
+                                    } else {
+                                      setEditingItemId(item.id)
+                                      setEditingItemTitle(item.title)
                                     }
-                                    if (e.key === 'Escape') {
+                                  }}
+                                >
+                                  {editingItemId === item.id ? 'Save' : 'Rename'}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    deleteItem(item.id)
+                                    if (editingItemId === item.id) {
                                       setEditingItemId(null)
                                     }
                                   }}
-                                  autoFocus
-                                />
-                              ) : (
-                                <span
-                                  className={
-                                    item.completed
-                                      ? 'text-sm text-bonsai-slate-500 line-through flex-1'
-                                      : 'text-sm text-bonsai-slate-700 flex-1'
-                                  }
                                 >
-                                  {item.title}
-                                </span>
-                              )}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  if (editingItemId === item.id) {
-                                    updateItemTitle(item.id, editingItemTitle)
-                                    setEditingItemId(null)
-                                  } else {
-                                    setEditingItemId(item.id)
-                                    setEditingItemTitle(item.title)
-                                  }
-                                }}
-                              >
-                                {editingItemId === item.id ? 'Save' : 'Rename'}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  deleteItem(item.id)
-                                  if (editingItemId === item.id) {
-                                    setEditingItemId(null)
-                                  }
-                                }}
-                              >
-                                Delete
-                              </Button>
-                            </li>
-                          ))}
+                                  Delete
+                                </Button>
+                              </li>
+                            ))}
                         </ul>
+                        {/* Checklist closed-items toggle: show or hide completed checklist entries for this task */}
+                        {c.items.some((item) => item.completed) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowCompletedChecklistItems((prev) => !prev)
+                            }
+                            className="mb-1 text-xs font-medium text-bonsai-slate-600 hover:text-bonsai-slate-800"
+                          >
+                            {showCompletedChecklistItems
+                              ? 'Hide closed items'
+                              : 'Show closed items'}
+                          </button>
+                        )}
                         <div className="flex gap-2">
                           <Input
                             placeholder="Add item"
@@ -878,6 +954,7 @@ export function AddEditTaskModal({
                 getTasks={getTasks}
                 getTaskDependencies={getTaskDependencies}
                 onAddDependency={onAddDependency}
+                allowCreateAndLink
               />
             ) : (
               <p className="text-sm text-bonsai-slate-500">Subtask actions not provided.</p>
