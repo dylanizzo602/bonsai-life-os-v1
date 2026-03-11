@@ -1,4 +1,4 @@
-/* Task types: TypeScript definitions for task entities, checklists, and dependencies */
+/* Task types: TypeScript definitions for task entities, checklists, dependencies, and templates */
 
 /**
  * Task priority. Display: none = black stroke/white fill, low = grey, medium = "normal" = blue,
@@ -162,4 +162,44 @@ export type SortFieldId =
 export interface SortByEntry {
   field: SortFieldId
   direction: 'asc' | 'desc'
+}
+
+/** Template payload: snapshot of a task's core fields, tags, checklists, and subtasks (dates ignored when applying). */
+export interface TaskTemplateData {
+  title: string
+  description: string | null
+  priority: TaskPriority
+  goal_id: string | null
+  time_estimate: number | null
+  attachments: TaskAttachment[]
+  category: string | null
+  recurrence_pattern: string | null
+  /** Tags captured as full Tag objects for consistent display; applied as tag ids when instantiating. */
+  tags: Tag[]
+  /** Checklists with items as captured from useTaskChecklists (without foreign key ids for new task). */
+  checklists: {
+    title: string
+    items: {
+      title: string
+      completed: boolean
+    }[]
+  }[]
+  /** Subtasks with minimal fields; instantiated as child tasks of the new task. */
+  subtasks: {
+    title: string
+    description: string | null
+    priority: TaskPriority
+    time_estimate: number | null
+    recurrence_pattern: string | null
+  }[]
+}
+
+/** Task template entity stored in Supabase task_templates table. */
+export interface TaskTemplate {
+  id: string
+  user_id: string | null
+  name: string
+  data: TaskTemplateData
+  created_at: string
+  updated_at: string
 }

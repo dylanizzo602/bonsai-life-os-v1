@@ -1,4 +1,4 @@
-/* AddEditTaskModal: Modal for adding/editing a task; full form state and sub-modals */
+/* AddEditTaskModal: Modal for adding/editing a task; full form state, templates, and sub-modals */
 
 import { useState, useEffect, useRef } from 'react'
 import { Modal } from '../../components/Modal'
@@ -6,6 +6,7 @@ import { Button } from '../../components/Button'
 import { Input } from '../../components/Input'
 import { Checkbox } from '../../components/Checkbox'
 import { Select } from '../../components/Select'
+import { RichTextEditor } from '../notes/RichTextEditor'
 import { useTaskChecklists } from './hooks/useTaskChecklists'
 import { useTags } from './hooks/useTags'
 import { useGoals } from '../goals/hooks/useGoals'
@@ -29,6 +30,10 @@ import { DependenciesSection } from './DependenciesSection'
 import { AttachmentUploadModal } from './modals/AttachmentUploadModal'
 import { AttachmentPreviewModal } from './modals/AttachmentPreviewModal'
 import { StatusPickerModal } from './modals/StatusPickerModal'
+import { useTaskTemplates } from './hooks/useTaskTemplates'
+import type { ChecklistWithItems } from './hooks/useTaskChecklists'
+import type { TaskTemplate, TaskTemplateData } from './types'
+import { createTaskChecklist, createChecklistItem, createSubtask } from '../../lib/supabase/tasks'
 import type {
   Task,
   Tag,
@@ -55,6 +60,35 @@ function getTaskStatus(displayStatus: DisplayStatus): TaskStatus {
   if (displayStatus === 'complete') return 'completed'
   if (displayStatus === 'in_progress') return 'in_progress'
   return 'active'
+}
+
+/** Instantiate checklists and subtasks for a newly created task from a template snapshot. */
+async function instantiateTemplateChildren(
+  taskId: string,
+  template: TaskTemplateData,
+): Promise<void> {
+  for (const cl of template.checklists) {
+    const checklist = await createTaskChecklist({
+      task_id: taskId,
+      title: cl.title,
+    })
+    for (const item of cl.items) {
+      await createChecklistItem({
+        checklist_id: checklist.id,
+        title: item.title,
+      })
+    }
+  }
+
+  for (const st of template.subtasks) {
+    await createSubtask(taskId, {
+      title: st.title,
+      description: st.description,
+      priority: st.priority,
+      time_estimate: st.time_estimate,
+      recurrence_pattern: st.recurrence_pattern,
+    })
+  }
 }
 
 /**
@@ -175,6 +209,7 @@ export function AddEditTaskModal({
   onRemoveDependency,
   initialTitle,
 }: AddEditTaskModalProps) {
+  /* Core task form state: title, description, dates, priority, goal, tags, estimate, attachments, status */
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [start_date, setStartDate] = useState<string | null>(null)
@@ -215,6 +250,13 @@ export function AddEditTaskModal({
   const [editingChecklistTitle, setEditingChecklistTitle] = useState('')
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [editingItemTitle, setEditingItemTitle] = useState('')
+  /* Template state: applied template snapshot for add mode and inline template name prompt in edit mode */
+  const [appliedTemplate, setAppliedTemplate] = useState<TaskTemplateData | null>(null)
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | ''>('')
+  const [isNamingTemplate, setIsNamingTemplate] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [showTemplateManager, setShowTemplateManager] = useState(false)
 
   const isEditMode = Boolean(task?.id)
   const {
@@ -236,10 +278,38 @@ export function AddEditTaskModal({
     setTagsForTask,
   } = useTags(task?.user_id ?? null)
   const { goals } = useGoals()
+  const {
+    templates,
+    loading: templatesLoading,
+    error: templatesError,
+    fetchTemplates,
+    saveTemplateFromTask,
+    removeTemplate,
+  } = useTaskTemplates()
+
+  /* Apply a template snapshot to the current form (dates and status stay as-is). */
+  const applyTemplateToForm = (data: TaskTemplateData) => {
+    setTitle(data.title)
+    setDescription(data.description ?? '')
+    setPriority(data.priority ?? 'medium')
+    setGoalId(data.goal_id ?? null)
+    setTimeEstimate(data.time_estimate ?? null)
+    setAttachments(Array.isArray(data.attachments) ? data.attachments : [])
+    setRecurrencePattern(data.recurrence_pattern ?? null)
+    setTags(Array.isArray(data.tags) ? data.tags : [])
+    setAppliedTemplate(data)
+    /* When template has breakdown (checklists/subtasks), surface advanced section so user sees it. */
+    if (data.checklists.length > 0 || data.subtasks.length > 0) {
+      setAdvancedOpen(true)
+    }
+  }
 
   /* Prefill form when editing or reset when opening for add */
   useEffect(() => {
     if (!isOpen) return
+    /* When modal opens, load templates so header controls have data. */
+    void fetchTemplates()
+
     if (task) {
       setTitle(task.title)
       setDescription(task.description ?? '')
@@ -266,8 +336,10 @@ export function AddEditTaskModal({
       setTimeEstimate(null)
       setAttachments([])
       setStatus('open')
+      setAppliedTemplate(null)
+      setSelectedTemplateId('')
     }
-  }, [isOpen, task, initialTitle])
+  }, [isOpen, task, initialTitle, fetchTemplates])
 
   /* Submit: create or update task with all form fields (invoked by callers that still want explicit save) */
   const handleSubmit = async () => {
@@ -329,6 +401,10 @@ export function AddEditTaskModal({
       if (result && typeof result === 'object' && 'id' in result) {
         const createdTask = result as Task
         await setTagsForTask(createdTask.id, tags.map((t) => t.id))
+        /* If a template was applied when creating, instantiate its checklists and subtasks for the new task. */
+        if (appliedTemplate) {
+          await instantiateTemplateChildren(createdTask.id, appliedTemplate)
+        }
         if (onCreatedTask) {
           onCreatedTask({ ...createdTask, tags })
         }
@@ -357,11 +433,109 @@ export function AddEditTaskModal({
   const formatEstimate = (min: number | null) =>
     min == null ? null : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`.replace(/ 0m$/, '')
 
+  const headerTitle = (
+    <div className="flex w-full items-center justify-between gap-3">
+      <span className="text-body font-semibold text-bonsai-brown-700">
+        {isEditMode ? 'Edit Task' : 'Add Task'}
+      </span>
+      {/* Template controls: apply in add mode, save template in edit mode */}
+      {isEditMode && task ? (
+        <div className="flex items-center gap-2">
+          {isNamingTemplate && (
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Template name"
+                className="border-bonsai-slate-300"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+              />
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={!templateName.trim() || savingTemplate}
+                onClick={async () => {
+                  if (!task) return
+                  setSavingTemplate(true)
+                  try {
+                    const subtasksForTemplate = fetchSubtasks
+                      ? await fetchSubtasks(task.id)
+                      : []
+                    await saveTemplateFromTask({
+                      name: templateName.trim(),
+                      task,
+                      checklists: (checklists as ChecklistWithItems[]) ?? [],
+                      subtasks: subtasksForTemplate,
+                    })
+                    setIsNamingTemplate(false)
+                    setTemplateName('')
+                  } catch {
+                    // Error surfaced via hook error state
+                  } finally {
+                    setSavingTemplate(false)
+                  }
+                }}
+              >
+                Save
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setIsNamingTemplate(false)
+                  setTemplateName('')
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
+          {!isNamingTemplate && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setIsNamingTemplate(true)
+                setTemplateName(task.title)
+              }}
+            >
+              Save as task template
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <Select
+            value={selectedTemplateId}
+            onChange={(e) => {
+              const value = e.target.value
+              setSelectedTemplateId(value)
+              const template: TaskTemplate | undefined = templates.find((t) => t.id === value)
+              if (template) {
+                applyTemplateToForm(template.data)
+              }
+            }}
+            options={[
+              { value: '', label: templatesLoading ? 'Loading templates...' : 'No template' },
+              ...templates.map((t) => ({ value: t.id, label: t.name })),
+            ]}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowTemplateManager((prev) => !prev)}
+          >
+            Manage
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={isEditMode ? 'Edit Task' : 'Add Task'}
+      title={headerTitle}
       fullScreenOnMobile
       /* Footer: In edit mode, show auto-save message and Close button; in add mode, keep explicit Save */
       footer={
@@ -391,6 +565,56 @@ export function AddEditTaskModal({
       }
     >
       {/* Main task input: Status circle on left, input field on right */}
+      {showTemplateManager && !isEditMode && (
+        <div className="mb-3 rounded-md border border-bonsai-slate-200 bg-bonsai-slate-50 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-secondary text-bonsai-slate-700">Task templates</span>
+            {templatesError && (
+              <span className="text-xs text-red-600">{templatesError}</span>
+            )}
+          </div>
+          {templates.length === 0 ? (
+            <p className="text-sm text-bonsai-slate-500">
+              No templates yet. Create a task, then use &quot;Save as task template&quot; in the
+              Edit Task view.
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {templates.map((tmpl) => (
+                <li
+                  key={tmpl.id}
+                  className="flex items-center justify-between gap-2 rounded-md px-2 py-1 hover:bg-bonsai-slate-100"
+                >
+                  <button
+                    type="button"
+                    className="flex-1 text-left text-sm text-bonsai-slate-800"
+                    onClick={() => {
+                      setSelectedTemplateId(tmpl.id)
+                      applyTemplateToForm(tmpl.data)
+                      setShowTemplateManager(false)
+                    }}
+                  >
+                    {tmpl.name}
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={async () => {
+                      await removeTemplate(tmpl.id)
+                      if (selectedTemplateId === tmpl.id) {
+                        setSelectedTemplateId('')
+                        setAppliedTemplate(null)
+                      }
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <div className="mb-4 flex items-center gap-3">
         {/* Status circle: Clickable to open status picker popover, aligned with left edge of date picker button below */}
         <button
@@ -624,13 +848,13 @@ export function AddEditTaskModal({
       {advancedOpen && (
         <div className="space-y-4 pt-2 border-t border-bonsai-slate-200">
           <div>
-            <textarea
-              placeholder="Add notes or details..."
-              className="w-full min-h-[80px] rounded-lg border border-dashed border-bonsai-slate-300 px-3 py-2 text-sm text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent"
+            {/* Description: Rich text editor for notes/details, stores HTML string in description state */}
+            <RichTextEditor
+              editorKey={task?.id ?? 'new-task-description'}
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              aria-label="Notes or details"
-              spellCheck
+              onBlur={(html) => setDescription(html)}
+              placeholder="Add notes or details..."
+              className="w-full"
             />
           </div>
 

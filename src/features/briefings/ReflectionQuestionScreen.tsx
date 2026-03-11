@@ -1,7 +1,7 @@
-/* ReflectionQuestionScreen: One reflection question per step with textarea */
+/* ReflectionQuestionScreen: One reflection question per step with rich text editor */
 
 import { Button } from '../../components/Button'
-import { Textarea } from '../../components/Textarea'
+import { RichTextEditor } from '../notes/RichTextEditor'
 
 interface ReflectionQuestionScreenProps {
   /** Question text */
@@ -35,12 +35,12 @@ export function ReflectionQuestionScreen({
       <h3 className="text-body font-semibold text-bonsai-brown-700 mb-4">
         {question}
       </h3>
-      <Textarea
-        label="Your response"
+      {/* Answer input: Rich text editor so reflections can include basic formatting */}
+      <RichTextEditor
+        editorKey={`reflection-${question}`}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onBlur={(html) => onChange(html)}
         placeholder="Type your thoughts here..."
-        rows={5}
         className="mb-6"
       />
       <div className="flex gap-3">

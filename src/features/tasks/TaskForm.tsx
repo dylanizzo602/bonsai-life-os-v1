@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { Input } from '../../components/Input'
 import { Select } from '../../components/Select'
 import { Button } from '../../components/Button'
+import { RichTextEditor } from '../notes/RichTextEditor'
 import type { Task, CreateTaskInput, UpdateTaskInput, TaskPriority } from './types'
 
 interface TaskFormProps {
@@ -78,15 +79,16 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
       />
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-secondary font-medium text-bonsai-slate-700 mb-1">
           Description
         </label>
-        <textarea
+        {/* Description: Rich text editor for task details, stores HTML string in description state */}
+        <RichTextEditor
+          editorKey={task?.id ?? 'new-task'}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onBlur={(html) => setDescription(html)}
           placeholder="Task description (optional)"
-          rows={4}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full"
         />
       </div>
 
