@@ -1348,11 +1348,17 @@ export function TasksPage() {
         availableTagNames={availableTagNames}
       />
 
-      {/* Sort modal: show effective sort (Available default or Custom sortBy) so user sees what is selected */}
+      {/* Sort modal: show effective sort (Available/All defaults or Custom sortBy) so user sees what is selected */}
       <SortModal
         isOpen={sortOpen}
         onClose={() => setSortOpen(false)}
-        sortBy={viewMode === 'available' ? AVAILABLE_DEFAULT_SORT : sortBy}
+        sortBy={
+          viewMode === 'available'
+            ? AVAILABLE_DEFAULT_SORT
+            : viewMode === 'all' && sortBy.length === 0
+              ? ALL_DEFAULT_SORT
+              : sortBy
+        }
         onSortByChange={(newSortBy) => {
           setSortBy(newSortBy)
           // Keep selectedSavedViewId so user can update the view if desired
@@ -1366,7 +1372,7 @@ export function TasksPage() {
           }
         }}
         onApply={() => setViewMode('custom')}
-        defaultSortLabel={viewMode === 'all' && sortBy.length === 0 ? 'Default order (due date)' : undefined}
+        defaultSortLabel={undefined}
       />
 
       {/* Task list: tasks and reminders; Archive/Trash at bottom rendered inside TaskList */}

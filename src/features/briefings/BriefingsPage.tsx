@@ -5,7 +5,7 @@ import { useTasks } from '../tasks/hooks/useTasks'
 import { useReminders } from '../reminders/hooks/useReminders'
 import { useHabits } from '../habits/hooks/useHabits'
 import { getDependenciesForTaskIds } from '../../lib/supabase/tasks'
-import { createReflectionEntry } from '../../lib/supabase/reflections'
+import { saveOrUpdateMorningBriefingEntryForToday } from '../../lib/supabase/reflections'
 import {
   loadTodaysLineupTaskIds,
   saveTodaysLineupTaskIds,
@@ -235,39 +235,38 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
   const [editTask, setEditTask] = useState<Task | null>(null)
   const [editReminder, setEditReminder] = useState<Reminder | null>(null)
 
-  /* Save reflection entry once when moving to completion (step 6); guard so we never create multiple entries for one briefing */
+  /* Save reflection entry once when moving to completion (step 6); use shared helper so only one entry exists per day */
   const saveEntryAndGoToCompletion = useCallback(async () => {
     if (savedEntryId) {
       setStep(7)
       return
     }
     const title = `Morning briefing – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-    const entry = await createReflectionEntry({
-      type: 'morning_briefing',
+    const entry = await saveOrUpdateMorningBriefingEntryForToday({
       title,
       responses: reflectionAnswers,
     })
     setSavedEntryId(entry.id)
     setSavedEntryTitle(entry.title ?? title)
-    setStep(9)
+    setStep(7)
   }, [reflectionAnswers, savedEntryId])
 
-  /* View overview: show saved entry (we already have title + responses in state) */
-  const handleViewOverview = useCallback(() => {
+  /* View overview: show saved entry; create or update today's entry first so we never create duplicates */
+  const handleViewOverview = useCallback(async () => {
     if (!savedEntryId && Object.keys(reflectionAnswers).length > 0) {
-      const title = `Morning briefing – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-      createReflectionEntry({
-        type: 'morning_briefing',
+      const title = `Morning briefing – ${new Date().toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })}`
+      const entry = await saveOrUpdateMorningBriefingEntryForToday({
         title,
         responses: reflectionAnswers,
-      }).then((entry) => {
-        setSavedEntryId(entry.id)
-        setSavedEntryTitle(entry.title ?? title)
-        setShowOverview(true)
       })
-    } else {
-      setShowOverview(true)
+      setSavedEntryId(entry.id)
+      setSavedEntryTitle(entry.title ?? title)
     }
+    setShowOverview(true)
   }, [savedEntryId, reflectionAnswers])
 
   /* Back from overview to completion step */

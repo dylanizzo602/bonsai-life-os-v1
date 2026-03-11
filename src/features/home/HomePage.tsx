@@ -154,8 +154,8 @@ export function HomePage({ onNavigate }: HomePageProps) {
         </div>
       </div>
 
-      {/* Widget grid: order and visibility from useHomeWidgetConfig */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      {/* Widget grid: order and visibility from useHomeWidgetConfig; rows stretch so widgets share height */}
+      <div className="grid auto-rows-fr grid-cols-1 gap-4 lg:grid-cols-2">
         {order
           .filter((id) => !hidden.has(id))
           .map((id, index) => {
@@ -163,7 +163,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
             const colSpan = isLineup ? 'lg:col-span-2' : ''
             const visibleOrder = order.filter((i) => !hidden.has(i))
             return (
-              <div key={id} className={`${colSpan} flex flex-col gap-1`}>
+              <div key={id} className={`${colSpan} flex h-full flex-col gap-1`}>
                 {isCustomizing && (
                   <div className="flex flex-wrap items-center gap-2 rounded border border-bonsai-slate-200 bg-bonsai-slate-50 px-2 py-1.5 text-secondary text-bonsai-slate-600">
                     <span className="font-medium">{WIDGET_LABELS[id]}</span>

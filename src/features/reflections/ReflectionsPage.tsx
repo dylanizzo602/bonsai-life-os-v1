@@ -1,7 +1,11 @@
-/* Reflections page: List reflection entries (e.g. morning briefings); open one to view overview */
+/* Reflections page: List reflection entries (e.g. morning briefings); open one to view overview and show right-click menu for delete */
 
 import { useCallback, useEffect, useState } from 'react'
-import { getReflectionEntries, getReflectionEntry } from '../../lib/supabase/reflections'
+import {
+  getReflectionEntries,
+  getReflectionEntry,
+  deleteReflectionEntry,
+} from '../../lib/supabase/reflections'
 import type { ReflectionEntry, MorningBriefingResponses } from './types'
 import { ReflectionEntryView } from './ReflectionEntryView'
 
@@ -17,6 +21,28 @@ export function ReflectionsPage() {
   /* When set, we show the detail view for this entry */
   const [selectedEntry, setSelectedEntry] = useState<ReflectionEntry | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  /* Context menu state: which entry is open and at what position (matches task context menu pattern) */
+  const [contextEntry, setContextEntry] = useState<ReflectionEntry | null>(null)
+  const [contextPosition, setContextPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+
+  /* Delete handler: allow user to delete an entry (invoked from right-click on list item) */
+  const handleDeleteEntry = useCallback(
+    async (entry: ReflectionEntry) => {
+      const confirmed = window.confirm('Delete this reflection? This cannot be undone.')
+      if (!confirmed) return
+      try {
+        await deleteReflectionEntry(entry.id)
+        setEntries((prev) => prev.filter((e) => e.id !== entry.id))
+        if (selectedEntry?.id === entry.id) {
+          setSelectedEntry(null)
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete reflection')
+        console.error('Error deleting reflection entry:', err)
+      }
+    },
+    [selectedEntry],
+  )
 
   /* Fetch entries list on mount */
   const fetchEntries = useCallback(async () => {
@@ -97,6 +123,11 @@ export function ReflectionsPage() {
               <button
                 type="button"
                 onClick={() => handleSelectEntry(entry)}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  setContextEntry(entry)
+                  setContextPosition({ x: event.clientX, y: event.clientY })
+                }}
                 className="w-full rounded-lg border border-bonsai-slate-200 bg-white px-4 py-3 text-left transition-colors hover:bg-bonsai-slate-50"
               >
                 <span className="text-body font-medium text-bonsai-brown-700">
@@ -113,6 +144,29 @@ export function ReflectionsPage() {
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Simple context menu for reflections: currently only Delete to match task right-click behavior */}
+      {contextEntry && (
+        <div
+          className="fixed z-[10000] rounded-xl border border-bonsai-slate-200 bg-bonsai-brown-50 py-1 shadow-lg"
+          style={{ left: contextPosition.x, top: contextPosition.y, minWidth: 160 }}
+          role="menu"
+          aria-label="Reflection options"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={async () => {
+              await handleDeleteEntry(contextEntry)
+              setContextEntry(null)
+            }}
+            className="w-full px-4 py-2 text-left text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 transition-colors rounded-none first:rounded-t-xl last:rounded-b-xl"
+          >
+            Delete
+          </button>
+        </div>
       )}
     </div>
   )

@@ -1,6 +1,7 @@
-/* useHomeWidgetConfig: Persist home widget order and visibility in localStorage */
+/* useHomeWidgetConfig: Persist home widget order and visibility per user (Supabase metadata) with localStorage fallback */
 
 import { useState, useEffect, useCallback } from 'react'
+import { getHomeWidgetConfigFromUser, saveHomeWidgetConfigToUser } from '../../../lib/supabase/homeWidgetConfig'
 
 const STORAGE_KEY_ORDER = 'bonsai_home_widget_order'
 const STORAGE_KEY_HIDDEN = 'bonsai_home_widget_hidden'
@@ -42,27 +43,49 @@ function loadHidden(): Set<HomeWidgetId> {
 
 /**
  * Hook to read and persist home widget order and visibility.
- * Order and hidden set are stored in localStorage so they survive refresh.
+ * Primary source is Supabase user metadata (per-user across devices), with localStorage fallback for quick local load.
  */
 export function useHomeWidgetConfig() {
   const [order, setOrderState] = useState<HomeWidgetId[]>(() => loadOrder())
   const [hidden, setHiddenState] = useState<Set<HomeWidgetId>>(() => loadHidden())
 
-  /* Sync from localStorage on mount (in case another tab changed it) */
+  /* Sync from localStorage on mount (in case another tab changed it), then hydrate from Supabase user metadata when available */
   useEffect(() => {
     setOrderState(loadOrder())
     setHiddenState(loadHidden())
+
+    ;(async () => {
+      try {
+        const config = await getHomeWidgetConfigFromUser()
+        if (config.order && config.order.length > 0) {
+          setOrderState(config.order)
+        }
+        if (config.hidden) {
+          setHiddenState(config.hidden)
+        }
+      } catch (err) {
+        console.error('Error loading home widget config from user metadata:', err)
+      }
+    })()
   }, [])
 
-  const persistOrder = useCallback((next: HomeWidgetId[]) => {
-    setOrderState(next)
-    localStorage.setItem(STORAGE_KEY_ORDER, JSON.stringify(next))
-  }, [])
+  const persistOrder = useCallback(
+    (next: HomeWidgetId[]) => {
+      setOrderState(next)
+      localStorage.setItem(STORAGE_KEY_ORDER, JSON.stringify(next))
+      void saveHomeWidgetConfigToUser(next, hidden)
+    },
+    [hidden],
+  )
 
-  const persistHidden = useCallback((next: Set<HomeWidgetId>) => {
-    setHiddenState(next)
-    localStorage.setItem(STORAGE_KEY_HIDDEN, JSON.stringify([...next]))
-  }, [])
+  const persistHidden = useCallback(
+    (next: Set<HomeWidgetId>) => {
+      setHiddenState(next)
+      localStorage.setItem(STORAGE_KEY_HIDDEN, JSON.stringify([...next]))
+      void saveHomeWidgetConfigToUser(order, next)
+    },
+    [order],
+  )
 
   const setOrder = useCallback(
     (next: HomeWidgetId[] | ((prev: HomeWidgetId[]) => HomeWidgetId[])) => {

@@ -27,6 +27,72 @@ export async function createReflectionEntry(
 }
 
 /**
+ * Create or update today's morning briefing entry so only one reflection is stored per day.
+ * If a 'morning_briefing' entry exists for today, update its title/responses instead of inserting a new row.
+ */
+export async function saveOrUpdateMorningBriefingEntryForToday(
+  input: Omit<CreateReflectionEntryInput, 'type'>,
+): Promise<ReflectionEntry> {
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const todayEnd = new Date(todayStart)
+  todayEnd.setDate(todayEnd.getDate() + 1)
+  const from = todayStart.toISOString()
+  const to = todayEnd.toISOString()
+
+  const { data: existing, error: existingError } = await supabase
+    .from('reflection_entries')
+    .select('*')
+    .eq('type', 'morning_briefing')
+    .gte('created_at', from)
+    .lt('created_at', to)
+    .order('created_at', { ascending: true })
+
+  if (existingError) {
+    console.error('Error checking existing morning briefing entry for today:', existingError)
+    throw existingError
+  }
+
+  const existingEntries = (existing as ReflectionEntry[] | null) ?? []
+  const existingEntry = existingEntries[0]
+
+  if (existingEntry) {
+    // If multiple entries exist for today, keep the earliest and delete the rest so only one remains.
+    if (existingEntries.length > 1) {
+      const extraIds = existingEntries.slice(1).map((e) => e.id)
+      const { error: deleteError } = await supabase
+        .from('reflection_entries')
+        .delete()
+        .in('id', extraIds)
+      if (deleteError) {
+        console.error('Error cleaning up extra morning briefing entries for today:', deleteError)
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('reflection_entries')
+      .update({
+        title: input.title ?? existingEntry.title,
+        responses: input.responses ?? existingEntry.responses,
+      })
+      .eq('id', existingEntry.id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error updating existing morning briefing entry for today:', error)
+      throw error
+    }
+    return data as ReflectionEntry
+  }
+
+  return createReflectionEntry({
+    ...input,
+    type: 'morning_briefing',
+  })
+}
+
+/**
  * Fetch a single reflection entry by id.
  */
 export async function getReflectionEntry(id: string): Promise<ReflectionEntry | null> {
@@ -129,4 +195,16 @@ export async function getReflectionEntryOneYearAgo(): Promise<ReflectionEntry | 
     }
   }
   return closest
+}
+
+/**
+ * Delete a reflection entry by id (used when user deletes a saved reflection).
+ */
+export async function deleteReflectionEntry(id: string): Promise<void> {
+  const { error } = await supabase.from('reflection_entries').delete().eq('id', id)
+
+  if (error) {
+    console.error('Error deleting reflection entry:', error)
+    throw error
+  }
 }
