@@ -114,19 +114,31 @@ export function AddEditReminderModal({
         onClose={onClose}
         title={isEditMode ? 'Edit reminder' : 'New reminder'}
         fullScreenOnMobile
+        /* Footer: In edit mode, show auto-save message and Close button; in add mode, keep explicit Remind Me */
         footer={
-          <>
-            <Button variant="secondary" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleSubmit}
-              disabled={submitting || !name.trim()}
-            >
-              {submitting ? (isEditMode ? 'Saving...' : 'Adding...') : 'Remind Me'}
-            </Button>
-          </>
+          isEditMode ? (
+            <div className="flex w-full items-center justify-between">
+              <span className="text-secondary text-bonsai-slate-500">
+                Changes are automatically saved
+              </span>
+              <Button variant="secondary" onClick={onClose}>
+                Close
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleSubmit}
+                disabled={submitting || !name.trim()}
+              >
+                {submitting ? 'Adding...' : 'Remind Me'}
+              </Button>
+            </>
+          )
         }
       >
         {/* Reminder name input */}

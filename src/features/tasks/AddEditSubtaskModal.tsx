@@ -309,25 +309,31 @@ export function AddEditSubtaskModal({
       onClose={onClose}
       title={isEditMode ? 'Edit Subtask' : 'Add Subtask'}
       fullScreenOnMobile
+      /* Footer: In edit mode, show auto-save message and Close button; in add mode, keep explicit Save/Add */
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            onClick={handleSubmit}
-            disabled={submitting || !title.trim()}
-          >
-            {submitting
-              ? isEditMode
-                ? 'Saving...'
-                : 'Adding...'
-              : isEditMode
-                ? 'Save'
-                : 'Add Subtask'}
-          </Button>
-        </>
+        isEditMode ? (
+          <div className="flex w-full items-center justify-between">
+            <span className="text-secondary text-bonsai-slate-500">
+              Changes are automatically saved
+            </span>
+            <Button variant="secondary" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        ) : (
+          <>
+            <Button variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSubmit}
+              disabled={submitting || !title.trim()}
+            >
+              {submitting ? 'Adding...' : 'Add Subtask'}
+            </Button>
+          </>
+        )
       }
     >
       {/* Main subtask input: Status circle on left, input field on right */}
