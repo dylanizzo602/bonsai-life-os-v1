@@ -20,11 +20,36 @@ export async function getReminders(): Promise<Reminder[]> {
   }
 
   /* Ensure deleted and recurrence_pattern for pre-migration rows */
-  return ((data ?? []) as (Reminder & { deleted?: boolean; recurrence_pattern?: string | null })[]).map((r) => ({
+  const normalized = ((data ?? []) as (Reminder & { deleted?: boolean; recurrence_pattern?: string | null })[]).map((r) => ({
     ...r,
     deleted: r.deleted ?? false,
     recurrence_pattern: r.recurrence_pattern ?? null,
   })) as Reminder[]
+
+  // #region agent log
+  try {
+    const sample = normalized.find((r) => r.id === 'd676e5a9-3db3-4638-8e58-0d6758bec42c') ?? normalized[0]
+    if (sample) {
+      fetch('http://127.0.0.1:7242/ingest/5422a4aa-1120-497f-894b-eacad271f9df', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: `log_${Date.now()}_getReminders_sample`,
+          runId: 'run1',
+          hypothesisId: 'H6',
+          location: 'supabase/reminders.ts:22',
+          message: 'getReminders sample reminder',
+          data: { id: sample.id, remind_at: sample.remind_at, recurrence_pattern: sample.recurrence_pattern },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+    }
+  } catch {
+    // ignore logging errors
+  }
+  // #endregion agent log
+
+  return normalized
 }
 
 /**
@@ -163,8 +188,20 @@ export async function advanceReminderToNextOccurrence(id: string): Promise<Remin
   const reminder = existing as Reminder
   const pattern = parseRecurrencePattern(reminder.recurrence_pattern ?? null)
   const dueYMD = toDateOnly(reminder.remind_at)
-  if (!pattern || !dueYMD) {
+  if (!dueYMD) {
     return reminder
+  }
+
+  // When no recurrence pattern exists (legacy habit reminders), fall back to a simple daily advance
+  if (!pattern) {
+    const currentDate = new Date(dueYMD + 'T12:00:00')
+    const nextDate = new Date(currentDate)
+    nextDate.setDate(currentDate.getDate() + 1)
+    const nextDueYMD = nextDate.toISOString().slice(0, 10)
+    const orig = reminder.remind_at
+    const timePart = orig && orig.includes('T') ? orig.slice(11, 19) : '12:00:00'
+    const nextRemindAt = `${nextDueYMD}T${timePart}`
+    return updateReminder(id, { remind_at: nextRemindAt })
   }
 
   const nextDueYMD = getNextOccurrence(pattern, dueYMD)

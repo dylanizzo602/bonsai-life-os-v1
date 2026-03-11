@@ -114,6 +114,7 @@ export function OverdueScreen({
                   key={habit.id}
                   habit={habit}
                   remindAt={remindAt}
+                  reminderTime={habit.reminder_time}
                   onMarkComplete={() => onHabitMarkComplete?.(habit, remindAt)}
                   onSkip={() => onHabitSkip?.(habit, remindAt)}
                   density="compact"

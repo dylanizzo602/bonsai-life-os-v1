@@ -5,21 +5,35 @@ import { BellIcon } from '../../components/icons'
 import { isOverdue } from '../tasks/utils/date'
 import type { HabitWithStreaks } from './types'
 
-/** Format remind_at ISO string for display: "Today at 9:00pm" or "Feb 18 at 9:00pm" */
-function formatNotificationDate(iso: string | null): string {
-  if (!iso) return 'No time set'
-  const d = new Date(iso)
+/** Format notification display using remindAt date and habit.reminder_time clock so UI matches habit settings */
+function formatNotificationDate(remindAt: string | null, reminderTime: string | null | undefined): string {
+  if (!remindAt && !reminderTime) return 'No time set'
+
+  // Base date: use remindAt when present so we preserve the scheduled day; fall back to today if missing
+  const baseDate = remindAt ? new Date(remindAt) : new Date()
   const today = new Date()
   const isToday =
-    d.getFullYear() === today.getFullYear() &&
-    d.getMonth() === today.getMonth() &&
-    d.getDate() === today.getDate()
-  const hour12 = d.getHours() % 12 || 12
-  const min = d.getMinutes()
-  const ampm = d.getHours() < 12 ? 'am' : 'pm'
-  const timeStr = `${hour12}:${String(min).padStart(2, '0')}${ampm}`
+    baseDate.getFullYear() === today.getFullYear() &&
+    baseDate.getMonth() === today.getMonth() &&
+    baseDate.getDate() === today.getDate()
+
+  // Clock time: prefer the HH:mm from habit.reminder_time so it always matches habit settings
+  let hours = baseDate.getHours()
+  let minutes = baseDate.getMinutes()
+  if (reminderTime) {
+    const [h, m] = reminderTime.split(':')
+    const parsedH = Number(h)
+    const parsedM = Number(m ?? '0')
+    if (!Number.isNaN(parsedH)) hours = parsedH
+    if (!Number.isNaN(parsedM)) minutes = parsedM
+  }
+
+  const hour12 = hours % 12 || 12
+  const ampm = hours < 12 ? 'am' : 'pm'
+  const timeStr = `${hour12}:${String(minutes).padStart(2, '0')}${ampm}`
+
   if (isToday) return `Today at ${timeStr}`
-  const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const dateStr = baseDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   return `${dateStr} at ${timeStr}`
 }
 
@@ -28,6 +42,8 @@ export interface HabitReminderItemProps {
   habit: HabitWithStreaks
   /** Notification datetime (ISO string from linked reminder or derived from reminder_time); used for display */
   remindAt: string | null
+  /** Raw reminder time from habit settings (HH:mm or HH:mm:ss) so display clock always matches habit modal */
+  reminderTime?: string | null
   /** Mark habit as complete for today */
   onMarkComplete: () => void
   /** Mark habit as skipped for today (no-op for weekly habits if you hide Skip in parent) */
@@ -49,6 +65,7 @@ export interface HabitReminderItemProps {
 export function HabitReminderItem({
   habit,
   remindAt,
+  reminderTime,
   onMarkComplete,
   onSkip,
   hideSkip = false,
@@ -94,7 +111,9 @@ export function HabitReminderItem({
         }`}
       >
         <BellIcon className="w-4 h-4 shrink-0" aria-hidden />
-        <span className="whitespace-nowrap">{formatNotificationDate(remindAt)}</span>
+        <span className="whitespace-nowrap">
+          {formatNotificationDate(remindAt, reminderTime ?? habit.reminder_time)}
+        </span>
       </div>
 
       {/* Actions: Complete and Skip buttons; compact density keeps buttons tight while still full-width on small screens */}

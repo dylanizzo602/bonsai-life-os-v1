@@ -38,17 +38,31 @@ export function Tooltip({
   const triggerRef = useRef<HTMLSpanElement>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
 
-  /* Viewport check: Only enable hover tooltips on desktop (lg: >= 1024px); none on tablet/mobile/compact */
+  /* Viewport check: Only enable hover tooltips on desktop (lg: >= 1024px); none on tablet/mobile/compact.
+   * Guard against environments where matchMedia/change events might fire repeatedly by only updating state when value changes.
+   */
   const [tooltipsEnabled, setTooltipsEnabled] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia(TOOLTIP_MEDIA_QUERY).matches : false
+    typeof window !== 'undefined' && 'matchMedia' in window
+      ? window.matchMedia(TOOLTIP_MEDIA_QUERY).matches
+      : false
   )
   useEffect(() => {
+    if (typeof window === 'undefined' || !('matchMedia' in window)) return
     const mql = window.matchMedia(TOOLTIP_MEDIA_QUERY)
-    const handler = () => {
-      setTooltipsEnabled(mql.matches)
+    const handler = (event: MediaQueryListEvent) => {
+      setTooltipsEnabled((prev) => (prev === event.matches ? prev : event.matches))
     }
-    mql.addEventListener('change', handler)
-    return () => mql.removeEventListener('change', handler)
+    if (typeof mql.addEventListener === 'function') {
+      mql.addEventListener('change', handler)
+      return () => mql.removeEventListener('change', handler)
+    }
+    // Fallback for older browsers
+    // eslint-disable-next-line deprecation/deprecation
+    mql.addListener(handler)
+    return () => {
+      // eslint-disable-next-line deprecation/deprecation
+      mql.removeListener(handler)
+    }
   }, [])
 
   /* Position calculation: Calculate tooltip position relative to trigger element */

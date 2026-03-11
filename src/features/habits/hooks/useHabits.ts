@@ -397,6 +397,21 @@ export function useHabits(initialDateRange?: DateRange) {
     ) => {
       setError(null)
       const reminderId = habits.find((h) => h.id === habitId)?.reminder_id ?? null
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/5422a4aa-1120-497f-894b-eacad271f9df', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: `log_${Date.now()}_useHabits_setEntry_start`,
+          runId: 'run1',
+          hypothesisId: 'H3',
+          location: 'useHabits.ts:398',
+          message: 'useHabits.setEntry called',
+          data: { habitId, entryDate, status, reminderId },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion agent log
       setEntriesByHabit((prev) => {
         const entries = prev[habitId] ?? []
         const withoutDate = entries.filter((e) => e.entry_date !== entryDate)
@@ -416,6 +431,21 @@ export function useHabits(initialDateRange?: DateRange) {
       })
       try {
         await setEntryApi(habitId, entryDate, status, reminderId)
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/5422a4aa-1120-497f-894b-eacad271f9df', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: `log_${Date.now()}_useHabits_setEntry_api_success`,
+            runId: 'run1',
+            hypothesisId: 'H3',
+            location: 'useHabits.ts:418',
+            message: 'useHabits.setEntry setEntryApi success',
+            data: { habitId, entryDate, status },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {})
+        // #endregion agent log
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to update entry'
         setError(msg)

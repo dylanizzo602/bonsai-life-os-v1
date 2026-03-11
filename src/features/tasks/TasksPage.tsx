@@ -1391,20 +1391,14 @@ export function TasksPage() {
         onHabitMarkComplete={async (habit, remindAt) => {
           const occurrenceDate = remindAt ? remindAt.slice(0, 10) : todayYMD
           await setHabitEntry(habit.id, occurrenceDate, 'completed')
-          if (habit.reminder_id) {
-            await advanceReminderToNextOccurrence(habit.reminder_id)
-            await refetchReminders()
-          }
           await refetchHabits()
+          await refetchReminders()
         }}
         onHabitSkip={async (habit, remindAt) => {
           const occurrenceDate = remindAt ? remindAt.slice(0, 10) : todayYMD
           await setHabitEntry(habit.id, occurrenceDate, 'skipped')
-          if (habit.reminder_id) {
-            await advanceReminderToNextOccurrence(habit.reminder_id)
-            await refetchReminders()
-          }
           await refetchHabits()
+          await refetchReminders()
         }}
         onToggleReminderComplete={toggleReminderComplete}
         onEditReminder={openEditReminder}

@@ -220,6 +220,21 @@ export async function setEntry(
   status: 'completed' | 'skipped' | 'minimum' | null,
   reminderId?: string | null
 ): Promise<void> {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/5422a4aa-1120-497f-894b-eacad271f9df', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id: `log_${Date.now()}_supabase_setEntry_start`,
+      runId: 'run1',
+      hypothesisId: 'H4',
+      location: 'supabase/habits.ts:218',
+      message: 'supabase.setEntry called',
+      data: { habitId, entryDate, status, hasReminderId: Boolean(reminderId) },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+  // #endregion agent log
   if (status === null) {
     const { error } = await supabase
       .from('habit_entries')
@@ -244,6 +259,21 @@ export async function setEntry(
 
   if (error) {
     console.error('Error upserting habit entry:', error)
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/5422a4aa-1120-497f-894b-eacad271f9df', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: `log_${Date.now()}_supabase_setEntry_upsert_error`,
+        runId: 'run1',
+        hypothesisId: 'H4',
+        location: 'supabase/habits.ts:246',
+        message: 'supabase.setEntry upsert error',
+        data: { habitId, entryDate, status },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion agent log
     throw error
   }
 
@@ -251,8 +281,38 @@ export async function setEntry(
   if ((status === 'completed' || status === 'minimum') && reminderId) {
     try {
       await advanceReminderToNextOccurrenceIfDueOn(reminderId, entryDate)
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/5422a4aa-1120-497f-894b-eacad271f9df', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: `log_${Date.now()}_supabase_setEntry_advance_success`,
+          runId: 'run1',
+          hypothesisId: 'H5',
+          location: 'supabase/habits.ts:253',
+          message: 'advanceReminderToNextOccurrenceIfDueOn success',
+          data: { habitId, entryDate, reminderId },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion agent log
     } catch (err) {
       console.error('Error advancing habit reminder:', err)
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/5422a4aa-1120-497f-894b-eacad271f9df', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: `log_${Date.now()}_supabase_setEntry_advance_error`,
+          runId: 'run1',
+          hypothesisId: 'H5',
+          location: 'supabase/habits.ts:255',
+          message: 'advanceReminderToNextOccurrenceIfDueOn error',
+          data: { habitId, entryDate, reminderId },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion agent log
     }
   }
 }

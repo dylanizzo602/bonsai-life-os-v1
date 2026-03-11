@@ -359,7 +359,7 @@ export function RecurringSettingsSection({
                 max={31}
                 value={byMonthDay ?? 1}
                 onChange={handleYearDayChange}
-                className="w-10 rounded border border-bonsai-slate-300 px-1.5 py-1 text-secondary text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 shrink-0"
+                className="w-14 rounded border border-bonsai-slate-300 px-1.5 py-1 text-secondary text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 shrink-0"
                 aria-label="Day of month"
               />
             </div>

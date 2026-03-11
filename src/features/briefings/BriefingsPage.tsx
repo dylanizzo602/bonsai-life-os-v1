@@ -111,7 +111,6 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     refetch: refetchReminders,
     updateReminder,
     toggleComplete: toggleReminderComplete,
-    advanceToNextOccurrence: advanceReminderToNextOccurrence,
   } = useReminders()
 
   /* Habits: used to surface overdue habit reminders in the overdue step */
@@ -316,22 +315,18 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
           onUpdateReminder={updateReminder}
           onToggleReminderComplete={toggleReminderComplete}
           onHabitMarkComplete={async (habit, remindAt) => {
-            /* Mark habit occurrence complete and advance linked reminder to next occurrence when present */
+            /* Mark habit occurrence complete; Supabase setEntry will advance the linked reminder when due on this date */
             const occurrenceDate = remindAt ? remindAt.slice(0, 10) : todayYMD
             await setHabitEntry(habit.id, occurrenceDate, 'completed')
-            if (habit.reminder_id) {
-              await advanceReminderToNextOccurrence(habit.reminder_id)
-            }
             await refetchHabits()
+            await refetchReminders()
           }}
           onHabitSkip={async (habit, remindAt) => {
-            /* Mark habit occurrence skipped and advance linked reminder to next occurrence when present */
+            /* Mark habit occurrence skipped; still refresh reminders so overdue habit reminders list updates */
             const occurrenceDate = remindAt ? remindAt.slice(0, 10) : todayYMD
             await setHabitEntry(habit.id, occurrenceDate, 'skipped')
-            if (habit.reminder_id) {
-              await advanceReminderToNextOccurrence(habit.reminder_id)
-            }
             await refetchHabits()
+            await refetchReminders()
           }}
           onNext={() => setStep(2)}
         />
