@@ -113,10 +113,6 @@ export function HomePage({ onNavigate }: HomePageProps) {
     [createTask, inboxItemToRemoveOnCreate, deleteInboxItem, refetchTasks, closeModal],
   )
 
-  const handleAddToLineup = useCallback(() => {
-    onNavigate?.('tasks')
-  }, [onNavigate])
-
   return (
     <div className="min-h-full">
       {/* Header: Greeting, optional morning briefing banner, and customize widgets */}
@@ -198,13 +194,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
                     </Button>
                   </div>
                 )}
-                {id === 'lineup' && (
-                  <LineUpWidget
-                    tasks={tasks}
-                    onOpenEditTask={openEdit}
-                    onOpenAddToLineup={handleAddToLineup}
-                  />
-                )}
+                {id === 'lineup' && <LineUpWidget tasks={tasks} onOpenEditTask={openEdit} />}
                 {id === 'inbox' && (
                   <InboxWidget
                     items={inboxItems}

@@ -221,10 +221,10 @@ export function TaskSearchSelect({
         role="combobox"
       />
 
-      {/* Dropdown list: shows filtered tasks when open and search query exists */}
+      {/* Dropdown list: shows filtered tasks when open and search query exists; height capped so roughly three tasks are visible at a time */}
       {isOpen && searchQuery.trim() && (
         <div
-          className="absolute z-50 w-full mt-1 bg-white border border-bonsai-slate-300 rounded-lg shadow-lg max-h-60 overflow-y-auto"
+          className="absolute z-50 w-full mt-1 bg-white border border-bonsai-slate-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
           role="listbox"
         >
           {loading ? (

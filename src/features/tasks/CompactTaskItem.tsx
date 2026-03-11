@@ -247,8 +247,8 @@ export function CompactTaskItem({
           </button>
         )}
       </div>
-      {/* Bottom row: all icons and metadata in one row (horizontal scroll on tablet/mobile/compact) */}
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1 text-xs text-bonsai-slate-600">
+      {/* Bottom row: all icons and metadata in a single horizontal row, with horizontal scroll when needed */}
+      <div className="mt-2 flex min-w-0 flex-nowrap items-center gap-1 text-xs text-bonsai-slate-600 overflow-x-auto">
         {/* Tag: show first tag if available; shrink-0 so row stays single line */}
         {(tagDisplay != null ? <span className={tagPillClass}>{tagDisplay.name}</span> : null)}
         {/* Subtask count indicator: shows total subtasks when present, using a distinct tasks icon */}
@@ -306,25 +306,9 @@ export function CompactTaskItem({
               : `${Math.floor(task.time_estimate / 60)}h${task.time_estimate % 60 ? ` ${task.time_estimate % 60}m` : ''}`}
           </span>
         )}
-        {/* Recurring icon: repeat glyph to mark recurring tasks in compact view */}
-        {isRecurring && (
-          <Tooltip
-            content={
-              <span className="text-secondary text-bonsai-slate-800">
-                {formatRecurrenceForTooltip(parseRecurrencePattern(task.recurrence_pattern))}
-              </span>
-            }
-            position="top"
-            size="sm"
-          >
-            <span className="shrink-0 text-bonsai-slate-500" aria-label="Recurring task">
-              <RepeatIcon className="w-3.5 h-3.5" aria-hidden />
-            </span>
-          </Tooltip>
-        )}
-        {/* Start/due date: tooltip with frequency when recurring; visual layout matches normal tasks */}
-          {dateDisplay && (
-          isRecurring ? (
+        {/* Start/due date and priority: group repeat/calendar/date with priority so spacing matches non-recurring layout */}
+        {dateDisplay &&
+          (isRecurring ? (
             <Tooltip
               content={
                 <span className="text-secondary text-bonsai-slate-800">
@@ -343,8 +327,22 @@ export function CompactTaskItem({
                       : 'text-bonsai-slate-600'
                 }`}
               >
+                <RepeatIcon className="w-3.5 h-3.5 shrink-0 text-bonsai-slate-500" aria-hidden />
                 <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
                 <span className="truncate">{dateDisplay}</span>
+                <span
+                  className={`ml-1 shrink-0 ${
+                    task.goal_id
+                      ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
+                      : getPriorityFlagClasses(priority)
+                  }`}
+                >
+                  {task.goal_id ? (
+                    <TrophyIcon className="w-3.5 h-3.5" />
+                  ) : (
+                    <FlagIcon className="w-3.5 h-3.5" />
+                  )}
+                </span>
               </span>
             </Tooltip>
           ) : (
@@ -359,23 +357,21 @@ export function CompactTaskItem({
             >
               <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
               <span className="truncate">{dateDisplay}</span>
+              <span
+                className={`ml-1 shrink-0 ${
+                  task.goal_id
+                    ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
+                    : getPriorityFlagClasses(priority)
+                }`}
+              >
+                {task.goal_id ? (
+                  <TrophyIcon className="w-3.5 h-3.5" />
+                ) : (
+                  <FlagIcon className="w-3.5 h-3.5" />
+                )}
+              </span>
             </span>
-          )
-        )}
-        {/* Priority flag or trophy icon (if goal-linked) */}
-        <span
-          className={`shrink-0 ${
-            task.goal_id
-              ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
-              : getPriorityFlagClasses(priority)
-          }`}
-        >
-          {task.goal_id ? (
-            <TrophyIcon className="w-3.5 h-3.5" />
-          ) : (
-            <FlagIcon className="w-3.5 h-3.5" />
-          )}
-        </span>
+          ))}
       </div>
     </div>
   )
