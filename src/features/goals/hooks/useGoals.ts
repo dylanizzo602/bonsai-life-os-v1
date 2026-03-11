@@ -270,8 +270,10 @@ export function useGoal(goalId: string) {
     async (id: string, input: UpdateGoalInput) => {
       try {
         setError(null)
+        /* Persist updated goal fields in Supabase */
         const updatedGoal = await updateGoal(id, input)
-        setGoal(updatedGoal as GoalWithDetails)
+        /* Refetch full goal details so milestones, linked habits, and computed_progress stay in sync */
+        await fetchGoal()
         return updatedGoal
       } catch (err) {
         const errorMessage =
@@ -280,7 +282,7 @@ export function useGoal(goalId: string) {
         throw err
       }
     },
-    [],
+    [fetchGoal],
   )
 
   /* Delete goal: calls Supabase deleteGoal; caller should navigate back after success */
