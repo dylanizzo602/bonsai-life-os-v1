@@ -80,6 +80,12 @@ const AVAILABLE_DEFAULT_SORT: SortByEntry[] = [
   { field: 'status', direction: 'asc' },
 ]
 
+/* All Tasks view default sort (for internal use and Sort modal semantics): due date then start date, earliest first with no date last */
+const ALL_DEFAULT_SORT: SortByEntry[] = [
+  { field: 'due_date', direction: 'asc' },
+  { field: 'start_date', direction: 'asc' },
+]
+
 /** Date preset helpers for filter: return [start, end] in ms or null for "not set" checks */
 function getDateRangeForPreset(
   preset: string,
@@ -458,6 +464,62 @@ function evaluateFilterConditionForReminder(c: FilterCondition, r: Reminder): bo
 
   /* Other fields don't apply to reminders, so return true (don't filter out) */
   return true
+}
+
+/* Shared helper: apply sortBy configuration to a task list (used by All and Custom views) */
+function sortTasksWithSortBy(tasks: Task[], sortBy: SortByEntry[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    for (const { field, direction } of sortBy) {
+      let cmp = 0
+      if (field === 'due_date') {
+        const av = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER
+        const bv = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER
+        cmp = av - bv
+      } else if (field === 'start_date') {
+        const av = a.start_date ? new Date(a.start_date).getTime() : Number.MAX_SAFE_INTEGER
+        const bv = b.start_date ? new Date(b.start_date).getTime() : Number.MAX_SAFE_INTEGER
+        cmp = av - bv
+      } else if (field === 'priority') {
+        cmp = (PRIORITY_ORDER[a.priority] ?? 0) - (PRIORITY_ORDER[b.priority] ?? 0)
+      } else if (field === 'status') {
+        const so: Record<Task['status'], number> = {
+          active: 0,
+          in_progress: 1,
+          completed: 2,
+          archived: 3,
+          deleted: 4,
+        }
+        cmp = (so[a.status] ?? 0) - (so[b.status] ?? 0)
+      } else if (field === 'task_name') {
+        cmp = (a.title ?? '').localeCompare(b.title ?? '', undefined, { sensitivity: 'base' })
+      } else if (field === 'time_estimate') {
+        const av = a.time_estimate ?? 0
+        const bv = b.time_estimate ?? 0
+        cmp = av - bv
+      }
+      if (cmp !== 0) return direction === 'asc' ? cmp : -cmp
+    }
+    return 0
+  })
+}
+
+/* Shared helper: apply sortBy configuration to a reminder list (start/due map to remind_at) */
+function sortRemindersWithSortBy(reminders: Reminder[], sortBy: SortByEntry[]): Reminder[] {
+  return [...reminders].sort((a, b) => {
+    for (const { field, direction } of sortBy) {
+      if (field !== 'start_date' && field !== 'due_date' && field !== 'task_name') continue
+      let cmp = 0
+      if (field === 'start_date' || field === 'due_date') {
+        const av = a.remind_at ? new Date(a.remind_at).getTime() : Number.MAX_SAFE_INTEGER
+        const bv = b.remind_at ? new Date(b.remind_at).getTime() : Number.MAX_SAFE_INTEGER
+        cmp = av - bv
+      } else if (field === 'task_name') {
+        cmp = (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
+      }
+      if (cmp !== 0) return direction === 'asc' ? cmp : -cmp
+    }
+    return 0
+  })
 }
 
 /**
@@ -847,6 +909,12 @@ export function TasksPage() {
         /* All Tasks view: show only incomplete reminders (align with "status is not complete"). */
         remindersFiltered = remindersFiltered.filter((r) => !r.completed)
         habitRemindersFiltered = habitReminders
+        /* All Tasks view sort: use user-defined sort when present, otherwise fall back to All default sort (due date then start date) so behavior matches Sort modal semantics */
+        {
+          const effectiveSortBy = sortBy.length > 0 ? sortBy : ALL_DEFAULT_SORT
+          viewTasks = sortTasksWithSortBy(viewTasks, effectiveSortBy)
+          remindersFiltered = sortRemindersWithSortBy(remindersFiltered, effectiveSortBy)
+        }
         break
       }
       case 'custom':
@@ -906,57 +974,10 @@ export function TasksPage() {
             })
           }
         }
-        /* Apply user sort when in custom and sortBy has entries. */
+        /* Apply user sort when in custom and sortBy has entries (shared helper for consistency with All view). */
         if (sortBy.length > 0) {
-          viewTasks.sort((a, b) => {
-            for (const { field, direction } of sortBy) {
-              let cmp = 0
-              if (field === 'due_date') {
-                const av = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER
-                const bv = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER
-                cmp = av - bv
-              } else if (field === 'start_date') {
-                const av = a.start_date ? new Date(a.start_date).getTime() : Number.MAX_SAFE_INTEGER
-                const bv = b.start_date ? new Date(b.start_date).getTime() : Number.MAX_SAFE_INTEGER
-                cmp = av - bv
-              } else if (field === 'priority') {
-                cmp = (PRIORITY_ORDER[a.priority] ?? 0) - (PRIORITY_ORDER[b.priority] ?? 0)
-              } else if (field === 'status') {
-                const so: Record<Task['status'], number> = {
-                  active: 0,
-                  in_progress: 1,
-                  completed: 2,
-                  archived: 3,
-                  deleted: 4,
-                }
-                cmp = (so[a.status] ?? 0) - (so[b.status] ?? 0)
-              } else if (field === 'task_name') {
-                cmp = (a.title ?? '').localeCompare(b.title ?? '', undefined, { sensitivity: 'base' })
-              } else if (field === 'time_estimate') {
-                const av = a.time_estimate ?? 0
-                const bv = b.time_estimate ?? 0
-                cmp = av - bv
-              }
-              if (cmp !== 0) return direction === 'asc' ? cmp : -cmp
-            }
-            return 0
-          })
-          /* Apply sort to reminders: start_date and due_date both use remind_at; task_name applies */
-          remindersFiltered.sort((a, b) => {
-            for (const { field, direction } of sortBy) {
-              if (field !== 'start_date' && field !== 'due_date' && field !== 'task_name') continue
-              let cmp = 0
-              if (field === 'start_date' || field === 'due_date') {
-                const av = a.remind_at ? new Date(a.remind_at).getTime() : Number.MAX_SAFE_INTEGER
-                const bv = b.remind_at ? new Date(b.remind_at).getTime() : Number.MAX_SAFE_INTEGER
-                cmp = av - bv
-              } else if (field === 'task_name') {
-                cmp = (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
-              }
-              if (cmp !== 0) return direction === 'asc' ? cmp : -cmp
-            }
-            return 0
-          })
+          viewTasks = sortTasksWithSortBy(viewTasks, sortBy)
+          remindersFiltered = sortRemindersWithSortBy(remindersFiltered, sortBy)
         }
         break
     }
@@ -989,23 +1010,6 @@ export function TasksPage() {
       )
     }
 
-    /* All view default sort: when no custom sort is set, sort all tasks by due date (earliest first) */
-    if (viewMode === 'all' && sortBy.length === 0) {
-      viewTasks = [...viewTasks].sort((a, b) => {
-        const aDue = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER
-        const bDue = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER
-        if (aDue !== bDue) return aDue - bDue
-        const aStart = a.start_date ? new Date(a.start_date).getTime() : Number.MAX_SAFE_INTEGER
-        const bStart = b.start_date ? new Date(b.start_date).getTime() : Number.MAX_SAFE_INTEGER
-        return aStart - bStart
-      })
-      remindersFiltered = [...remindersFiltered].sort((a, b) => {
-        const aAt = a.remind_at ? new Date(a.remind_at).getTime() : Number.MAX_SAFE_INTEGER
-        const bAt = b.remind_at ? new Date(b.remind_at).getTime() : Number.MAX_SAFE_INTEGER
-        return aAt - bAt
-      })
-    }
-
     return {
       filteredTasks: viewTasks,
       filteredReminders: remindersFiltered,
@@ -1027,6 +1031,20 @@ export function TasksPage() {
     sortBy,
     searchQuery,
   ])
+
+  /* Effective sort for the current view: used by TaskList to decide how to interleave tasks and reminders */
+  const effectiveSortByForList: SortByEntry[] = useMemo(() => {
+    if (viewMode === 'all') {
+      return sortBy.length > 0 ? sortBy : ALL_DEFAULT_SORT
+    }
+    if (viewMode === 'custom') {
+      return sortBy
+    }
+    if (viewMode === 'available') {
+      return AVAILABLE_DEFAULT_SORT
+    }
+    return []
+  }, [viewMode, sortBy])
 
   const openAdd = () => {
     setEditTask(null)
@@ -1425,6 +1443,8 @@ export function TasksPage() {
         lineUpTaskIds={lineUpTaskIds}
         onAddToLineUp={addToLineUp}
         onRemoveFromLineUp={removeFromLineUp}
+        viewMode={viewMode}
+        effectiveSortBy={effectiveSortByForList}
       />
 
       <AddEditTaskModal

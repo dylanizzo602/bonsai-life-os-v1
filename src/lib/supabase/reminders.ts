@@ -20,36 +20,11 @@ export async function getReminders(): Promise<Reminder[]> {
   }
 
   /* Ensure deleted and recurrence_pattern for pre-migration rows */
-  const normalized = ((data ?? []) as (Reminder & { deleted?: boolean; recurrence_pattern?: string | null })[]).map((r) => ({
+  return ((data ?? []) as (Reminder & { deleted?: boolean; recurrence_pattern?: string | null })[]).map((r) => ({
     ...r,
     deleted: r.deleted ?? false,
     recurrence_pattern: r.recurrence_pattern ?? null,
   })) as Reminder[]
-
-  // #region agent log
-  try {
-    const sample = normalized.find((r) => r.id === 'd676e5a9-3db3-4638-8e58-0d6758bec42c') ?? normalized[0]
-    if (sample) {
-      fetch('http://127.0.0.1:7242/ingest/5422a4aa-1120-497f-894b-eacad271f9df', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: `log_${Date.now()}_getReminders_sample`,
-          runId: 'run1',
-          hypothesisId: 'H6',
-          location: 'supabase/reminders.ts:22',
-          message: 'getReminders sample reminder',
-          data: { id: sample.id, remind_at: sample.remind_at, recurrence_pattern: sample.recurrence_pattern },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {})
-    }
-  } catch {
-    // ignore logging errors
-  }
-  // #endregion agent log
-
-  return normalized
 }
 
 /**

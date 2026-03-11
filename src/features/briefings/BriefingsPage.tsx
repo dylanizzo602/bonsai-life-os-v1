@@ -24,17 +24,15 @@ import { AddEditTaskModal } from '../tasks/AddEditTaskModal'
 import { AddEditReminderModal } from '../reminders'
 import type { Reminder } from '../reminders/types'
 
-/** Total steps in the flow (greeting + overdue + plan + 6 reflection + completion) */
-const TOTAL_STEPS = 10
+/** Total steps in the flow (greeting + overdue + plan + 4 reflection + completion) */
+const TOTAL_STEPS = 8
 
-/** Reflection question keys and labels (one per step 3–8; includes calendar/week and failures list exercises) */
+/** Reflection question keys and labels (one per step 3–6; failures list and week-in-a-life removed) */
 const REFLECTION_QUESTIONS: { key: keyof MorningBriefingResponses; label: string }[] = [
   { key: 'memorableMoment', label: 'What is one memorable moment from yesterday?' },
   { key: 'gratefulFor', label: 'What is something you are grateful for?' },
   { key: 'didEverything', label: 'Did you do everything you were supposed to yesterday? If not, why?' },
   { key: 'whatWouldMakeEasier', label: 'What would make today easier?' },
-  { key: 'calendarWeekInLife', label: 'Calendar / week in your life: How did your week look? What would you change?' },
-  { key: 'failuresList', label: 'Failures list: What didn’t go as planned recently? What can you learn from it?' },
 ]
 
 /** Priority order for sorting available tasks (urgent first, then due, etc.) */
@@ -58,7 +56,7 @@ export interface BriefingsPageProps {
  * Progress bar at bottom; each completed briefing is saved as a reflection entry.
  */
 export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPageProps) {
-  /* Step state: 0 = greeting, 1 = overdue, 2 = plan day, 3–8 = reflection Q1–Q6, 9 = completion */
+  /* Step state: 0 = greeting, 1 = overdue, 2 = plan day, 3–6 = reflection Q1–Q4, 7 = completion */
   const [step, setStep] = useState(0)
   /* After completion, user can view overview (saved entry); overview is a separate view */
   const [showOverview, setShowOverview] = useState(false)
@@ -237,7 +235,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
   const [editTask, setEditTask] = useState<Task | null>(null)
   const [editReminder, setEditReminder] = useState<Reminder | null>(null)
 
-  /* Save reflection entry once when moving to completion (step 7); guard so we never create multiple entries for one briefing */
+  /* Save reflection entry once when moving to completion (step 6); guard so we never create multiple entries for one briefing */
   const saveEntryAndGoToCompletion = useCallback(async () => {
     if (savedEntryId) {
       setStep(7)
@@ -342,7 +340,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
         />
       )}
 
-      {step >= 3 && step <= 8 && (
+      {step >= 3 && step <= 6 && (
         <ReflectionQuestionScreen
           question={REFLECTION_QUESTIONS[step - 3].label}
           value={reflectionAnswers[REFLECTION_QUESTIONS[step - 3].key] ?? ''}
@@ -353,7 +351,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
             }))
           }
           onNext={() => {
-            if (step === 8) saveEntryAndGoToCompletion()
+            if (step === 6) saveEntryAndGoToCompletion()
             else setStep(step + 1)
           }}
           onBack={step > 3 ? () => setStep(step - 1) : undefined}
@@ -361,12 +359,12 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
         />
       )}
 
-      {step === 9 && (
+      {step === 7 && (
         <CompletionScreen onViewOverview={handleViewOverview} onClose={onClose} />
       )}
 
-      {/* Progress bar: show for steps 1–9 (not greeting); total 10 steps */}
-      {step >= 1 && step <= 9 && (
+      {/* Progress bar: show for steps 1–7 (not greeting); total 8 steps */}
+      {step >= 1 && step <= 7 && (
         <BriefingProgressBar
           currentStep={step}
           totalSteps={TOTAL_STEPS}

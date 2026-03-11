@@ -1,4 +1,4 @@
-/* OverviewScreen: Read-only view of a saved morning briefing (all four Q&A) */
+/* OverviewScreen: Read-only view of a saved morning briefing (core Q&A without failures/week-in-a-life) */
 
 import { Button } from '../../components/Button'
 import type { MorningBriefingResponses } from '../reflections/types'
@@ -14,18 +14,16 @@ interface OverviewScreenProps {
   onGoToReflections?: () => void
 }
 
-/** Labels for morning briefing questions (including calendar/week and failures list exercises) */
+/** Labels for morning briefing questions (core set without failures/week-in-a-life) */
 const QUESTION_LABELS: Record<keyof MorningBriefingResponses, string> = {
   memorableMoment: 'What is one memorable moment from yesterday?',
   gratefulFor: 'What is something you are grateful for?',
   didEverything: 'Did you do everything you were supposed to yesterday? If not, why?',
   whatWouldMakeEasier: 'What would make today easier?',
-  calendarWeekInLife: 'Calendar / week in your life: How did your week look? What would you change?',
-  failuresList: 'Failures list: What didn’t go as planned recently? What can you learn from it?',
 }
 
 /**
- * Overview of a saved morning briefing: all four questions and answers in read-only form.
+ * Overview of a saved morning briefing: core questions and answers in read-only form.
  */
 export function OverviewScreen({
   title,

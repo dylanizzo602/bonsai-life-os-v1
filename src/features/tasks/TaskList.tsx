@@ -13,7 +13,7 @@ import {
   getTaskChecklistItems,
   toggleChecklistItemComplete,
 } from '../../lib/supabase/tasks'
-import type { Task, TaskFilters } from './types'
+import type { Task, TaskFilters, SortByEntry } from './types'
 import type { Reminder } from '../reminders/types'
 
 export interface TaskListProps {
@@ -102,6 +102,10 @@ export interface TaskListProps {
   onHabitSkip?: (habit: HabitWithStreaks, remindAt: string | null) => void
   /** When true, hide completed/closed subtasks to match the current view filters (e.g. Available/All views) */
   hideCompletedSubtasks?: boolean
+  /** Current view mode for the list (used to control how tasks and reminders are interleaved) */
+  viewMode: 'lineup' | 'available' | 'all' | 'custom'
+  /** Effective sort applied in the parent for this view (used to decide when to interleave by due date) */
+  effectiveSortBy: SortByEntry[]
 }
 
 /**
@@ -152,6 +156,8 @@ export function TaskList({
   onHabitMarkComplete,
   onHabitSkip,
   hideCompletedSubtasks = false,
+  viewMode,
+  effectiveSortBy,
 }: TaskListProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
   /* Context menu state: which task or reminder is open and at what position */
@@ -287,7 +293,7 @@ export function TaskList({
     })
   }
 
-  /* Combine tasks, reminders, and habit reminders: tasks first, then reminders, then habit reminders */
+  /* Combine tasks, reminders, and habit reminders into a single list; optionally interleave by date based on current view/sort */
   const combinedItems = useMemo(() => {
     const items: Array<{
       type: 'task' | 'reminder' | 'habit_reminder'
@@ -308,7 +314,7 @@ export function TaskList({
       })
     })
 
-    /* Add reminders after tasks */
+    /* Add reminders */
     reminders.forEach((reminder) => {
       items.push({
         type: 'reminder',
@@ -318,7 +324,7 @@ export function TaskList({
       })
     })
 
-    /* Add habit reminders at the end (streak + Complete/Skip + notification time) */
+    /* Add habit reminders (streak + Complete/Skip + notification time) */
     habitReminders.forEach(({ habit, remindAt }) => {
       items.push({
         type: 'habit_reminder',
@@ -328,8 +334,43 @@ export function TaskList({
       })
     })
 
+    /* When in All view using the default due-date sort, interleave tasks and reminders by earliest date so they are not grouped */
+    const isAllDefaultDueSort =
+      viewMode === 'all' &&
+      effectiveSortBy.length === 2 &&
+      effectiveSortBy[0].field === 'due_date' &&
+      effectiveSortBy[0].direction === 'asc' &&
+      effectiveSortBy[1].field === 'start_date' &&
+      effectiveSortBy[1].direction === 'asc'
+
+    if (isAllDefaultDueSort) {
+      const getPrimaryTimestamp = (item: (typeof items)[number]) => {
+        if (item.type === 'task' && item.task) {
+          const due = item.task.due_date ? new Date(item.task.due_date).getTime() : null
+          const start = item.task.start_date ? new Date(item.task.start_date).getTime() : null
+          if (due != null) return due
+          if (start != null) return start
+          return Number.MAX_SAFE_INTEGER
+        }
+        if (item.type === 'reminder' && item.reminder) {
+          return item.reminder.remind_at ? new Date(item.reminder.remind_at).getTime() : Number.MAX_SAFE_INTEGER
+        }
+        if (item.type === 'habit_reminder' && item.habitReminder) {
+          return item.habitReminder.remindAt ? new Date(item.habitReminder.remindAt).getTime() : Number.MAX_SAFE_INTEGER
+        }
+        return Number.MAX_SAFE_INTEGER
+      }
+
+      items.sort((a, b) => {
+        const at = getPrimaryTimestamp(a)
+        const bt = getPrimaryTimestamp(b)
+        if (at !== bt) return at - bt
+        return a.created_at.localeCompare(b.created_at)
+      })
+    }
+
     return items
-  }, [tasks, reminders, habitReminders])
+  }, [tasks, reminders, habitReminders, viewMode, effectiveSortBy])
 
   return (
     <div className="space-y-6">
