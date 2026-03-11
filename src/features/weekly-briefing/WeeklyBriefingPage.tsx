@@ -57,6 +57,22 @@ export function WeeklyBriefingPage() {
     [goals],
   )
 
+  /* Archive task handler: mark task archived and refetch tasks (used in task cleanup step) */
+  const handleArchiveTask = useCallback(
+    (task: Task) => {
+      updateTask(task.id, { status: 'archived' }).then(() => refetchTasks())
+    },
+    [updateTask, refetchTasks],
+  )
+
+  /* Delete task handler: delete task and refetch tasks (used in task cleanup step) */
+  const handleDeleteTask = useCallback(
+    (task: Task) => {
+      deleteTask(task.id).then(() => refetchTasks())
+    },
+    [deleteTask, refetchTasks],
+  )
+
   /* Fetch tasks completed in last 7 days for look-back step */
   useEffect(() => {
     const now = new Date()
@@ -174,18 +190,8 @@ export function WeeklyBriefingPage() {
         <TaskCleanupScreen
           tasksToReview={tasksToReview}
           onEditTask={setEditTask}
-          onArchiveTask={useCallback(
-            (task: Task) => {
-              updateTask(task.id, { status: 'archived' }).then(() => refetchTasks())
-            },
-            [updateTask, refetchTasks]
-          )}
-          onDeleteTask={useCallback(
-            (task: Task) => {
-              deleteTask(task.id).then(() => refetchTasks())
-            },
-            [deleteTask, refetchTasks]
-          )}
+          onArchiveTask={handleArchiveTask}
+          onDeleteTask={handleDeleteTask}
           onFinish={() => setStep(3)}
         />
       )}
