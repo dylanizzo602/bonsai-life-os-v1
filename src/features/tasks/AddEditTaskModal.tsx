@@ -848,11 +848,24 @@ export function AddEditTaskModal({
       {advancedOpen && (
         <div className="space-y-4 pt-2 border-t border-bonsai-slate-200">
           <div>
-            {/* Description: Rich text editor for notes/details, stores HTML string in description state */}
+            {/* Description: Rich text editor for notes/details, stores HTML string in description state and auto-saves in edit mode on blur */}
             <RichTextEditor
               editorKey={task?.id ?? 'new-task-description'}
               value={description}
-              onBlur={(html) => setDescription(html)}
+              onBlur={async (html) => {
+                setDescription(html)
+
+                /* In edit mode, persist description changes immediately so closing the modal doesn't lose edits */
+                if (isEditMode && task && onUpdateTask) {
+                  try {
+                    await onUpdateTask(task.id, {
+                      description: html.trim() || null,
+                    })
+                  } catch (error) {
+                    console.error('Failed to auto-save task description from modal:', error)
+                  }
+                }
+              }}
               placeholder="Add notes or details..."
               className="w-full"
             />
