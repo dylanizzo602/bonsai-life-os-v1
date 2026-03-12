@@ -21,6 +21,12 @@ interface AccountSettingsState {
   locationLng: number | null
   /** Email field value */
   email: string
+  /** Google Calendar ICS URL field value */
+  calendarIcsGoogle: string
+  /** Microsoft (Outlook) Calendar ICS URL field value */
+  calendarIcsMicrosoft: string
+  /** Apple Calendar ICS URL field value */
+  calendarIcsApple: string
 }
 
 interface UseAccountSettingsReturn extends AccountSettingsState {
@@ -48,6 +54,7 @@ interface UseAccountSettingsReturn extends AccountSettingsState {
 
 /**
  * Initialize account settings state from the Supabase user object.
+ * Falls back to localStorage for calendar ICS URLs so values persist even if metadata has not refreshed yet.
  */
 function getInitialStateFromUser(user: User | null): AccountSettingsState {
   const metadata = (user?.user_metadata ?? {}) as Record<string, unknown>
@@ -56,6 +63,28 @@ function getInitialStateFromUser(user: User | null): AccountSettingsState {
   const rawLocation = typeof metadata.location === 'string' ? metadata.location : ''
   const rawLat = typeof metadata.location_lat === 'number' ? metadata.location_lat : null
   const rawLng = typeof metadata.location_lng === 'number' ? metadata.location_lng : null
+  const rawCalendarIcsGoogleMeta =
+    typeof metadata.calendar_ics_google === 'string' ? metadata.calendar_ics_google : ''
+  const rawCalendarIcsMicrosoftMeta =
+    typeof metadata.calendar_ics_microsoft === 'string' ? metadata.calendar_ics_microsoft : ''
+  const rawCalendarIcsAppleMeta =
+    typeof metadata.calendar_ics_apple === 'string' ? metadata.calendar_ics_apple : ''
+
+  let rawCalendarIcsGoogle = rawCalendarIcsGoogleMeta
+  let rawCalendarIcsMicrosoft = rawCalendarIcsMicrosoftMeta
+  let rawCalendarIcsApple = rawCalendarIcsAppleMeta
+
+  if (typeof window !== 'undefined') {
+    if (!rawCalendarIcsGoogle) {
+      rawCalendarIcsGoogle = window.localStorage.getItem('bonsai_calendar_ics_google') ?? ''
+    }
+    if (!rawCalendarIcsMicrosoft) {
+      rawCalendarIcsMicrosoft = window.localStorage.getItem('bonsai_calendar_ics_microsoft') ?? ''
+    }
+    if (!rawCalendarIcsApple) {
+      rawCalendarIcsApple = window.localStorage.getItem('bonsai_calendar_ics_apple') ?? ''
+    }
+  }
 
   return {
     firstName: rawFirstName,
@@ -64,6 +93,9 @@ function getInitialStateFromUser(user: User | null): AccountSettingsState {
     locationLat: rawLat,
     locationLng: rawLng,
     email: user?.email ?? '',
+    calendarIcsGoogle: rawCalendarIcsGoogle,
+    calendarIcsMicrosoft: rawCalendarIcsMicrosoft,
+    calendarIcsApple: rawCalendarIcsApple,
   }
 }
 
@@ -174,7 +206,7 @@ export function useAccountSettings(user: User | null): UseAccountSettingsReturn 
     }
   }, [hasUser])
 
-  /* Metadata saver: persist first name, last name, and location to user metadata */
+  /* Metadata saver: persist first name, last name, location, and calendar links to user metadata + localStorage */
   const saveProfile = useCallback(async () => {
     if (!hasUser) return
     try {
@@ -188,7 +220,19 @@ export function useAccountSettings(user: User | null): UseAccountSettingsReturn 
         location: state.location || null,
         locationLat: state.locationLat,
         locationLng: state.locationLng,
+        calendarIcsGoogle: state.calendarIcsGoogle || null,
+        calendarIcsMicrosoft: state.calendarIcsMicrosoft || null,
+        calendarIcsApple: state.calendarIcsApple || null,
       })
+
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('bonsai_calendar_ics_google', state.calendarIcsGoogle ?? '')
+        window.localStorage.setItem(
+          'bonsai_calendar_ics_microsoft',
+          state.calendarIcsMicrosoft ?? '',
+        )
+        window.localStorage.setItem('bonsai_calendar_ics_apple', state.calendarIcsApple ?? '')
+      }
 
       setSuccess('Profile updated')
     } catch (err) {

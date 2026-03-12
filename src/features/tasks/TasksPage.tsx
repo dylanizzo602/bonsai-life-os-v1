@@ -555,7 +555,6 @@ export function TasksPage() {
     updateReminder: updateReminderBase,
     deleteReminder: deleteReminderBase,
     toggleComplete: toggleReminderComplete,
-    advanceToNextOccurrence: advanceReminderToNextOccurrence,
   } = useReminders()
 
   /* Habit reminders: habits with add_to_todos, for Tasks list (streak + Complete/Skip + notification time) */

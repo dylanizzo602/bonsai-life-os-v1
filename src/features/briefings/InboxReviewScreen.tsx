@@ -1,6 +1,7 @@
 /* InboxReviewScreen: Briefing step to review inbox items and either convert them into tasks or delete them */
 
 import { Button } from '../../components/Button'
+import { BriefingFooter } from './BriefingFooter'
 import type { InboxItem } from '../home/types'
 
 interface InboxReviewScreenProps {
@@ -14,6 +15,8 @@ interface InboxReviewScreenProps {
   onConvertToTask: (item: InboxItem) => void
   /** Handler to delete an inbox item */
   onDeleteItem: (id: string) => Promise<void>
+  /** Go back to the previous step in the briefing flow */
+  onBack?: () => void
   /** Go to next step in the briefing flow */
   onNext: () => void
 }
@@ -28,6 +31,7 @@ export function InboxReviewScreen({
   error,
   onConvertToTask,
   onDeleteItem,
+  onBack,
   onNext,
 }: InboxReviewScreenProps) {
   /* Derived flag: whether there are any inbox items to process */
@@ -83,11 +87,7 @@ export function InboxReviewScreen({
         </ul>
       )}
 
-      <div className="mt-6">
-        <Button type="button" onClick={onNext} variant="primary" className="w-full">
-          Next
-        </Button>
-      </div>
+      <BriefingFooter onBack={onBack} onNext={onNext} />
     </div>
   )
 }

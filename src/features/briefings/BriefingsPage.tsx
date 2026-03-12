@@ -26,6 +26,10 @@ import { AddEditTaskModal } from '../tasks/AddEditTaskModal'
 import { AddEditReminderModal } from '../reminders'
 import type { Reminder } from '../reminders/types'
 import type { InboxItem } from '../home/types'
+import { useAuth } from '../auth/AuthContext'
+import { useCalendarAgenda } from './hooks/useCalendarAgenda'
+import { getDueStatus } from '../tasks/utils/date'
+import { getAvailableTasksFromList } from '../tasks/utils/available'
 
 /** Total steps in the flow (greeting + overdue + inbox review + plan + 4 reflection + completion) */
 const TOTAL_STEPS = 9
@@ -37,15 +41,6 @@ const REFLECTION_QUESTIONS: { key: keyof MorningBriefingResponses; label: string
   { key: 'didEverything', label: 'Did you do everything you were supposed to yesterday? If not, why?' },
   { key: 'whatWouldMakeEasier', label: 'What would make today easier?' },
 ]
-
-/** Priority order for sorting available tasks (urgent first, then due, etc.) */
-const PRIORITY_ORDER: Record<Task['priority'], number> = {
-  none: 0,
-  low: 1,
-  medium: 2,
-  high: 3,
-  urgent: 4,
-}
 
 export interface BriefingsPageProps {
   /** Optional: navigate to Reflections section (e.g. from OverviewScreen) */
@@ -90,6 +85,9 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
       return next
     })
   }, [])
+
+  /* Auth: current user for calendar settings (ICS URLs stored in user metadata) */
+  const { user } = useAuth()
 
   /* Tasks and reminders: fetch all top-level tasks and all reminders */
   const {
@@ -175,6 +173,42 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     [tasks, todayStart, todayEnd],
   )
 
+  /* Calendar agenda: aggregate today events across configured ICS URLs from user metadata or localStorage */
+  const calendarUrlsBySource = useMemo(() => {
+    const metadata = (user?.user_metadata ?? {}) as Record<string, unknown>
+    let google =
+      typeof metadata.calendar_ics_google === 'string' ? metadata.calendar_ics_google : ''
+    let microsoft =
+      typeof metadata.calendar_ics_microsoft === 'string' ? metadata.calendar_ics_microsoft : ''
+    let apple =
+      typeof metadata.calendar_ics_apple === 'string' ? metadata.calendar_ics_apple : ''
+
+    if (typeof window !== 'undefined') {
+      if (!google) {
+        google = window.localStorage.getItem('bonsai_calendar_ics_google') ?? ''
+      }
+      if (!microsoft) {
+        microsoft = window.localStorage.getItem('bonsai_calendar_ics_microsoft') ?? ''
+      }
+      if (!apple) {
+        apple = window.localStorage.getItem('bonsai_calendar_ics_apple') ?? ''
+      }
+    }
+
+    return {
+      google,
+      microsoft,
+      apple,
+    }
+  }, [user])
+
+  const {
+    loading: calendarLoading,
+    error: calendarError,
+    eventsToday: calendarEventsToday,
+    countToday: calendarEventCount,
+  } = useCalendarAgenda({ urlsBySource: calendarUrlsBySource })
+
   /* Overdue tasks and reminders (for step 1) */
   const overdueTasks = useMemo(
     () =>
@@ -182,9 +216,9 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
         (t) =>
           t.due_date &&
           !['completed', 'archived', 'deleted'].includes(t.status) &&
-          new Date(t.due_date).getTime() < todayStart,
+          getDueStatus(t.due_date) === 'overdue',
       ),
-    [tasks, todayStart],
+    [tasks],
   )
   const overdueReminders = useMemo(
     () =>
@@ -193,55 +227,37 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
           !r.deleted &&
           !r.completed &&
           r.remind_at &&
-          new Date(r.remind_at).getTime() < todayStart,
+          getDueStatus(r.remind_at) === 'overdue',
       ),
-    [reminders, todayStart],
+    [reminders],
   )
 
   /* Overdue habit reminders: habits with add_to_todos and a linked reminder/reminder_time whose occurrence is before today */
   const overdueHabitReminders = useMemo(
     () => {
-      const items: { habit: HabitWithStreaks; remindAt: string | null }[] =
-        habitsWithStreaks
-          .filter((h) => h.add_to_todos && h.reminder_id)
-          .map((habit) => {
-            const linked = reminders.find((r) => r.id === habit.reminder_id!)
-            const remindAt =
-              linked?.remind_at ??
-              (habit.reminder_time ? `${todayYMD}T${habit.reminder_time}` : null)
-            return { habit, remindAt }
-          })
+      const items: { habit: HabitWithStreaks; remindAt: string | null }[] = habitsWithStreaks
+        .filter((h) => h.add_to_todos && h.reminder_id)
+        .map((habit) => {
+          const linked = reminders.find((r) => r.id === habit.reminder_id!)
+          const remindAt =
+            linked?.remind_at ??
+            (habit.reminder_time ? `${todayYMD}T${habit.reminder_time}` : null)
+          return { habit, remindAt }
+        })
 
       return items.filter(
         ({ remindAt }) =>
-          !!remindAt && new Date(remindAt).getTime() < todayStart,
+          !!remindAt && getDueStatus(remindAt) === 'overdue',
       )
     },
-    [habitsWithStreaks, reminders, todayYMD, todayStart],
+    [habitsWithStreaks, reminders, todayYMD],
   )
 
-  /* Available tasks (first 5): not completed/archived/deleted, not blocked, start <= now */
-  const availableTasks = useMemo(() => {
-    const now = Date.now()
-    const list = tasks.filter(
-      (t) =>
-        !['completed', 'archived', 'deleted'].includes(t.status) &&
-        !blockedTaskIds.has(t.id) &&
-        (t.start_date == null || new Date(t.start_date).getTime() <= now),
-    )
-    list.sort((a, b) => {
-      const aUrgent = a.priority === 'urgent' ? 1 : 0
-      const bUrgent = b.priority === 'urgent' ? 1 : 0
-      if (bUrgent !== aUrgent) return bUrgent - aUrgent
-      const aDue = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER
-      const bDue = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER
-      if (aDue !== bDue) return aDue - bDue
-      const aPri = PRIORITY_ORDER[a.priority] ?? 0
-      const bPri = PRIORITY_ORDER[b.priority] ?? 0
-      return bPri - aPri
-    })
-    return list
-  }, [tasks, blockedTaskIds])
+  /* Available tasks: use shared helper so semantics match Available view and Upcoming widgets */
+  const availableTasks = useMemo(
+    () => getAvailableTasksFromList(tasks, blockedTaskIds),
+    [tasks, blockedTaskIds],
+  )
 
   /* Edit task/reminder modals (used on overdue step and inbox review convert-to-task) */
   const [editTask, setEditTask] = useState<Task | null>(null)
@@ -340,6 +356,11 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     setShowOverview(false)
   }, [])
 
+  /* Go back to the previous briefing step (not used on greeting) */
+  const goToPreviousStep = useCallback(() => {
+    setStep((prev) => (prev > 0 ? prev - 1 : 0))
+  }, [])
+
   /* Render overview when user clicked "View overview" */
   if (showOverview) {
     return (
@@ -363,6 +384,9 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
       {step === 0 && (
         <GreetingScreen
           tasksDueTodayCount={tasksDueTodayCount}
+          calendarEventCount={calendarEventCount}
+          calendarLoading={calendarLoading}
+          calendarError={calendarError}
           onBegin={() => setStep(1)}
         />
       )}
@@ -391,6 +415,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
             await refetchHabits()
             await refetchReminders()
           }}
+          onBack={goToPreviousStep}
           onNext={() => setStep(2)}
         />
       )}
@@ -402,6 +427,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
           error={inboxError}
           onConvertToTask={openConvertInboxItem}
           onDeleteItem={deleteInboxItem}
+          onBack={goToPreviousStep}
           onNext={() => setStep(3)}
         />
       )}
@@ -410,8 +436,12 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
         <PlanDayScreen
           availableTasks={availableTasks}
           lineUpTaskIds={lineUpTaskIds}
+           calendarEvents={calendarEventsToday}
+           calendarLoading={calendarLoading}
+           calendarError={calendarError}
           onAddToLineUp={addToLineUp}
           onRemoveFromLineUp={removeFromLineUp}
+          onBack={goToPreviousStep}
           onNext={() => setStep(4)}
         />
       )}
@@ -430,7 +460,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
             if (step === 7) saveEntryAndGoToCompletion()
             else setStep(step + 1)
           }}
-          onBack={step > 4 ? () => setStep(step - 1) : undefined}
+          onBack={step > 4 ? goToPreviousStep : undefined}
           showBack={step > 4}
         />
       )}

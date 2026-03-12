@@ -7,7 +7,7 @@ import { Tooltip } from '../../components/Tooltip'
 import { RepeatIcon } from '../../components/icons'
 import { SingleDatePickerModal } from './modals/SingleDatePickerModal'
 import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
-import { isOverdue } from '../tasks/utils/date'
+import { getDueStatus } from '../tasks/utils/date'
 import type { Reminder, UpdateReminderInput } from './types'
 
 /** Format remind_at for list display */
@@ -84,8 +84,9 @@ export function ReminderItem({
     onToggleComplete(reminder.id, e.target.checked)
   }
 
-  /* Check if reminder due date is overdue: use remind_at field */
-  const isRemindOverdue = Boolean(reminder.remind_at && isOverdue(reminder.remind_at))
+  /* Check if reminder due date is overdue by calendar day: use shared due status helper */
+  const isRemindOverdue =
+    reminder.remind_at != null && getDueStatus(reminder.remind_at) === 'overdue'
 
   return (
     <div

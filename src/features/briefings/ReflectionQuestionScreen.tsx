@@ -1,6 +1,6 @@
 /* ReflectionQuestionScreen: One reflection question per step with rich text editor */
 
-import { Button } from '../../components/Button'
+import { BriefingFooter } from './BriefingFooter'
 import { RichTextEditor } from '../notes/RichTextEditor'
 
 interface ReflectionQuestionScreenProps {
@@ -43,16 +43,7 @@ export function ReflectionQuestionScreen({
         placeholder="Type your thoughts here..."
         className="mb-6"
       />
-      <div className="flex gap-3">
-        {showBack && onBack && (
-          <Button type="button" variant="secondary" onClick={onBack}>
-            Back
-          </Button>
-        )}
-        <Button type="button" variant="primary" onClick={onNext} className="flex-1">
-          Next
-        </Button>
-      </div>
+      <BriefingFooter onBack={showBack ? onBack : undefined} onNext={onNext} />
     </div>
   )
 }

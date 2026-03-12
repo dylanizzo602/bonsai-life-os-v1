@@ -1,23 +1,33 @@
-/* GreetingScreen: First briefing step – greeting, placeholder weather/calendar, tasks due today, Begin button */
+/* GreetingScreen: First briefing step – greeting, quick summary of today (weather placeholder, real calendar + tasks), Begin button */
 
 import { Button } from '../../components/Button'
 
 interface GreetingScreenProps {
   /** Number of tasks due today (from tasks API) */
   tasksDueTodayCount: number
+  /** Number of calendar events today across all configured calendars */
+  calendarEventCount: number
+  /** True while calendar feeds are loading */
+  calendarLoading: boolean
+  /** Optional brief calendar error to show inline */
+  calendarError: string | null
   /** Start the morning briefing flow */
   onBegin: () => void
 }
 
 /**
- * Greeting step: welcome message, placeholder weather, placeholder calendar count,
+ * Greeting step: welcome message, placeholder weather, real calendar agenda count,
  * real tasks-due-today count, and "Begin morning briefing" button.
  */
-export function GreetingScreen({ tasksDueTodayCount, onBegin }: GreetingScreenProps) {
+export function GreetingScreen({
+  tasksDueTodayCount,
+  calendarEventCount,
+  calendarLoading,
+  calendarError,
+  onBegin,
+}: GreetingScreenProps) {
   /* Placeholder: replace with real weather API later */
   const weatherPlaceholder = 'Sunny, 72°F'
-  /* Placeholder: replace with real calendar integration later */
-  const calendarEventCount = 3
 
   return (
     <div className="flex min-h-[50vh] flex-col justify-between">
@@ -30,18 +40,25 @@ export function GreetingScreen({ tasksDueTodayCount, onBegin }: GreetingScreenPr
           Here’s a quick look at your day.
         </p>
 
-        {/* Placeholder weather and calendar; real tasks count */}
+        {/* Today summary: placeholder weather, real calendar count, real tasks count */}
         <div className="space-y-3 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50/50 p-4">
           <p className="text-body text-bonsai-slate-700">
             <span className="font-medium">Weather:</span> {weatherPlaceholder}
           </p>
           <p className="text-body text-bonsai-slate-700">
-            <span className="font-medium">Calendar:</span> {calendarEventCount} events
-            today
+            <span className="font-medium">Calendar:</span>{' '}
+            {calendarLoading
+              ? 'Loading events…'
+              : `${calendarEventCount} event${calendarEventCount === 1 ? '' : 's'} today`}
           </p>
           <p className="text-body text-bonsai-slate-700">
             <span className="font-medium">Tasks due today:</span> {tasksDueTodayCount}
           </p>
+          {calendarError && (
+            <p className="text-secondary text-bonsai-slate-500">
+              {calendarError}
+            </p>
+          )}
         </div>
       </div>
 
@@ -54,3 +71,4 @@ export function GreetingScreen({ tasksDueTodayCount, onBegin }: GreetingScreenPr
     </div>
   )
 }
+

@@ -13,6 +13,12 @@ interface UpdateAccountProfileInput {
   locationLat: number | null
   /** Location longitude stored in user metadata */
   locationLng: number | null
+  /** Google Calendar ICS URL stored in user metadata */
+  calendarIcsGoogle: string | null
+  /** Microsoft (Outlook) Calendar ICS URL stored in user metadata */
+  calendarIcsMicrosoft: string | null
+  /** Apple Calendar ICS URL stored in user metadata */
+  calendarIcsApple: string | null
 }
 
 /**
@@ -26,6 +32,9 @@ export async function updateAccountProfileMetadata(input: UpdateAccountProfileIn
       location: input.location,
       location_lat: input.locationLat,
       location_lng: input.locationLng,
+      calendar_ics_google: input.calendarIcsGoogle,
+      calendar_ics_microsoft: input.calendarIcsMicrosoft,
+      calendar_ics_apple: input.calendarIcsApple,
     },
   })
 

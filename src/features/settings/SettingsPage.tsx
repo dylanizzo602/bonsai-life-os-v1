@@ -20,6 +20,9 @@ export function SettingsPage() {
     lastName,
     location,
     email,
+    calendarIcsGoogle,
+    calendarIcsMicrosoft,
+    calendarIcsApple,
     saving,
     locating,
     error,
@@ -146,6 +149,45 @@ export function SettingsPage() {
                 {saving ? 'Saving…' : 'Save profile'}
               </Button>
             </div>
+          </section>
+
+          {/* Calendar section: optional shareable calendar links for agenda view */}
+          <section className="border border-bonsai-slate-200 rounded-xl p-4 md:p-6 bg-white">
+            <h2 className="text-body font-semibold text-bonsai-brown-700 mb-4">Calendar</h2>
+            <p className="text-secondary text-bonsai-slate-600 mb-4">
+              Paste read-only calendar links (ICS format) from Google, Microsoft, or Apple to
+              surface today&apos;s agenda in your morning briefing.
+            </p>
+            <div className="space-y-4">
+              <Input
+                label="Google Calendar link (ICS)"
+                value={calendarIcsGoogle}
+                onChange={(e) => setField('calendarIcsGoogle', e.target.value)}
+                placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"
+                autoComplete="off"
+                disabled={!user || saving}
+              />
+              <Input
+                label="Microsoft / Outlook Calendar link (ICS)"
+                value={calendarIcsMicrosoft}
+                onChange={(e) => setField('calendarIcsMicrosoft', e.target.value)}
+                placeholder="https://outlook.office365.com/owa/calendar/…/calendar.ics"
+                autoComplete="off"
+                disabled={!user || saving}
+              />
+              <Input
+                label="Apple Calendar link (ICS)"
+                value={calendarIcsApple}
+                onChange={(e) => setField('calendarIcsApple', e.target.value)}
+                placeholder="webcal://pXX-caldav.icloud.com/published/…"
+                autoComplete="off"
+                disabled={!user || saving}
+              />
+            </div>
+            <p className="mt-3 text-secondary text-bonsai-slate-500">
+              These links should be read-only, shareable calendar URLs. Bonsai will only read events
+              to show an agenda for today; it will never modify your calendars.
+            </p>
           </section>
 
           {/* Notifications section: configure email and push preferences for different notification types */}

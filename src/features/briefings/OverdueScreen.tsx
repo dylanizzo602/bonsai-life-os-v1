@@ -1,9 +1,9 @@
 /* OverdueScreen: Show overdue tasks, reminders, and habit reminders from before today; allow update/complete; same breakpoints as Task section */
 
-import { Button } from '../../components/Button'
 import { CompactTaskItem } from '../tasks/CompactTaskItem'
 import { ReminderItem } from '../reminders/ReminderItem'
 import { HabitReminderItem } from '../habits/HabitReminderItem'
+import { BriefingFooter } from './BriefingFooter'
 import type { Task } from '../tasks/types'
 import type { Reminder } from '../reminders/types'
 import type { HabitWithStreaks } from '../habits/types'
@@ -33,6 +33,8 @@ interface OverdueScreenProps {
   onHabitMarkComplete?: (habit: HabitWithStreaks, remindAt: string | null) => void
   /** Skip a habit reminder occurrence */
   onHabitSkip?: (habit: HabitWithStreaks, remindAt: string | null) => void
+  /** Go back to the previous step */
+  onBack?: () => void
   /** Go to next step */
   onNext: () => void
 }
@@ -53,6 +55,7 @@ export function OverdueScreen({
   onToggleReminderComplete,
   onHabitMarkComplete,
   onHabitSkip,
+  onBack,
   onNext,
 }: OverdueScreenProps) {
   /* Combined presence check: tasks, reminders, or habit reminders */
@@ -125,11 +128,7 @@ export function OverdueScreen({
         </>
       )}
 
-      <div className="mt-6">
-        <Button type="button" onClick={onNext} variant="primary" className="w-full">
-          Next
-        </Button>
-      </div>
+      <BriefingFooter onBack={onBack} onNext={onNext} />
     </div>
   )
 }
