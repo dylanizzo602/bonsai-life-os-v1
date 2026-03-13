@@ -5,6 +5,7 @@ import { Modal } from '../../components/Modal'
 import { Button } from '../../components/Button'
 import { Input } from '../../components/Input'
 import { Checkbox } from '../../components/Checkbox'
+import { RichTextEditor } from '../notes/RichTextEditor'
 import { useTaskChecklists } from './hooks/useTaskChecklists'
 import { useTags } from './hooks/useTags'
 import {
@@ -35,6 +36,7 @@ import type {
   TaskStatus,
   TaskAttachment,
 } from './types'
+import { formatDateShort } from './utils/date'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
 type DisplayStatus = 'open' | 'in_progress' | 'complete'
@@ -257,7 +259,7 @@ export function AddEditSubtaskModal({
     }
   }, [isOpen, subtask])
 
-  /* Submit: create or update subtask with all form fields */
+  /* Submit: create or update subtask with all form fields (uses description HTML from rich text editor) */
   const handleSubmit = async () => {
     if (!title.trim()) return
     if (isEditMode && subtask && onUpdateTask) {
@@ -323,12 +325,7 @@ export function AddEditSubtaskModal({
     }
   }
 
-  /* Format date for pill display */
-  const formatDate = (iso: string | null) => {
-    if (!iso) return null
-    const d = new Date(iso)
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  }
+  /* Format date pill text using shared helper so date-only values respect local calendar day */
   const formatEstimate = (min: number | null) =>
     min == null ? null : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`.replace(/ 0m$/, '')
 
@@ -405,8 +402,8 @@ export function AddEditSubtaskModal({
           className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
         >
           <CalendarIcon className="w-4 h-4 text-bonsai-slate-600" />
-          {formatDate(start_date) || formatDate(due_date)
-            ? `Due: ${formatDate(due_date) ?? formatDate(start_date)}`
+          {formatDateShort(start_date) || formatDateShort(due_date)
+            ? `Due: ${formatDateShort(due_date) ?? formatDateShort(start_date)}`
             : 'Add start/due date'}
         </button>
         <button
@@ -490,10 +487,23 @@ export function AddEditSubtaskModal({
         onClose={() => setDatePickerOpen(false)}
         startDate={start_date}
         dueDate={due_date}
-        onSave={(start, due, rec) => {
+        onSave={async (start, due, rec) => {
           setStartDate(start)
           setDueDate(due)
           setRecurrencePattern(rec ?? null)
+
+          /* In edit mode, persist date and recurrence changes immediately so the change is saved without requiring Close */
+          if (isEditMode && subtask && onUpdateTask) {
+            try {
+              await onUpdateTask(subtask.id, {
+                start_date: start,
+                due_date: due,
+                recurrence_pattern: rec ?? null,
+              })
+            } catch {
+              // Error handled by parent; keep local state so user can retry
+            }
+          }
         }}
         triggerRef={datePickerButtonRef}
         recurrencePattern={recurrence_pattern}
@@ -565,13 +575,25 @@ export function AddEditSubtaskModal({
       {advancedOpen && (
         <div className="space-y-4 pt-2 border-t border-bonsai-slate-200">
           <div>
-            <textarea
-              placeholder="Add notes or details..."
-              className="w-full min-h-[80px] rounded-lg border border-dashed border-bonsai-slate-300 px-3 py-2 text-sm text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent"
+            {/* Description: Rich text editor for subtask notes/details; stores HTML string in description state and auto-saves in edit mode on blur */}
+            <RichTextEditor
+              editorKey={subtask?.id ?? 'new-subtask-description'}
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              aria-label="Notes or details"
-              spellCheck
+              onBlur={async (html) => {
+                setDescription(html)
+                /* In edit mode, persist description changes immediately so closing the modal doesn't lose edits */
+                if (isEditMode && subtask && onUpdateTask) {
+                  try {
+                    await onUpdateTask(subtask.id, {
+                      description: html.trim() || null,
+                    })
+                  } catch {
+                    // Error handled by parent; keep local state so user can retry
+                  }
+                }
+              }}
+              placeholder="Add notes or details..."
+              className="w-full"
             />
           </div>
 

@@ -1404,7 +1404,12 @@ export function TasksPage() {
           }
         }}
         onMarkDeletedTask={async (task) => {
-          await updateTask(task.id, { status: 'deleted' })
+          /* Trash/Restore: If task is deleted, restore it to active; otherwise move it to trash (soft delete). */
+          if (task.status === 'deleted') {
+            await updateTask(task.id, { status: 'active' })
+          } else {
+            await updateTask(task.id, { status: 'deleted' })
+          }
         }}
         reminders={filteredReminders}
         remindersLoading={remindersLoading}

@@ -34,7 +34,12 @@ import { StatusPickerModal } from './modals/StatusPickerModal'
 import { useTaskTemplates } from './hooks/useTaskTemplates'
 import type { ChecklistWithItems } from './hooks/useTaskChecklists'
 import type { TaskTemplate, TaskTemplateData } from './types'
-import { createTaskChecklist, createChecklistItem, createSubtask } from '../../lib/supabase/tasks'
+import {
+  createTaskChecklist,
+  createChecklistItem,
+  createSubtask,
+  toggleChecklistItemComplete,
+} from '../../lib/supabase/tasks'
 import type {
   Task,
   Tag,
@@ -69,7 +74,7 @@ type DraftChecklistItem = { id: string; title: string; completed: boolean }
 /* Draft checklist type: Local-only checklist used while creating a new task (no task id yet) */
 type DraftChecklist = { id: string; title: string; items: DraftChecklistItem[] }
 
-/** Instantiate checklists and subtasks for a newly created task from a template snapshot. */
+/** Instantiate checklists and subtasks for a newly created task from a template snapshot, preserving checklist item completion state. */
 async function instantiateTemplateChildren(
   taskId: string,
   template: TaskTemplateData,
@@ -80,10 +85,13 @@ async function instantiateTemplateChildren(
       title: cl.title,
     })
     for (const item of cl.items) {
-      await createChecklistItem({
+      const createdItem = await createChecklistItem({
         checklist_id: checklist.id,
         title: item.title,
       })
+      if (item.completed) {
+        await toggleChecklistItemComplete(createdItem.id, true)
+      }
     }
   }
 

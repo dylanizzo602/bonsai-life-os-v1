@@ -21,7 +21,7 @@ export interface TaskContextPopoverProps {
   onDuplicate: (task: Task) => void
   /** Archive the task (optional; sets status to archived) */
   onArchive?: (task: Task) => void
-  /** Mark task as deleted (soft delete; sets status to deleted) */
+  /** Toggle trash state: move to trash or restore from trash (soft delete) */
   onMarkDeleted?: (task: Task) => void
   /** Unlink a subtask from its parent so it becomes a top-level task */
   onUnlinkFromParent?: (task: Task) => void
@@ -35,7 +35,7 @@ const PADDING = 8
 const MIN_WIDTH = 160
 
 /**
- * Context menu popover for a task: Rename, Duplicate, Archive, Delete.
+ * Context menu popover for a task: Rename, Duplicate, Today's Lineup, Archive, Trash/Restore.
  * Positioned at (x, y) with viewport boundary detection; styled to match design (light background, rounded, spaced).
  */
 export function TaskContextPopover({
@@ -120,6 +120,7 @@ export function TaskContextPopover({
     onClose()
   }
   const isArchived = task.status === 'archived'
+  const isDeleted = task.status === 'deleted'
   const handleMarkDeleted = () => {
     onMarkDeleted?.(task)
     onClose()
@@ -210,7 +211,7 @@ export function TaskContextPopover({
             onClick={handleMarkDeleted}
             className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors rounded-none last:rounded-b-xl"
           >
-            Mark deleted
+            {isDeleted ? 'Restore from trash' : 'Move to trash'}
           </button>
         )}
       </div>
