@@ -553,7 +553,7 @@ export function FullTaskItem({
           {/* Description icon: Shows tooltip with description on hover when there is visible text */}
           {hasVisibleDescription(task.description) && (
             <DescriptionTooltip 
-              description={task.description} 
+              description={task.description ?? ''} 
               attachmentCount={task.attachments?.length ?? 0}
               position="top"
             >

@@ -40,7 +40,6 @@ export interface HabitReminderItemProps {
 export function HabitReminderItem({
   habit,
   remindAt,
-  reminderTime,
   onMarkComplete,
   onSkip,
   hideSkip = false,
