@@ -14,6 +14,12 @@ interface DescriptionTooltipProps {
   position?: 'top' | 'bottom' | 'left' | 'right'
 }
 
+/* Helper: Determine whether a description string has any visible text once HTML tags and non-breaking spaces are removed */
+export function hasVisibleDescription(description: string | null | undefined): boolean {
+  if (!description) return false
+  return Boolean(description.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim())
+}
+
 /**
  * Tooltip component that displays task description in a styled box matching the add/edit task modal.
  * The description is displayed in a read-only format with the same styling as the modal's description field.
@@ -31,12 +37,25 @@ export function DescriptionTooltip({
       ? '1 attachment' 
       : `${attachmentCount} attachments`
 
+  /* Derived flags: Detect whether description has any visible text once HTML tags are stripped */
+  const hasDescriptionText = hasVisibleDescription(description)
+
   /* Tooltip content: Styled box with description (links clickable, line breaks preserved) and attachment count at bottom */
-  const descriptionHtml = descriptionToHtml(description)
+  const isRichTextHtml = /<\/[a-z][^>]*>|<br\s*\/?>|<p[^>]*>/i.test(description)
+  const descriptionHtml = hasDescriptionText
+    ? isRichTextHtml
+      ? description
+      : descriptionToHtml(description)
+    : ''
   const tooltipContent = (
     <div className="w-full min-w-[200px] max-w-[400px] px-3 py-2 text-sm text-bonsai-slate-700">
-      {/* Description: Rendered HTML with clickable links and <br /> for newlines */}
-      <div className="mb-2 break-words" dangerouslySetInnerHTML={{ __html: descriptionHtml }} />
+      {/* Description: Rendered HTML from rich text or plain text with links/newlines; hidden when empty */}
+      {hasDescriptionText && (
+        <div
+          className="mb-2 break-words"
+          dangerouslySetInnerHTML={{ __html: descriptionHtml }}
+        />
+      )}
       {/* Attachment count: Shown at bottom with paperclip icon */}
       <div className="flex items-center gap-1.5 text-xs text-bonsai-slate-500 pt-2 border-t border-bonsai-slate-200">
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -47,9 +66,10 @@ export function DescriptionTooltip({
     </div>
   )
 
-  /* Render: Wrap children with Tooltip, only show if description exists and is not empty */
+  /* Render: Wrap children with Tooltip, only show when there is description text or attachments */
+  const hasContent = hasDescriptionText || attachmentCount > 0
   return (
-    <Tooltip content={description?.trim() ? tooltipContent : ''} position={position}>
+    <Tooltip content={hasContent ? tooltipContent : ''} position={position}>
       {children}
     </Tooltip>
   )

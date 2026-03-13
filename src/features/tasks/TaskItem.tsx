@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Checkbox } from '../../components/Checkbox'
 import { Button } from '../../components/Button'
 import { SubtaskList } from './SubtaskList'
+import { getDueStatus, formatStartDueDisplay } from './utils/date'
 import type { Task } from './types'
 
 interface TaskItemProps {
@@ -43,31 +44,21 @@ export function TaskItem({
   const [showSubtasks, setShowSubtasks] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
-  /* Format due date for display. Date-only (YYYY-MM-DD) parsed as local to avoid timezone shift. */
-  const formatDueDate = (dateString: string | null) => {
-    if (!dateString) return null
-    const isDateOnly = !dateString.includes('T')
-    const date = isDateOnly
-      ? (() => {
-          const [y, m, day] = dateString.split('-').map(Number)
-          return new Date(y, (m ?? 1) - 1, day ?? 1)
-        })()
-      : new Date(dateString)
-    if (isNaN(date.getTime())) return null
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const taskDate = new Date(date)
-    taskDate.setHours(0, 0, 0, 0)
-    if (taskDate < today) {
-      return { text: date.toLocaleDateString(), className: 'text-red-600 font-semibold' }
-    }
-    if (taskDate.getTime() === today.getTime()) {
-      return { text: 'Today', className: 'text-bonsai-sage-600 font-semibold' }
-    }
-    return { text: date.toLocaleDateString(), className: 'text-bonsai-slate-600' }
-  }
-
-  const dueDateInfo = formatDueDate(task.due_date)
+  /* Due date display: use shared helpers so "Due Today" / "Due Tomorrow" and colors match other task views */
+  const dueDateDisplay = formatStartDueDisplay(undefined, task.due_date)
+  const dueStatus = getDueStatus(task.due_date)
+  const dueDateInfo =
+    dueDateDisplay != null
+      ? {
+          text: dueDateDisplay,
+          className:
+            dueStatus === 'overdue'
+              ? 'text-red-600 font-semibold'
+              : dueStatus === 'dueSoon'
+                ? 'text-amber-600 font-semibold'
+                : 'text-bonsai-slate-600',
+        }
+      : null
   const priorityColors: Record<string, string> = {
     high: 'bg-red-100 text-red-800',
     medium: 'bg-yellow-100 text-yellow-800',

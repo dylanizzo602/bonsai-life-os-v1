@@ -7,42 +7,14 @@ import { Tooltip } from '../../components/Tooltip'
 import { RepeatIcon } from '../../components/icons'
 import { SingleDatePickerModal } from './modals/SingleDatePickerModal'
 import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
-import { getDueStatus } from '../tasks/utils/date'
+import { getDueStatus, formatStartDueDisplay } from '../tasks/utils/date'
 import type { Reminder, UpdateReminderInput } from './types'
 
-/** Format remind_at for list display */
+/** Format remind_at for list display: "Due Today", "Due Tomorrow", or "Due {date}" using shared task date helpers. */
 function formatRemindDate(iso: string | null): string {
   if (!iso) return 'No date'
-  // Normalize date from the ISO string itself (ignore timezone when deriving the day)
-  const ymd = iso.slice(0, 10)
-  const [yStr, mStr, dStr] = ymd.split('-')
-  const y = Number(yStr)
-  const m = Number(mStr)
-  const dDay = Number(dStr)
-  const dateForDisplay = Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(dDay)
-    ? new Date(Date.UTC(y, m - 1, dDay))
-    : new Date(iso)
-
-  const dateStr = dateForDisplay.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  })
-
-  // Detect whether this reminder should be treated as date-only (no explicit time)
-  const timeMatch = iso.match(/T(\d{2}):(\d{2}):(\d{2})/)
-  if (!timeMatch) return dateStr
-  const hours = Number(timeMatch[1])
-  const minutes = Number(timeMatch[2])
-  const hasExplicitTime = !(hours === 0 && minutes === 0)
-  if (!hasExplicitTime) return dateStr
-
-  // For reminders with an explicit time, show local time
-  const local = new Date(iso)
-  const hour12 = local.getHours() % 12 || 12
-  const min = local.getMinutes()
-  const ampm = local.getHours() < 12 ? 'AM' : 'PM'
-  return `${dateStr}, ${hour12}:${String(min).padStart(2, '0')} ${ampm}`
+  const display = formatStartDueDisplay(undefined, iso)
+  return display ?? 'No date'
 }
 
 export interface ReminderItemProps {
@@ -84,9 +56,10 @@ export function ReminderItem({
     onToggleComplete(reminder.id, e.target.checked)
   }
 
-  /* Check if reminder due date is overdue by calendar day: use shared due status helper */
-  const isRemindOverdue =
-    reminder.remind_at != null && getDueStatus(reminder.remind_at) === 'overdue'
+  /* Due status for styling: overdue = red, due today/tomorrow = yellow/amber (same as tasks) */
+  const dueStatus = reminder.remind_at != null ? getDueStatus(reminder.remind_at) : null
+  const isRemindOverdue = dueStatus === 'overdue'
+  const isRemindDueSoon = dueStatus === 'dueSoon'
 
   return (
     <div
@@ -150,7 +123,7 @@ export function ReminderItem({
                   e.stopPropagation()
                   setIsDatePickerOpen(true)
                 }}
-                className={`flex items-center gap-1 text-secondary shrink-0 ml-auto hover:underline transition-colors rounded px-1 -mx-1 ${isRemindOverdue ? 'text-red-600 font-medium hover:text-red-700' : 'text-bonsai-slate-500 hover:text-bonsai-slate-700'}`}
+                className={`flex items-center gap-1 text-secondary shrink-0 ml-auto hover:underline transition-colors rounded px-1 -mx-1 ${isRemindOverdue ? 'text-red-600 font-medium hover:text-red-700' : isRemindDueSoon ? 'text-amber-600 font-medium hover:text-amber-700' : 'text-bonsai-slate-500 hover:text-bonsai-slate-700'}`}
                 aria-label={reminder.remind_at ? 'Edit reminder date' : 'Set reminder date'}
               >
                 <RepeatIcon className="w-4 h-4 shrink-0" aria-hidden />
@@ -165,7 +138,7 @@ export function ReminderItem({
                 e.stopPropagation()
                 setIsDatePickerOpen(true)
               }}
-              className={`flex items-center gap-1 text-secondary shrink-0 ml-auto hover:underline transition-colors rounded px-1 -mx-1 ${isRemindOverdue ? 'text-red-600 font-medium hover:text-red-700' : 'text-bonsai-slate-500 hover:text-bonsai-slate-700'}`}
+              className={`flex items-center gap-1 text-secondary shrink-0 ml-auto hover:underline transition-colors rounded px-1 -mx-1 ${isRemindOverdue ? 'text-red-600 font-medium hover:text-red-700' : isRemindDueSoon ? 'text-amber-600 font-medium hover:text-amber-700' : 'text-bonsai-slate-500 hover:text-bonsai-slate-700'}`}
               aria-label={reminder.remind_at ? 'Edit reminder date' : 'Set reminder date'}
             >
               {formatRemindDate(reminder.remind_at)}
@@ -183,7 +156,7 @@ export function ReminderItem({
           />
         </>
       ) : (
-        <span className={`flex items-center gap-1 text-secondary shrink-0 ml-auto ${isRemindOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-500'}`}>
+        <span className={`flex items-center gap-1 text-secondary shrink-0 ml-auto ${isRemindOverdue ? 'text-red-600 font-medium' : isRemindDueSoon ? 'text-amber-600 font-medium' : 'text-bonsai-slate-500'}`}>
           {reminder.recurrence_pattern ? (
             <RepeatIcon className="w-4 h-4 shrink-0" aria-hidden />
           ) : null}

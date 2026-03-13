@@ -19,7 +19,7 @@ import {
 import { Tooltip } from '../../components/Tooltip'
 import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { TaskNameHover } from './TaskNameHover'
-import { DescriptionTooltip } from '../../components/DescriptionTooltip'
+import { DescriptionTooltip, hasVisibleDescription } from '../../components/DescriptionTooltip'
 import { DependencyTooltip } from '../../components/DependencyTooltip'
 import { StatusPickerModal } from './modals/StatusPickerModal'
 import { UnresolvedItemsConfirmModal } from './modals/UnresolvedItemsConfirmModal'
@@ -550,8 +550,8 @@ export function FullTaskItem({
               <span className="text-xs md:text-sm">{subtaskCount}</span>
             </span>
           )}
-          {/* Description icon: Shows tooltip with description on hover */}
-          {task.description?.trim() && (
+          {/* Description icon: Shows tooltip with description on hover when there is visible text */}
+          {hasVisibleDescription(task.description) && (
             <DescriptionTooltip 
               description={task.description} 
               attachmentCount={task.attachments?.length ?? 0}

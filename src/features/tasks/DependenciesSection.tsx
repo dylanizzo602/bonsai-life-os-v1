@@ -141,17 +141,17 @@ export function DependenciesSection({
   const getBlockedTask = (dep: TaskDependency) => taskMap[dep.blocked_id]
 
   return (
-    <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
+    <div className="flex min-h-0 flex-col gap-4 overflow-visible">
       {/* "This task is blocked by" section: BlockedIcon, search input, linked task cards */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-visible">
         <div className="mb-2 flex shrink-0 items-center gap-2">
           <BlockedIcon className="w-5 h-5 text-bonsai-slate-700 shrink-0" aria-hidden />
           <span className="text-sm font-medium text-bonsai-slate-700">
             This task is blocked by
           </span>
         </div>
-        <div className="min-h-0 flex-1 space-y-2 overflow-hidden">
-          {/* TaskSearchSelect: search and link blocking tasks */}
+        <div className="min-h-0 flex-1 space-y-2 overflow-visible">
+          {/* TaskSearchSelect: search and link blocking tasks (overflow-visible so dropdown is not clipped) */}
           <TaskSearchSelect
             getTasks={getTasksForSearch}
             onSelectTask={handleBlockedBySelect}
@@ -187,15 +187,15 @@ export function DependenciesSection({
       </div>
 
       {/* "This task is blocking." section: WarningIcon, link action */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-visible">
         <div className="mb-2 flex shrink-0 items-center gap-2">
           <WarningIcon className="w-5 h-5 shrink-0 text-bonsai-slate-700" aria-hidden />
           <span className="text-sm font-medium text-bonsai-slate-700">
             This task is blocking.
           </span>
         </div>
-        <div className="min-h-0 flex-1 space-y-2 overflow-hidden">
-          {/* TaskSearchSelect: search and link tasks this task blocks */}
+        <div className="min-h-0 flex-1 space-y-2 overflow-visible">
+          {/* TaskSearchSelect: search and link tasks this task blocks (overflow-visible so dropdown is not clipped) */}
           <TaskSearchSelect
             getTasks={getTasksForSearch}
             onSelectTask={handleBlockingSelect}

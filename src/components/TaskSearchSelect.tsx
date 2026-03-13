@@ -58,13 +58,18 @@ export function TaskSearchSelect({
   /* Input ref: used for focus management */
   const inputRef = useRef<HTMLInputElement>(null)
 
-  /* Fetch tasks when dropdown opens for the first time */
+  /* Fetch tasks when dropdown opens for the first time (fallback if focus fetch didn't run) */
   useEffect(() => {
     if (isOpen && allTasks.length === 0 && !loading) {
       setLoading(true)
       getTasks()
         .then((tasks) => {
-          setAllTasks(tasks)
+          /* Normalize to TaskOption[] so we always have id and title (getTasks may return full Task[]) */
+          const options: TaskOption[] = (tasks ?? []).map((t) => ({
+            id: t.id,
+            title: typeof t.title === 'string' ? t.title : '',
+          }))
+          setAllTasks(options)
         })
         .catch((err) => {
           console.error('Error fetching tasks for search:', err)
@@ -84,15 +89,18 @@ export function TaskSearchSelect({
       return []
     }
 
-    /* Filter out excluded tasks and tasks that don't match the query */
+    /* Filter out excluded tasks and tasks that don't match the query (guard missing title) */
     let filtered = allTasks
       .filter((task) => !excludeTaskIds.includes(task.id))
-      .filter((task) => task.title.toLowerCase().includes(query))
+      .filter(
+        (task) =>
+          task.title && typeof task.title === 'string' && task.title.toLowerCase().includes(query),
+      )
 
     /* Sort by match position: tasks where query appears earlier in title rank higher */
     filtered.sort((a, b) => {
-      const aTitle = a.title.toLowerCase()
-      const bTitle = b.title.toLowerCase()
+      const aTitle = (a.title ?? '').toLowerCase()
+      const bTitle = (b.title ?? '').toLowerCase()
       const aIndex = aTitle.indexOf(query)
       const bIndex = bTitle.indexOf(query)
       
@@ -137,12 +145,31 @@ export function TaskSearchSelect({
     [],
   )
 
-  /* Handle input focus: open dropdown only if there's a search query */
+  /* Handle input focus: open dropdown if there's a search query; trigger fetch so tasks load for search */
   const handleInputFocus = useCallback(() => {
-    if (!disabled && searchQuery.trim()) {
+    if (disabled) return
+    if (searchQuery.trim()) {
       setIsOpen(true)
     }
-  }, [disabled, searchQuery])
+    /* Fetch tasks on first focus so search is ready when user types (only when not yet loaded) */
+    if (allTasks.length === 0 && !loading) {
+      setLoading(true)
+      getTasks()
+        .then((tasks) => {
+          const options: TaskOption[] = (tasks ?? []).map((t) => ({
+            id: t.id,
+            title: typeof t.title === 'string' ? t.title : '',
+          }))
+          setAllTasks(options)
+        })
+        .catch((err) => {
+          console.error('Error fetching tasks for search:', err)
+        })
+        .finally(() => {
+          setLoading(false)
+        })
+    }
+  }, [disabled, searchQuery, allTasks.length, loading, getTasks])
 
   /* Handle keyboard navigation: arrow keys, Enter, Escape */
   const handleKeyDown = useCallback(

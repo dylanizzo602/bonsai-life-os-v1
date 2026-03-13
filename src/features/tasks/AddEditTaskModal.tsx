@@ -19,6 +19,7 @@ import {
   FlagIcon,
   TagIcon,
   HourglassIcon,
+  ChecklistIcon,
 } from '../../components/icons'
 import { parseRecurrencePattern, getNextOccurrence } from '../../lib/recurrence'
 import { formatDateShort } from './utils/date'
@@ -62,6 +63,12 @@ function getTaskStatus(displayStatus: DisplayStatus): TaskStatus {
   return 'active'
 }
 
+/* Draft checklist item type: Local-only checklist entry used before the task has an id */
+type DraftChecklistItem = { id: string; title: string; completed: boolean }
+
+/* Draft checklist type: Local-only checklist used while creating a new task (no task id yet) */
+type DraftChecklist = { id: string; title: string; items: DraftChecklistItem[] }
+
 /** Instantiate checklists and subtasks for a newly created task from a template snapshot. */
 async function instantiateTemplateChildren(
   taskId: string,
@@ -87,6 +94,38 @@ async function instantiateTemplateChildren(
       priority: st.priority,
       time_estimate: st.time_estimate,
       recurrence_pattern: st.recurrence_pattern,
+    })
+  }
+}
+
+/* Instantiate locally drafted checklists and subtasks for a newly created task. */
+async function instantiateDraftChildren(
+  taskId: string,
+  draftChecklists: DraftChecklist[],
+  draftSubtasks: string[],
+): Promise<void> {
+  for (const cl of draftChecklists) {
+    const checklist = await createTaskChecklist({
+      task_id: taskId,
+      title: cl.title,
+    })
+    for (const item of cl.items) {
+      await createChecklistItem({
+        checklist_id: checklist.id,
+        title: item.title,
+      })
+    }
+  }
+
+  for (const title of draftSubtasks) {
+    const trimmed = title.trim()
+    if (!trimmed) continue
+    await createSubtask(taskId, {
+      title: trimmed,
+      description: null,
+      priority: 'medium',
+      time_estimate: null,
+      recurrence_pattern: null,
     })
   }
 }
@@ -257,6 +296,15 @@ export function AddEditTaskModal({
   const [templateName, setTemplateName] = useState('')
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [showTemplateManager, setShowTemplateManager] = useState(false)
+  /* Draft breakdown state: Local-only checklists and subtasks that can be created before the task exists */
+  const [draftChecklists, setDraftChecklists] = useState<DraftChecklist[]>([])
+  const [draftChecklistItemTitles, setDraftChecklistItemTitles] = useState<Record<string, string>>({})
+  /* When user pastes multi-line text into checklist item input, we show a prompt to keep as 1 item or create many */
+  const [pendingPasteLines, setPendingPasteLines] = useState<string[] | null>(null)
+  /* Same for draft checklist item inputs: keyed by draft checklist id */
+  const [pendingDraftPasteLines, setPendingDraftPasteLines] = useState<Record<string, string[]>>({})
+  const [draftSubtasks, setDraftSubtasks] = useState<string[]>([])
+  const [newDraftSubtaskTitle, setNewDraftSubtaskTitle] = useState('')
 
   const isEditMode = Boolean(task?.id)
   const {
@@ -265,6 +313,7 @@ export function AddEditTaskModal({
     addChecklist,
     addItem,
     addItemOrCreateChecklist,
+    addItemsOrCreateChecklist,
     updateChecklistTitle,
     toggleItem,
     updateItemTitle,
@@ -323,12 +372,11 @@ export function AddEditTaskModal({
       setAttachments(Array.isArray(task.attachments) ? task.attachments : [])
       setStatus(getDisplayStatus(task.status))
     } else {
-      /* Add mode: default start and due to today (date-only, local) so user has a clear starting point */
-      const todayYMD = new Date().toISOString().slice(0, 10)
+      /* Add mode: reset form and leave start/due empty so the date picker opens with no date selected by default */
       setTitle(initialTitle ?? '')
       setDescription('')
-      setStartDate(todayYMD)
-      setDueDate(todayYMD)
+      setStartDate(null)
+      setDueDate(null)
       setRecurrencePattern(null)
       setPriority('medium')
       setGoalId(null)
@@ -338,6 +386,10 @@ export function AddEditTaskModal({
       setStatus('open')
       setAppliedTemplate(null)
       setSelectedTemplateId('')
+      setDraftChecklists([])
+      setDraftChecklistItemTitles({})
+      setDraftSubtasks([])
+      setNewDraftSubtaskTitle('')
     }
   }, [isOpen, task, initialTitle, fetchTemplates])
 
@@ -404,6 +456,10 @@ export function AddEditTaskModal({
         /* If a template was applied when creating, instantiate its checklists and subtasks for the new task. */
         if (appliedTemplate) {
           await instantiateTemplateChildren(createdTask.id, appliedTemplate)
+        }
+        /* After creating the task, instantiate any locally drafted checklists and subtasks. */
+        if (draftChecklists.length > 0 || draftSubtasks.length > 0) {
+          await instantiateDraftChildren(createdTask.id, draftChecklists, draftSubtasks)
         }
         if (onCreatedTask) {
           onCreatedTask({ ...createdTask, tags })
@@ -953,20 +1009,24 @@ export function AddEditTaskModal({
           <div>
             <p className="text-sm font-medium text-bonsai-slate-700 mb-1">Checklists</p>
             {!task?.id ? (
-              <p className="text-sm text-bonsai-slate-500">Create the task first to add checklists.</p>
-            ) : (
               <>
-                {/* Single prompt: add a new checklist item; on first add creates checklist and adds item */}
                 <div className="flex gap-2 mb-3">
                   <Input
-                    placeholder="Add a new checklist item"
+                    placeholder="Create a checklist"
                     className="border-bonsai-slate-300 flex-1"
-                    value={newChecklistItem}
-                    onChange={(e) => setNewChecklistItem(e.target.value)}
+                    value={newChecklistTitle}
+                    onChange={(e) => setNewChecklistTitle(e.target.value)}
                     onKeyDown={(e) => {
+                      if (!newChecklistTitle.trim()) return
                       if (e.key === 'Enter') {
-                        addItemOrCreateChecklist(newChecklistItem)
-                        setNewChecklistItem('')
+                        const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                          ? crypto.randomUUID()
+                          : `draft-cl-${Date.now()}-${Math.random().toString(36).slice(2)}`
+                        setDraftChecklists((prev) => [
+                          ...prev,
+                          { id, title: newChecklistTitle.trim(), items: [] },
+                        ])
+                        setNewChecklistTitle('')
                       }
                     }}
                   />
@@ -974,13 +1034,289 @@ export function AddEditTaskModal({
                     variant="secondary"
                     size="sm"
                     onClick={() => {
-                      addItemOrCreateChecklist(newChecklistItem)
-                      setNewChecklistItem('')
+                      if (!newChecklistTitle.trim()) return
+                      const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                        ? crypto.randomUUID()
+                        : `draft-cl-${Date.now()}-${Math.random().toString(36).slice(2)}`
+                      setDraftChecklists((prev) => [
+                        ...prev,
+                        { id, title: newChecklistTitle.trim(), items: [] },
+                      ])
+                      setNewChecklistTitle('')
                     }}
-                    disabled={!newChecklistItem.trim() || checklistsLoading}
+                    disabled={!newChecklistTitle.trim()}
                   >
-                    Add
+                    Add list
                   </Button>
+                </div>
+                {draftChecklists.length === 0 ? (
+                  <p className="text-sm text-bonsai-slate-500">
+                    Lists you create here will be saved when you save the task.
+                  </p>
+                ) : (
+                  <ul className="space-y-3">
+                    {draftChecklists.map((cl) => (
+                      <li key={cl.id} className="rounded-lg border border-bonsai-slate-200 p-2">
+                        <p className="text-sm font-medium text-bonsai-slate-700 mb-2">
+                          {cl.title}
+                        </p>
+                        {cl.items.length > 0 && (
+                          <ul className="space-y-1 mb-2">
+                            {cl.items.map((item) => (
+                              <li key={item.id} className="flex items-center gap-2">
+                                <Checkbox checked={item.completed} readOnly />
+                                <span className="text-sm text-bonsai-slate-700 flex-1">
+                                  {item.title}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <div className="flex flex-col gap-2">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Add item"
+                              className="border-bonsai-slate-300 flex-1 text-sm"
+                              value={draftChecklistItemTitles[cl.id] ?? ''}
+                              onChange={(e) =>
+                                setDraftChecklistItemTitles((prev) => ({
+                                  ...prev,
+                                  [cl.id]: e.target.value,
+                                }))
+                              }
+                              onPaste={(e) => {
+                                const text = e.clipboardData.getData('text')
+                                const lines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+                                if (lines.length > 1) {
+                                  e.preventDefault()
+                                  setPendingDraftPasteLines((prev) => ({ ...prev, [cl.id]: lines }))
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const raw = draftChecklistItemTitles[cl.id] ?? ''
+                                  const trimmed = raw.trim()
+                                  if (!trimmed) return
+                                  const itemId =
+                                    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                                      ? crypto.randomUUID()
+                                      : `draft-item-${Date.now()}-${Math.random()
+                                          .toString(36)
+                                          .slice(2)}`
+                                  setDraftChecklists((prev) =>
+                                    prev.map((d) =>
+                                      d.id === cl.id
+                                        ? {
+                                            ...d,
+                                            items: [
+                                              ...d.items,
+                                              { id: itemId, title: trimmed, completed: false },
+                                            ],
+                                          }
+                                        : d,
+                                    ),
+                                  )
+                                  setDraftChecklistItemTitles((prev) => ({
+                                    ...prev,
+                                    [cl.id]: '',
+                                  }))
+                                }
+                              }}
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const raw = draftChecklistItemTitles[cl.id] ?? ''
+                                const trimmed = raw.trim()
+                                if (!trimmed) return
+                                const itemId =
+                                  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                                    ? crypto.randomUUID()
+                                    : `draft-item-${Date.now()}-${Math.random()
+                                        .toString(36)
+                                        .slice(2)}`
+                                setDraftChecklists((prev) =>
+                                  prev.map((d) =>
+                                    d.id === cl.id
+                                      ? {
+                                          ...d,
+                                          items: [
+                                            ...d.items,
+                                            { id: itemId, title: trimmed, completed: false },
+                                          ],
+                                        }
+                                    : d,
+                                  ),
+                                )
+                                setDraftChecklistItemTitles((prev) => ({
+                                  ...prev,
+                                  [cl.id]: '',
+                                }))
+                              }}
+                              disabled={!((draftChecklistItemTitles[cl.id] ?? '').trim())}
+                            >
+                              Add
+                            </Button>
+                          </div>
+                          {/* Multi-line paste prompt for this draft checklist */}
+                          {pendingDraftPasteLines[cl.id] && pendingDraftPasteLines[cl.id].length > 1 && (
+                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-3 py-2 text-body">
+                              <span className="flex items-center gap-2 text-bonsai-slate-700">
+                                <ChecklistIcon className="h-4 w-4 shrink-0 text-bonsai-slate-500" />
+                                Multiple lines detected in the pasted text.
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => {
+                                    const lines = pendingDraftPasteLines[cl.id]
+                                    if (!lines) return
+                                    const itemId =
+                                      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                                        ? crypto.randomUUID()
+                                        : `draft-item-${Date.now()}-${Math.random().toString(36).slice(2)}`
+                                    setDraftChecklists((prev) =>
+                                      prev.map((d) =>
+                                        d.id === cl.id
+                                          ? {
+                                              ...d,
+                                              items: [
+                                                ...d.items,
+                                                { id: itemId, title: lines.join(' '), completed: false },
+                                              ],
+                                            }
+                                          : d,
+                                      ),
+                                    )
+                                    setDraftChecklistItemTitles((prev) => ({ ...prev, [cl.id]: '' }))
+                                    setPendingDraftPasteLines((prev) => {
+                                      const next = { ...prev }
+                                      delete next[cl.id]
+                                      return next
+                                    })
+                                  }}
+                                >
+                                  Keep 1 item
+                                </Button>
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={() => {
+                                    const lines = pendingDraftPasteLines[cl.id]
+                                    if (!lines) return
+                                    setDraftChecklists((prev) =>
+                                      prev.map((d) =>
+                                        d.id === cl.id
+                                          ? {
+                                              ...d,
+                                              items: [
+                                                ...d.items,
+                                                ...lines.map((title) => ({
+                                                  id:
+                                                    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                                                      ? crypto.randomUUID()
+                                                      : `draft-item-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                                                  title,
+                                                  completed: false,
+                                                })),
+                                              ],
+                                            }
+                                          : d,
+                                      ),
+                                    )
+                                    setDraftChecklistItemTitles((prev) => ({ ...prev, [cl.id]: '' }))
+                                    setPendingDraftPasteLines((prev) => {
+                                      const next = { ...prev }
+                                      delete next[cl.id]
+                                      return next
+                                    })
+                                  }}
+                                >
+                                  Create {pendingDraftPasteLines[cl.id].length} items
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <>
+                {/* Single prompt: add a new checklist item; on first add creates checklist and adds item */}
+                <div className="flex flex-col gap-2 mb-3">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Add a new checklist item"
+                      className="border-bonsai-slate-300 flex-1"
+                      value={newChecklistItem}
+                      onChange={(e) => setNewChecklistItem(e.target.value)}
+                      onPaste={(e) => {
+                        const text = e.clipboardData.getData('text')
+                        const lines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+                        if (lines.length > 1) {
+                          e.preventDefault()
+                          setPendingPasteLines(lines)
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          addItemOrCreateChecklist(newChecklistItem)
+                          setNewChecklistItem('')
+                        }
+                      }}
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        addItemOrCreateChecklist(newChecklistItem)
+                        setNewChecklistItem('')
+                      }}
+                      disabled={!newChecklistItem.trim() || checklistsLoading}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                  {/* Multi-line paste prompt: let user keep as one item or create one item per line */}
+                  {pendingPasteLines && pendingPasteLines.length > 1 && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-3 py-2 text-body">
+                      <span className="flex items-center gap-2 text-bonsai-slate-700">
+                        <ChecklistIcon className="h-4 w-4 shrink-0 text-bonsai-slate-500" />
+                        Multiple lines detected in the pasted text.
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            addItemOrCreateChecklist(pendingPasteLines.join(' '))
+                            setNewChecklistItem('')
+                            setPendingPasteLines(null)
+                          }}
+                          disabled={checklistsLoading}
+                        >
+                          Keep 1 item
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={async () => {
+                            await addItemsOrCreateChecklist(pendingPasteLines)
+                            setNewChecklistItem('')
+                            setPendingPasteLines(null)
+                          }}
+                          disabled={checklistsLoading}
+                        >
+                          Create {pendingPasteLines.length} items
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 {checklistsLoading && checklists.length === 0 ? (
                   <p className="text-sm text-bonsai-slate-500">Loading checklists...</p>
@@ -1010,13 +1346,14 @@ export function AddEditTaskModal({
                                 {c.title}
                               </p>
                             )}
-                            {/* Checklist count: completed items over total items for quick progress glance */}
-                            <span className="text-xs text-bonsai-slate-500">
+                            {/* Checklist count: completed items over total items for quick progress glance (shrink-0 so tally stays visible) */}
+                            <span className="text-xs text-bonsai-slate-500 shrink-0">
                               {c.items.filter((item) => item.completed).length}/{c.items.length}
                             </span>
                           </div>
                           <div className="flex items-center gap-1">
                             <Button
+                              type="button"
                               variant="ghost"
                               size="sm"
                               onClick={() => {
@@ -1072,6 +1409,7 @@ export function AddEditTaskModal({
                                   </span>
                                 )}
                                 <Button
+                                  type="button"
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => {
@@ -1087,6 +1425,7 @@ export function AddEditTaskModal({
                                   {editingItemId === item.id ? 'Save' : 'Rename'}
                                 </Button>
                                 <Button
+                                  type="button"
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => {
@@ -1179,7 +1518,51 @@ export function AddEditTaskModal({
           <div>
             <p className="text-sm font-medium text-bonsai-slate-700 mb-1">Subtasks</p>
             {!task?.id ? (
-              <p className="text-sm text-bonsai-slate-500">Create the task first to add subtasks.</p>
+              <>
+                <div className="flex gap-2 mb-3">
+                  <Input
+                    placeholder="Add a subtask"
+                    className="border-bonsai-slate-300 flex-1 text-sm"
+                    value={newDraftSubtaskTitle}
+                    onChange={(e) => setNewDraftSubtaskTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const trimmed = newDraftSubtaskTitle.trim()
+                        if (!trimmed) return
+                        setDraftSubtasks((prev) => [...prev, trimmed])
+                        setNewDraftSubtaskTitle('')
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      const trimmed = newDraftSubtaskTitle.trim()
+                      if (!trimmed) return
+                      setDraftSubtasks((prev) => [...prev, trimmed])
+                      setNewDraftSubtaskTitle('')
+                    }}
+                    disabled={!newDraftSubtaskTitle.trim()}
+                  >
+                    Add
+                  </Button>
+                </div>
+                {draftSubtasks.length === 0 ? (
+                  <p className="text-sm text-bonsai-slate-500">
+                    Subtasks you add here will be created when you save the task.
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
+                    {draftSubtasks.map((st, index) => (
+                      <li key={`${index}-${st}`} className="flex items-center gap-2">
+                        <Checkbox checked={false} readOnly />
+                        <span className="text-sm text-bonsai-slate-700 flex-1">{st}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
             ) : fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete ? (
               <SubtaskList
                 taskId={task.id}

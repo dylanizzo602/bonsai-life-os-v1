@@ -244,27 +244,29 @@ export function SubtaskList({
               hideCompletedSubtasks ? subtask.status !== 'completed' : true,
             )
             .map((subtask) => {
-            const enrichment = subtaskEnrichment[subtask.id] ?? {
-              isBlocked: false,
-              isBlocking: false,
-              blockingCount: 0,
-              blockedByCount: 0,
-            }
-            return (
-              <CompactTaskItem
-                key={subtask.id}
-                task={subtask}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  setContextSubtask(subtask)
-                  setContextPosition({ x: e.clientX, y: e.clientY })
-                }}
-                onClick={() => openEditModal(subtask)}
-                isBlocked={enrichment.isBlocked}
-                isBlocking={enrichment.isBlocking}
-              />
-            )
-          })}
+              const enrichment = subtaskEnrichment[subtask.id] ?? {
+                checklistSummary: undefined,
+                isBlocked: false,
+                isBlocking: false,
+                blockingCount: 0,
+                blockedByCount: 0,
+              }
+              return (
+                <CompactTaskItem
+                  key={subtask.id}
+                  task={subtask}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    setContextSubtask(subtask)
+                    setContextPosition({ x: e.clientX, y: e.clientY })
+                  }}
+                  onClick={() => openEditModal(subtask)}
+                  isBlocked={enrichment.isBlocked}
+                  isBlocking={enrichment.isBlocking}
+                  checklistSummary={enrichment.checklistSummary}
+                />
+              )
+            })}
         </div>
       )}
       {/* Add subtask and link existing: only available when explicitly enabled (edit task modal) */}

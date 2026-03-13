@@ -85,6 +85,29 @@ export function useTaskChecklists(taskId: string | null) {
     [taskId, checklists, fetchChecklists],
   )
 
+  /**
+   * Add multiple items at once: creates checklist if none exist, then adds each non-empty trimmed line as an item.
+   * Used when user pastes multi-line text and chooses "Create X items".
+   */
+  const addItemsOrCreateChecklist = useCallback(
+    async (titles: string[]) => {
+      const toAdd = titles.map((t) => t.trim()).filter(Boolean)
+      if (!taskId || toAdd.length === 0) return
+      if (checklists.length === 0) {
+        const newList = await createTaskChecklist({ task_id: taskId, title: 'Checklist' })
+        for (const title of toAdd) {
+          await createChecklistItem({ checklist_id: newList.id, title })
+        }
+      } else {
+        for (const title of toAdd) {
+          await createChecklistItem({ checklist_id: checklists[0].id, title })
+        }
+      }
+      await fetchChecklists()
+    },
+    [taskId, checklists, fetchChecklists],
+  )
+
   /** Rename a checklist by id */
   const updateChecklistTitle = useCallback(
     async (checklistId: string, title: string) => {
@@ -136,6 +159,7 @@ export function useTaskChecklists(taskId: string | null) {
     addChecklist,
     addItem,
     addItemOrCreateChecklist,
+    addItemsOrCreateChecklist,
     updateChecklistTitle,
     toggleItem,
     updateItemTitle,

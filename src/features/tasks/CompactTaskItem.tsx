@@ -14,6 +14,7 @@ import {
   HourglassIcon,
   ParagraphIcon,
   TasksIcon,
+  ChecklistIcon,
 } from '../../components/icons'
 import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { Tooltip } from '../../components/Tooltip'
@@ -39,6 +40,8 @@ export interface CompactTaskItemProps {
   isBlocked?: boolean
   /** Task is blocking another (show warning icon) */
   isBlocking?: boolean
+  /** Checklist completed/total when task has checklists */
+  checklistSummary?: { completed: number; total: number }
   /** Optional click handler for the entire item */
   onClick?: () => void
   /** Optional right-click context menu (e.g. show task options popover) */
@@ -147,6 +150,7 @@ export function CompactTaskItem({
   onToggleExpand,
   isBlocked = false,
   isBlocking = false,
+  checklistSummary,
   onClick,
   onContextMenu,
   inlineEditTitle,
@@ -264,6 +268,15 @@ export function CompactTaskItem({
             <ParagraphIcon className="w-3.5 h-3.5" />
           </span>
         ) : null}
+        {/* Checklist indicator: compact count of completed/total checklist items when present */}
+        {checklistSummary && checklistSummary.total > 0 && (
+          <span className="flex shrink-0 items-center gap-0.5 text-bonsai-slate-600">
+            <ChecklistIcon className="w-3.5 h-3.5" aria-hidden />
+            <span>
+              {checklistSummary.completed}/{checklistSummary.total}
+            </span>
+          </span>
+        )}
         {/* Dependency icons: blocked and blocking */}
         {(isBlocked || isBlocking) && (
           <div className="flex shrink-0 items-center gap-1.5">
@@ -306,18 +319,46 @@ export function CompactTaskItem({
               : `${Math.floor(task.time_estimate / 60)}h${task.time_estimate % 60 ? ` ${task.time_estimate % 60}m` : ''}`}
           </span>
         )}
-        {/* Start/due date and priority: group repeat/calendar/date with priority so spacing matches non-recurring layout */}
-        {dateDisplay &&
-          (isRecurring ? (
-            <Tooltip
-              content={
-                <span className="text-secondary text-bonsai-slate-800">
-                  {formatRecurrenceForTooltip(parseRecurrencePattern(task.recurrence_pattern))}
+        {/* Start/due date and priority: keep date+flag grouped when a date exists, but always render priority so subtasks match main task icons */}
+        {dateDisplay
+          ? isRecurring ? (
+              <Tooltip
+                content={
+                  <span className="text-secondary text-bonsai-slate-800">
+                    {formatRecurrenceForTooltip(parseRecurrencePattern(task.recurrence_pattern))}
+                  </span>
+                }
+                position="top"
+                size="sm"
+              >
+                <span
+                  className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${
+                    isDueOverdue
+                      ? 'text-red-600 font-medium'
+                      : isDueSoon
+                        ? 'text-amber-600 font-medium'
+                        : 'text-bonsai-slate-600'
+                  }`}
+                >
+                  <RepeatIcon className="w-3.5 h-3.5 shrink-0 text-bonsai-slate-500" aria-hidden />
+                  <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                  <span className="truncate">{dateDisplay}</span>
+                  <span
+                    className={`ml-1 shrink-0 ${
+                      task.goal_id
+                        ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
+                        : getPriorityFlagClasses(priority)
+                    }`}
+                  >
+                    {task.goal_id ? (
+                      <TrophyIcon className="w-3.5 h-3.5" />
+                    ) : (
+                      <FlagIcon className="w-3.5 h-3.5" />
+                    )}
+                  </span>
                 </span>
-              }
-              position="top"
-              size="sm"
-            >
+              </Tooltip>
+            ) : (
               <span
                 className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${
                   isDueOverdue
@@ -327,7 +368,6 @@ export function CompactTaskItem({
                       : 'text-bonsai-slate-600'
                 }`}
               >
-                <RepeatIcon className="w-3.5 h-3.5 shrink-0 text-bonsai-slate-500" aria-hidden />
                 <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
                 <span className="truncate">{dateDisplay}</span>
                 <span
@@ -344,34 +384,22 @@ export function CompactTaskItem({
                   )}
                 </span>
               </span>
-            </Tooltip>
-          ) : (
+            )
+          : (
             <span
-              className={`flex items-center gap-1 shrink-0 min-w-0 max-w-full ${
-                isDueOverdue
-                  ? 'text-red-600 font-medium'
-                  : isDueSoon
-                    ? 'text-amber-600 font-medium'
-                    : 'text-bonsai-slate-600'
+              className={`ml-1 shrink-0 ${
+                task.goal_id
+                  ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
+                  : getPriorityFlagClasses(priority)
               }`}
             >
-              <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
-              <span className="truncate">{dateDisplay}</span>
-              <span
-                className={`ml-1 shrink-0 ${
-                  task.goal_id
-                    ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
-                    : getPriorityFlagClasses(priority)
-                }`}
-              >
-                {task.goal_id ? (
-                  <TrophyIcon className="w-3.5 h-3.5" />
-                ) : (
-                  <FlagIcon className="w-3.5 h-3.5" />
-                )}
-              </span>
+              {task.goal_id ? (
+                <TrophyIcon className="w-3.5 h-3.5" />
+              ) : (
+                <FlagIcon className="w-3.5 h-3.5" />
+              )}
             </span>
-          ))}
+          )}
       </div>
     </div>
   )

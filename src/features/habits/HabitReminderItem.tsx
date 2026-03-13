@@ -2,39 +2,14 @@
 
 import { Button } from '../../components/Button'
 import { BellIcon } from '../../components/icons'
-import { isOverdue } from '../tasks/utils/date'
+import { getDueStatus, formatStartDueDisplay } from '../tasks/utils/date'
 import type { HabitWithStreaks } from './types'
 
-/** Format notification display using remindAt date and habit.reminder_time clock so UI matches habit settings */
-function formatNotificationDate(remindAt: string | null, reminderTime: string | null | undefined): string {
-  if (!remindAt && !reminderTime) return 'No time set'
-
-  // Base date: use remindAt when present so we preserve the scheduled day; fall back to today if missing
-  const baseDate = remindAt ? new Date(remindAt) : new Date()
-  const today = new Date()
-  const isToday =
-    baseDate.getFullYear() === today.getFullYear() &&
-    baseDate.getMonth() === today.getMonth() &&
-    baseDate.getDate() === today.getDate()
-
-  // Clock time: prefer the HH:mm from habit.reminder_time so it always matches habit settings
-  let hours = baseDate.getHours()
-  let minutes = baseDate.getMinutes()
-  if (reminderTime) {
-    const [h, m] = reminderTime.split(':')
-    const parsedH = Number(h)
-    const parsedM = Number(m ?? '0')
-    if (!Number.isNaN(parsedH)) hours = parsedH
-    if (!Number.isNaN(parsedM)) minutes = parsedM
-  }
-
-  const hour12 = hours % 12 || 12
-  const ampm = hours < 12 ? 'am' : 'pm'
-  const timeStr = `${hour12}:${String(minutes).padStart(2, '0')}${ampm}`
-
-  if (isToday) return `Today at ${timeStr}`
-  const dateStr = baseDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  return `${dateStr} at ${timeStr}`
+/** Format reminder date for display: "Due Today", "Due Tomorrow", or "Due {date}" using shared task/reminder helpers */
+function formatNotificationDate(remindAt: string | null): string {
+  if (!remindAt) return 'No time set'
+  const display = formatStartDueDisplay(undefined, remindAt)
+  return display ?? 'No time set'
 }
 
 export interface HabitReminderItemProps {
@@ -71,8 +46,10 @@ export function HabitReminderItem({
   hideSkip = false,
   density = 'default',
 }: HabitReminderItemProps) {
-  /* Overdue flag: true when remindAt is set and the notification time is in the past */
-  const isRemindOverdue = Boolean(remindAt && isOverdue(remindAt))
+  /* Due status for styling: overdue = red, due today/tomorrow = yellow/amber (same as tasks and reminders) */
+  const dueStatus = remindAt != null ? getDueStatus(remindAt) : null
+  const isRemindOverdue = dueStatus === 'overdue'
+  const isRemindDueSoon = dueStatus === 'dueSoon'
 
   /* Container layout: default = roomier padding (desktop), compact = tighter padding for dense mobile/tablet views */
   const containerClasses =
@@ -104,15 +81,15 @@ export function HabitReminderItem({
         </span>
       </div>
 
-      {/* Notification date: bell + time (show next to name so it stays visible on mobile) */}
+      {/* Notification date: bell + "Due Today" / "Due Tomorrow" or "Due {date}" with shared due-soon/overdue colors */}
       <div
         className={`flex shrink-0 items-center gap-1.5 text-secondary text-sm md:text-base ${
-          isRemindOverdue ? 'text-red-600 font-medium' : 'text-bonsai-slate-500'
+          isRemindOverdue ? 'text-red-600 font-medium' : isRemindDueSoon ? 'text-amber-600 font-medium' : 'text-bonsai-slate-500'
         }`}
       >
         <BellIcon className="w-4 h-4 shrink-0" aria-hidden />
         <span className="whitespace-nowrap">
-          {formatNotificationDate(remindAt, reminderTime ?? habit.reminder_time)}
+          {formatNotificationDate(remindAt)}
         </span>
       </div>
 

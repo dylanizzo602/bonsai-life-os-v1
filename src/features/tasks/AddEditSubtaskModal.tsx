@@ -15,6 +15,7 @@ import {
   FlagIcon,
   TagIcon,
   HourglassIcon,
+  ChecklistIcon,
 } from '../../components/icons'
 import { DatePickerModal } from './modals/DatePickerModal'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
@@ -188,10 +189,24 @@ export function AddEditSubtaskModal({
   const [previewAttachment, setPreviewAttachment] = useState<TaskAttachment | null>(null)
   const [newChecklistTitle, setNewChecklistTitle] = useState('')
   const [newItemTitles, setNewItemTitles] = useState<Record<string, string>>({})
+  /* When user pastes multi-line text into a checklist item input, show prompt to keep as 1 item or create many (keyed by checklist id) */
+  const [pendingPasteLines, setPendingPasteLines] = useState<Record<string, string[]>>({})
 
   const isEditMode = Boolean(subtask?.id)
-  const { checklists, loading: checklistsLoading, addChecklist, addItem, toggleItem } =
-    useTaskChecklists(subtask?.id ?? null)
+  const {
+    checklists,
+    loading: checklistsLoading,
+    addChecklist,
+    addItem,
+    toggleItem,
+    updateItemTitle,
+    deleteItem,
+  } = useTaskChecklists(subtask?.id ?? null)
+  /* Inline edit state for checklist item title (Rename) */
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [editingItemTitle, setEditingItemTitle] = useState('')
+  /* Whether to show or hide completed checklist items in each list */
+  const [showCompletedChecklistItems, setShowCompletedChecklistItems] = useState(true)
   const {
     searchTags,
     createTag,
@@ -199,6 +214,20 @@ export function AddEditSubtaskModal({
     deleteTagFromAllTasks,
     setTagsForTask,
   } = useTags(subtask?.user_id ?? null)
+
+  /* Auto-save: When editing an existing subtask, persist title changes so the parent list reflects updates immediately */
+  const handleTitleAutoSave = async () => {
+    if (!isEditMode || !subtask?.id || !onUpdateTask) return
+    const trimmed = title.trim()
+    if (!trimmed) return
+    try {
+      await onUpdateTask(subtask.id, {
+        title: trimmed,
+      })
+    } catch {
+      // Error handled by parent; keep local state so user can retry
+    }
+  }
 
   /* Prefill form when editing or reset when opening for add */
   useEffect(() => {
@@ -355,6 +384,13 @@ export function AddEditSubtaskModal({
             className="border-bonsai-slate-300"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            onBlur={handleTitleAutoSave}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                void handleTitleAutoSave()
+              }
+            }}
             spellCheck
           />
         </div>
@@ -380,11 +416,13 @@ export function AddEditSubtaskModal({
           className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
         >
           <FlagIcon className="w-4 h-4 text-bonsai-slate-600" />
-          {priority !== 'medium' && priority !== 'none'
-            ? `Priority: ${priority}`
+          {priority === 'medium'
+            ? 'Priority: Normal'
             : priority === 'none'
               ? 'Priority: None'
-              : 'Set priority'}
+              : priority
+                ? `Priority: ${priority}`
+                : 'Set priority'}
         </button>
         <button
           ref={tagButtonRef}
@@ -626,52 +664,180 @@ export function AddEditSubtaskModal({
                   <ul className="space-y-3">
                     {checklists.map((c) => (
                       <li key={c.id} className="rounded-lg border border-bonsai-slate-200 p-2">
-                        <p className="text-sm font-medium text-bonsai-slate-700 mb-2">{c.title}</p>
+                        {/* Checklist title row with completed/total tally */}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <p className="text-sm font-medium text-bonsai-slate-700 flex-1">
+                            {c.title}
+                          </p>
+                          <span className="text-xs text-bonsai-slate-500 shrink-0">
+                            {c.items.filter((item) => item.completed).length}/{c.items.length}
+                          </span>
+                        </div>
                         <ul className="space-y-1 mb-2">
-                          {c.items.map((item) => (
+                          {c.items
+                            .filter((item) =>
+                              showCompletedChecklistItems ? true : !item.completed,
+                            )
+                            .map((item) => (
                             <li key={item.id} className="flex items-center gap-2">
                               <Checkbox
                                 checked={item.completed}
                                 onChange={(e) => toggleItem(item.id, e.target.checked)}
                               />
-                              <span
-                                className={
-                                  item.completed
-                                    ? 'text-sm text-bonsai-slate-500 line-through'
-                                    : 'text-sm text-bonsai-slate-700'
-                                }
+                              {editingItemId === item.id ? (
+                                <Input
+                                  className="border-bonsai-slate-300 flex-1 text-sm"
+                                  value={editingItemTitle}
+                                  onChange={(e) => setEditingItemTitle(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      updateItemTitle(item.id, editingItemTitle)
+                                      setEditingItemId(null)
+                                    }
+                                    if (e.key === 'Escape') setEditingItemId(null)
+                                  }}
+                                  autoFocus
+                                />
+                              ) : (
+                                <span
+                                  className={
+                                    item.completed
+                                      ? 'text-sm text-bonsai-slate-500 line-through flex-1'
+                                      : 'text-sm text-bonsai-slate-700 flex-1'
+                                  }
+                                >
+                                  {item.title}
+                                </span>
+                              )}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  if (editingItemId === item.id) {
+                                    updateItemTitle(item.id, editingItemTitle)
+                                    setEditingItemId(null)
+                                  } else {
+                                    setEditingItemId(item.id)
+                                    setEditingItemTitle(item.title)
+                                  }
+                                }}
                               >
-                                {item.title}
-                              </span>
+                                {editingItemId === item.id ? 'Save' : 'Rename'}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  deleteItem(item.id)
+                                  if (editingItemId === item.id) setEditingItemId(null)
+                                }}
+                              >
+                                Delete
+                              </Button>
                             </li>
                           ))}
                         </ul>
-                        <div className="flex gap-2">
-                          <Input
-                            placeholder="Add item"
-                            className="border-bonsai-slate-300 flex-1 text-sm"
-                            value={newItemTitles[c.id] ?? ''}
-                            onChange={(e) =>
-                              setNewItemTitles((prev) => ({ ...prev, [c.id]: e.target.value }))
+                        {/* Show/hide closed checklist items for this list */}
+                        {c.items.some((item) => item.completed) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowCompletedChecklistItems((prev) => !prev)
                             }
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
+                            className="mb-1 text-xs font-medium text-bonsai-slate-600 hover:text-bonsai-slate-800"
+                          >
+                            {showCompletedChecklistItems
+                              ? 'Hide closed items'
+                              : 'Show closed items'}
+                          </button>
+                        )}
+                        <div className="flex flex-col gap-2">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Add item"
+                              className="border-bonsai-slate-300 flex-1 text-sm"
+                              value={newItemTitles[c.id] ?? ''}
+                              onChange={(e) =>
+                                setNewItemTitles((prev) => ({ ...prev, [c.id]: e.target.value }))
+                              }
+                              onPaste={(e) => {
+                                const text = e.clipboardData.getData('text')
+                                const lines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+                                if (lines.length > 1) {
+                                  e.preventDefault()
+                                  setPendingPasteLines((prev) => ({ ...prev, [c.id]: lines }))
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  addItem(c.id, newItemTitles[c.id] ?? '')
+                                  setNewItemTitles((prev) => ({ ...prev, [c.id]: '' }))
+                                }
+                              }}
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
                                 addItem(c.id, newItemTitles[c.id] ?? '')
                                 setNewItemTitles((prev) => ({ ...prev, [c.id]: '' }))
-                              }
-                            }}
-                          />
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              addItem(c.id, newItemTitles[c.id] ?? '')
-                              setNewItemTitles((prev) => ({ ...prev, [c.id]: '' }))
-                            }}
-                            disabled={!((newItemTitles[c.id] ?? '').trim())}
-                          >
-                            Add
-                          </Button>
+                              }}
+                              disabled={!((newItemTitles[c.id] ?? '').trim())}
+                            >
+                              Add
+                            </Button>
+                          </div>
+                          {/* Multi-line paste prompt: keep as one item or create one item per line */}
+                          {pendingPasteLines[c.id] && pendingPasteLines[c.id].length > 1 && (
+                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-3 py-2 text-body">
+                              <span className="flex items-center gap-2 text-bonsai-slate-700">
+                                <ChecklistIcon className="h-4 w-4 shrink-0 text-bonsai-slate-500" />
+                                Multiple lines detected in the pasted text.
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={async () => {
+                                    const lines = pendingPasteLines[c.id]
+                                    if (!lines) return
+                                    await addItem(c.id, lines.join(' '))
+                                    setNewItemTitles((prev) => ({ ...prev, [c.id]: '' }))
+                                    setPendingPasteLines((prev) => {
+                                      const next = { ...prev }
+                                      delete next[c.id]
+                                      return next
+                                    })
+                                  }}
+                                  disabled={checklistsLoading}
+                                >
+                                  Keep 1 item
+                                </Button>
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={async () => {
+                                    const lines = pendingPasteLines[c.id]
+                                    if (!lines) return
+                                    for (const title of lines) {
+                                      await addItem(c.id, title)
+                                    }
+                                    setNewItemTitles((prev) => ({ ...prev, [c.id]: '' }))
+                                    setPendingPasteLines((prev) => {
+                                      const next = { ...prev }
+                                      delete next[c.id]
+                                      return next
+                                    })
+                                  }}
+                                  disabled={checklistsLoading}
+                                >
+                                  Create {pendingPasteLines[c.id].length} items
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </li>
                     ))}

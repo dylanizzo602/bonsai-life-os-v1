@@ -1,6 +1,7 @@
 /* RichTextEditor: TipTap-based rich text editor with toolbar; no border/box, saves on blur */
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import Link from '@tiptap/extension-link'
 import { useCallback, useEffect, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 
@@ -60,6 +61,42 @@ function Heading2Icon({ className }: { className?: string }) {
     </svg>
   )
 }
+function LinkIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+      <path
+        d="M10.59 13.41a1.5 1.5 0 0 0 2.12 0l3.88-3.88a3 3 0 0 0-4.24-4.24L11 6.76"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M13.41 10.59a1.5 1.5 0 0 0-2.12 0l-3.88 3.88a3 3 0 0 0 4.24 4.24L13 17.24"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+function UnlinkIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+      <path
+        d="M9.17 9.17 7.05 7.05m3.54 6.24-2.83 2.83a3 3 0 0 0 4.24 4.24l1.41-1.41m-1.59-5.07 2.83-2.83m1.24-1.24 2.12-2.12a3 3 0 0 0-4.24-4.24L13 5.17"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4 4l16 16"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
 
 /** Toolbar: Bold, Italic, bullet list, numbered list, H1, H2; highlights when active */
 function EditorToolbar({ editor }: { editor: Editor }) {
@@ -70,6 +107,7 @@ function EditorToolbar({ editor }: { editor: Editor }) {
     orderedList: false,
     heading1: false,
     heading2: false,
+    link: false,
   })
 
   /* Update active state on selection/transaction so toolbar reflects current format */
@@ -82,6 +120,7 @@ function EditorToolbar({ editor }: { editor: Editor }) {
         orderedList: editor.isActive('orderedList'),
         heading1: editor.isActive('heading', { level: 1 }),
         heading2: editor.isActive('heading', { level: 2 }),
+        link: editor.isActive('link'),
       })
     }
     updateActive()
@@ -96,6 +135,41 @@ function EditorToolbar({ editor }: { editor: Editor }) {
   const btn =
     'p-2 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500'
   const btnActive = 'bg-bonsai-sage-100 text-bonsai-sage-700'
+
+  /* Link handlers: add/update link for current selection, or remove link mark */
+  const handleSetLink = () => {
+    const selection = editor.state.selection
+    const from = selection.from
+    const to = selection.to
+
+    // Require a non-empty selection to turn into a link; user chooses anchor text directly in the editor.
+    if (from === to) {
+      // eslint-disable-next-line no-alert
+      window.alert('Select the text you want to turn into a link first.')
+      return
+    }
+
+    const previousUrl = editor.getAttributes('link')?.href as string | undefined
+    // eslint-disable-next-line no-alert
+    const urlInput = window.prompt(
+      'URL for this link (e.g. https://example.com):',
+      previousUrl ?? '',
+    )
+    if (!urlInput) return
+    const url = urlInput.trim()
+    if (!url) return
+
+    editor
+      .chain()
+      .focus()
+      .extendMarkRange('link')
+      .setLink({ href: url })
+      .run()
+  }
+
+  const handleUnsetLink = () => {
+    editor.chain().focus().extendMarkRange('link').unsetLink().run()
+  }
 
   return (
     <div
@@ -159,6 +233,24 @@ function EditorToolbar({ editor }: { editor: Editor }) {
       >
         <Heading2Icon className="h-5 w-5" />
       </button>
+      <span className="w-px h-5 bg-bonsai-slate-200 mx-0.5" aria-hidden />
+      <button
+        type="button"
+        onClick={handleSetLink}
+        className={`${btn} ${active.link ? btnActive : ''}`}
+        title="Add or edit link"
+        aria-pressed={active.link}
+      >
+        <LinkIcon className="h-5 w-5" />
+      </button>
+      <button
+        type="button"
+        onClick={handleUnsetLink}
+        className={btn}
+        title="Remove link"
+      >
+        <UnlinkIcon className="h-5 w-5" />
+      </button>
     </div>
   )
 }
@@ -182,7 +274,21 @@ export function RichTextEditor({
 
   const editor = useEditor(
     {
-      extensions: [StarterKit],
+      extensions: [
+        StarterKit,
+        Link.configure({
+          /* Link behavior: auto-detect URLs, open in new tab, and style with Bonsai link colors */
+          autolink: true,
+          linkOnPaste: true,
+          openOnClick: true,
+          HTMLAttributes: {
+            class:
+              'text-bonsai-sage-600 underline hover:text-bonsai-sage-700 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500',
+            rel: 'noopener noreferrer',
+            target: '_blank',
+          },
+        }),
+      ],
       content: value || '',
       editorProps: {
         attributes: {
@@ -224,7 +330,8 @@ export function RichTextEditor({
   return (
     <div className={`notes-rich-editor ${className}`} data-placeholder={placeholder}>
       <EditorToolbar editor={editor} />
-      <EditorContent editor={editor} />
+      {/* Editor content: enable native browser spell check on the editable area */}
+      <EditorContent editor={editor} spellCheck />
     </div>
   )
 }
