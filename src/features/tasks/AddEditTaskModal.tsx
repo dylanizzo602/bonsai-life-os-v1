@@ -361,6 +361,7 @@ export function AddEditTaskModal({
     toggleItem,
     updateItemTitle,
     deleteItem,
+    deleteChecklist,
   } = useTaskChecklists(task?.id ?? null)
   const {
     searchTags,
@@ -1509,6 +1510,20 @@ export function AddEditTaskModal({
                               }}
                             >
                               {editingChecklistId === c.id ? 'Save' : 'Rename'}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                deleteChecklist(c.id)
+                                if (editingChecklistId === c.id) {
+                                  setEditingChecklistId(null)
+                                  setEditingChecklistTitle('')
+                                }
+                              }}
+                            >
+                              Delete
                             </Button>
                           </div>
                         </div>

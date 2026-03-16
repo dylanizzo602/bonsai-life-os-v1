@@ -201,12 +201,17 @@ export function AddEditSubtaskModal({
     addChecklist,
     addItem,
     toggleItem,
+    updateChecklistTitle,
     updateItemTitle,
     deleteItem,
+    deleteChecklist,
   } = useTaskChecklists(subtask?.id ?? null)
   /* Inline edit state for checklist item title (Rename) */
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [editingItemTitle, setEditingItemTitle] = useState('')
+  /* Inline edit state for checklist title (Rename/Delete) */
+  const [editingChecklistId, setEditingChecklistId] = useState<string | null>(null)
+  const [editingChecklistTitle, setEditingChecklistTitle] = useState('')
   /* Whether to show or hide completed checklist items in each list */
   const [showCompletedChecklistItems, setShowCompletedChecklistItems] = useState(true)
   const {
@@ -686,14 +691,64 @@ export function AddEditSubtaskModal({
                   <ul className="space-y-3">
                     {checklists.map((c) => (
                       <li key={c.id} className="rounded-lg border border-bonsai-slate-200 p-2">
-                        {/* Checklist title row with completed/total tally */}
+                        {/* Checklist title row with completed/total tally and inline rename/delete controls */}
                         <div className="flex items-center justify-between gap-2 mb-2">
-                          <p className="text-sm font-medium text-bonsai-slate-700 flex-1">
-                            {c.title}
-                          </p>
-                          <span className="text-xs text-bonsai-slate-500 shrink-0">
-                            {c.items.filter((item) => item.completed).length}/{c.items.length}
-                          </span>
+                          <div className="flex items-center gap-2 flex-1">
+                            {editingChecklistId === c.id ? (
+                              <Input
+                                className="border-bonsai-slate-300 flex-1 text-sm font-medium"
+                                value={editingChecklistTitle}
+                                onChange={(e) => setEditingChecklistTitle(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    updateChecklistTitle(c.id, editingChecklistTitle)
+                                    setEditingChecklistId(null)
+                                  }
+                                  if (e.key === 'Escape') setEditingChecklistId(null)
+                                }}
+                                autoFocus
+                              />
+                            ) : (
+                              <p className="text-sm font-medium text-bonsai-slate-700 flex-1">
+                                {c.title}
+                              </p>
+                            )}
+                            <span className="text-xs text-bonsai-slate-500 shrink-0">
+                              {c.items.filter((item) => item.completed).length}/{c.items.length}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                if (editingChecklistId === c.id) {
+                                  updateChecklistTitle(c.id, editingChecklistTitle)
+                                  setEditingChecklistId(null)
+                                } else {
+                                  setEditingChecklistId(c.id)
+                                  setEditingChecklistTitle(c.title)
+                                }
+                              }}
+                            >
+                              {editingChecklistId === c.id ? 'Save' : 'Rename'}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                deleteChecklist(c.id)
+                                if (editingChecklistId === c.id) {
+                                  setEditingChecklistId(null)
+                                  setEditingChecklistTitle('')
+                                }
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </div>
                         </div>
                         <ul className="space-y-1 mb-2">
                           {c.items

@@ -526,6 +526,18 @@ export async function getTaskChecklists(taskId: string): Promise<TaskChecklist[]
 }
 
 /**
+ * Delete a checklist (and, via DB constraints, its items) by id.
+ */
+export async function deleteTaskChecklist(id: string): Promise<void> {
+  const { error } = await supabase.from('task_checklists').delete().eq('id', id)
+
+  if (error) {
+    console.error('Error deleting checklist:', error)
+    throw error
+  }
+}
+
+/**
  * Fetch all items for a checklist
  */
 export async function getTaskChecklistItems(

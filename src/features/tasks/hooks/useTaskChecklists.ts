@@ -10,6 +10,7 @@ import {
   toggleChecklistItemComplete,
   updateChecklistItem,
   deleteChecklistItem,
+  deleteTaskChecklist,
 } from '../../../lib/supabase/tasks'
 import type { TaskChecklist, TaskChecklistItem } from '../types'
 
@@ -152,6 +153,15 @@ export function useTaskChecklists(taskId: string | null) {
     [fetchChecklists],
   )
 
+  /** Delete an entire checklist (and its items via DB constraints) by id */
+  const deleteChecklist = useCallback(
+    async (checklistId: string) => {
+      await deleteTaskChecklist(checklistId)
+      await fetchChecklists()
+    },
+    [fetchChecklists],
+  )
+
   return {
     checklists,
     loading,
@@ -164,5 +174,6 @@ export function useTaskChecklists(taskId: string | null) {
     toggleItem,
     updateItemTitle,
     deleteItem,
+    deleteChecklist,
   }
 }
