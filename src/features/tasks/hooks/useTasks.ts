@@ -67,18 +67,26 @@ export function useTasks(initialFilters?: TaskFilters) {
     [],
   )
 
-  /* Update an existing task */
+  /* Update an existing task and keep top-level vs subtask visibility consistent in the main list */
   const handleUpdateTask = useCallback(async (id: string, input: UpdateTaskInput) => {
     try {
       setError(null)
       const updatedTask = await updateTask(id, input)
-      /* Update task list: replace when present; when a previously hidden task (e.g. subtask) becomes a top-level task,
-       * insert it into the main list so it appears (used by "Unlink from parent"). */
+      /* Update task list:
+       * - When present, replace the task and, if it just became a subtask (parent_id set), remove it from the top-level list.
+       * - When a previously hidden task (e.g. subtask) becomes top-level (parent_id cleared), insert it into the main list. */
       setTasks((prev) => {
-        const exists = prev.some((task) => task.id === id)
+        const previousTask = prev.find((task) => task.id === id)
+        const exists = Boolean(previousTask)
+
         if (exists) {
+          /* If a top-level task was just linked as a subtask, remove it from the main list so it only appears under its parent. */
+          if (previousTask?.parent_id === null && updatedTask.parent_id !== null) {
+            return prev.filter((task) => task.id !== id)
+          }
           return prev.map((task) => (task.id === id ? updatedTask : task))
         }
+
         if (updatedTask.parent_id === null && updatedTask.status !== 'deleted') {
           return [updatedTask, ...prev]
         }

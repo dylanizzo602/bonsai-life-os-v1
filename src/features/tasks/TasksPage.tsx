@@ -1473,6 +1473,25 @@ export function TasksPage() {
         getTaskDependencies={getTaskDependencies}
         onAddDependency={onAddDependency}
         onRemoveDependency={onRemoveDependency}
+        onArchiveTask={async (t) => {
+          /* Archive/Unarchive from edit modal: reuse same behavior as right-click context menu */
+          if (t.status === 'archived') {
+            await updateTask(t.id, { status: 'active' })
+          } else {
+            await updateTask(t.id, { status: 'archived' })
+          }
+        }}
+        onMarkDeletedTask={async (t) => {
+          /* Trash/Restore from edit modal: reuse same behavior as right-click context menu */
+          if (t.status === 'deleted') {
+            await updateTask(t.id, { status: 'active' })
+          } else {
+            await updateTask(t.id, { status: 'deleted' })
+          }
+        }}
+        lineUpTaskIds={lineUpTaskIds}
+        onAddToLineUp={addToLineUp}
+        onRemoveFromLineUp={removeFromLineUp}
       />
 
       <AddEditReminderModal

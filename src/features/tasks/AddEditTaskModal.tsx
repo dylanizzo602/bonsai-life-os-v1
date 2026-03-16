@@ -74,11 +74,12 @@ type DraftChecklistItem = { id: string; title: string; completed: boolean }
 /* Draft checklist type: Local-only checklist used while creating a new task (no task id yet) */
 type DraftChecklist = { id: string; title: string; items: DraftChecklistItem[] }
 
-/** Instantiate checklists and subtasks for a newly created task from a template snapshot, preserving checklist item completion state. */
+/** Instantiate checklists and subtasks for a newly created task from a template snapshot, preserving checklist item completion state for the main task and any subtasks. */
 async function instantiateTemplateChildren(
   taskId: string,
   template: TaskTemplateData,
 ): Promise<void> {
+  /* Instantiate main task checklists and their items using the template snapshot. */
   for (const cl of template.checklists) {
     const checklist = await createTaskChecklist({
       task_id: taskId,
@@ -95,14 +96,33 @@ async function instantiateTemplateChildren(
     }
   }
 
+  /* Instantiate subtasks, and when present, recreate each subtask's checklists and items from the template snapshot. */
   for (const st of template.subtasks) {
-    await createSubtask(taskId, {
+    const createdSubtask = await createSubtask(taskId, {
       title: st.title,
       description: st.description,
       priority: st.priority,
       time_estimate: st.time_estimate,
       recurrence_pattern: st.recurrence_pattern,
     })
+
+    if (st.checklists && st.checklists.length > 0) {
+      for (const cl of st.checklists) {
+        const subtaskChecklist = await createTaskChecklist({
+          task_id: createdSubtask.id,
+          title: cl.title,
+        })
+        for (const item of cl.items) {
+          const createdItem = await createChecklistItem({
+            checklist_id: subtaskChecklist.id,
+            title: item.title,
+          })
+          if (item.completed) {
+            await toggleChecklistItemComplete(createdItem.id, true)
+          }
+        }
+      }
+    }
   }
 }
 
@@ -229,6 +249,14 @@ export interface AddEditTaskModalProps {
   onAddDependency?: (input: CreateTaskDependencyInput) => Promise<void>
   /** Remove a task dependency by id */
   onRemoveDependency?: (dependencyId: string) => Promise<void>
+  /** Optional: Archive or unarchive the current task (matches right-click context menu behavior) */
+  onArchiveTask?: (task: Task) => void | Promise<void>
+  /** Optional: Soft-delete (move to trash) or restore the current task (matches right-click context menu behavior) */
+  onMarkDeletedTask?: (task: Task) => void | Promise<void>
+  /** Today's Lineup task IDs (for inline menu: Add/Remove from Today's Lineup) */
+  lineUpTaskIds?: Set<string>
+  onAddToLineUp?: (taskId: string) => void
+  onRemoveFromLineUp?: (taskId: string) => void
   /** When adding (task is null), pre-fill the title (e.g. from Inbox "Convert to task") */
   initialTitle?: string
 }
@@ -254,6 +282,11 @@ export function AddEditTaskModal({
   getTaskDependencies,
   onAddDependency,
   onRemoveDependency,
+  onArchiveTask,
+  onMarkDeletedTask,
+  lineUpTaskIds,
+  onAddToLineUp,
+  onRemoveFromLineUp,
   initialTitle,
 }: AddEditTaskModalProps) {
   /* Core task form state: title, description, dates, priority, goal, tags, estimate, attachments, status */
@@ -313,6 +346,8 @@ export function AddEditTaskModal({
   const [pendingDraftPasteLines, setPendingDraftPasteLines] = useState<Record<string, string[]>>({})
   const [draftSubtasks, setDraftSubtasks] = useState<string[]>([])
   const [newDraftSubtaskTitle, setNewDraftSubtaskTitle] = useState('')
+  /* Inline task actions menu: track open/closed state for three-dot menu in edit mode */
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false)
 
   const isEditMode = Boolean(task?.id)
   const {
@@ -498,7 +533,7 @@ export function AddEditTaskModal({
     min == null ? null : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`.replace(/ 0m$/, '')
 
   const headerTitle = (
-    <div className="flex w-full items-center justify-between gap-3">
+    <div className="relative flex w-full items-center justify-between gap-3">
       <span className="text-body font-semibold text-bonsai-brown-700">
         {isEditMode ? 'Edit Task' : 'Add Task'}
       </span>
@@ -565,6 +600,105 @@ export function AddEditTaskModal({
               Save as task template
             </Button>
           )}
+          {/* Three-dot task actions menu: duplicate, lineup, archive, trash (matches right-click options) */}
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Task options"
+              onClick={() => setActionsMenuOpen((open) => !open)}
+            >
+              …
+            </Button>
+            {actionsMenuOpen && task && (
+              <div className="absolute right-0 z-20 mt-1 w-56 rounded-lg border border-bonsai-slate-200 bg-white py-1 shadow-lg">
+                <button
+                  type="button"
+                  className="block w-full px-3 py-1.5 text-left text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100"
+                  onClick={async () => {
+                    if (!onCreateTask) {
+                      setActionsMenuOpen(false)
+                      return
+                    }
+                    try {
+                      await onCreateTask({
+                        title: `${task.title} (copy)`,
+                        description: task.description ?? undefined,
+                        start_date: task.start_date ?? undefined,
+                        due_date: task.due_date ?? undefined,
+                        priority: task.priority ?? 'medium',
+                        time_estimate: task.time_estimate ?? undefined,
+                        recurrence_pattern: task.recurrence_pattern ?? undefined,
+                        status: 'active',
+                        attachments: Array.isArray(task.attachments)
+                          ? (task.attachments as TaskAttachment[])
+                          : undefined,
+                      })
+                    } catch (err) {
+                      console.error('Failed to duplicate task from edit modal:', err)
+                    } finally {
+                      setActionsMenuOpen(false)
+                    }
+                  }}
+                >
+                  Duplicate task
+                </button>
+                {lineUpTaskIds && onAddToLineUp && onRemoveFromLineUp && (
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-1.5 text-left text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100"
+                    onClick={() => {
+                      const inLineUp = lineUpTaskIds.has(task.id)
+                      if (inLineUp) {
+                        onRemoveFromLineUp(task.id)
+                      } else {
+                        onAddToLineUp(task.id)
+                      }
+                      setActionsMenuOpen(false)
+                    }}
+                  >
+                    {lineUpTaskIds.has(task.id)
+                      ? "Remove from Today's Lineup"
+                      : "Add to Today's Lineup"}
+                  </button>
+                )}
+                {onArchiveTask && (
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-1.5 text-left text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100"
+                    onClick={async () => {
+                      try {
+                        await onArchiveTask(task)
+                      } catch (err) {
+                        console.error('Failed to archive/unarchive task from edit modal:', err)
+                      } finally {
+                        setActionsMenuOpen(false)
+                      }
+                    }}
+                  >
+                    {task.status === 'archived' ? 'Unarchive task' : 'Archive task'}
+                  </button>
+                )}
+                {onMarkDeletedTask && (
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-1.5 text-left text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100"
+                    onClick={async () => {
+                      try {
+                        await onMarkDeletedTask(task)
+                      } catch (err) {
+                        console.error('Failed to move task to trash / restore from edit modal:', err)
+                      } finally {
+                        setActionsMenuOpen(false)
+                      }
+                    }}
+                  >
+                    {task.status === 'deleted' ? 'Restore from trash' : 'Move to trash'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="flex items-center gap-2">

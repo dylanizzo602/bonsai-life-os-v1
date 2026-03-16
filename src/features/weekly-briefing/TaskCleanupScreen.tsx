@@ -1,6 +1,8 @@
 /* TaskCleanupScreen: Weekly briefing step 3 – review tasks with no date/priority and cut away noise */
 
 import { Button } from '../../components/Button'
+import { hasVisibleDescription } from '../../components/DescriptionTooltip'
+import { descriptionToHtml } from '../tasks/utils/descriptionDisplay'
 import type { Task } from '../tasks/types'
 
 interface TaskCleanupScreenProps {
@@ -64,10 +66,19 @@ export function TaskCleanupScreen({
                   <p className="text-body font-medium text-bonsai-brown-700 truncate">
                     {task.title}
                   </p>
-                  {task.description && (
-                    <p className="text-secondary text-bonsai-slate-600 line-clamp-2 mt-0.5">
-                      {task.description}
-                    </p>
+                  {/* Description preview: render rich text HTML or plain text with links and line breaks, clamped to two lines */}
+                  {hasVisibleDescription(task.description) && (
+                    (() => {
+                      const description = task.description ?? ''
+                      const isRichTextHtml = /<\/[a-z][^>]*>|<br\s*\/?>|<p[^>]*>/i.test(description)
+                      const descriptionHtml = isRichTextHtml ? description : descriptionToHtml(description)
+                      return (
+                        <p
+                          className="text-secondary text-bonsai-slate-600 line-clamp-2 mt-0.5"
+                          dangerouslySetInnerHTML={{ __html: descriptionHtml }}
+                        />
+                      )
+                    })()
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 shrink-0">

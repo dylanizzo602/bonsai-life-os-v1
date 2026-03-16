@@ -164,7 +164,7 @@ export interface SortByEntry {
   direction: 'asc' | 'desc'
 }
 
-/** Template payload: snapshot of a task's core fields, tags, checklists, and subtasks (dates ignored when applying). */
+/** Template payload: snapshot of a task's core fields, tags, checklists, and subtasks (including optional subtask checklists; dates ignored when applying). */
 export interface TaskTemplateData {
   title: string
   description: string | null
@@ -184,13 +184,21 @@ export interface TaskTemplateData {
       completed: boolean
     }[]
   }[]
-  /** Subtasks with minimal fields; instantiated as child tasks of the new task. */
+  /** Subtasks with minimal fields plus optional checklists; instantiated as child tasks of the new task. */
   subtasks: {
     title: string
     description: string | null
     priority: TaskPriority
     time_estimate: number | null
     recurrence_pattern: string | null
+    /** Optional: checklists for this subtask, including their items, captured when saving the template. */
+    checklists?: {
+      title: string
+      items: {
+        title: string
+        completed: boolean
+      }[]
+    }[]
   }[]
 }
 

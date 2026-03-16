@@ -1,4 +1,4 @@
-/* HabitTable: Habits 1.0. HABIT | date columns (square cells) | STREAK. Fixed width, centered; no horizontal scroll. */
+/* HabitTable: Habits 1.0. HABIT | date columns (square cells) | STREAK. Desktop = fixed width, centered; mobile/tablet = horizontally scrollable grid with sticky habit column. */
 
 import type React from 'react'
 import { useCallback } from 'react'
@@ -52,7 +52,9 @@ export interface HabitTableProps {
 }
 
 /**
- * Habits 1.0 table: HABIT | date columns (square cells) | STREAK. Fixed width, centered by parent; square date cells; no horizontal scroll.
+ * Habits 1.0 table: HABIT | date columns (square cells) | STREAK.
+ * Desktop: fixed-width card, centered by parent, no horizontal scroll.
+ * Mobile/tablet: full-width container with horizontal scroll so all dates and streak column remain accessible.
  */
 export function HabitTable({
   habits,
@@ -175,28 +177,29 @@ export function HabitTable({
     )
   }
 
-  /* Mobile/tablet: sticky habit column + scrollable dates; date bar stays visible above scroll */
+  /* Mobile/tablet: sticky habit column + horizontal scroll for dates and streak; date bar stays visible above scroll */
   const rightPanelWidthPx = dates.length * DATE_COLUMN_WIDTH_PX + STREAK_COLUMN_WIDTH_PX
   return (
-    <div className="w-fit border border-bonsai-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
-      {dateRangeText && onPrevRange && onNextRange && (
-        <DateRangeBar dateRangeText={dateRangeText} onPrev={onPrevRange} onNext={onNextRange} />
-      )}
-      <div className="flex">
-        {/* Sticky habit column: clear border so it doesn't blend with dates */}
-        <div className="shrink-0 border-r border-bonsai-slate-200 bg-bonsai-slate-50/50 z-10 flex flex-col" style={{ width: HABIT_COLUMN_WIDTH_PX }}>
-          <div className="bg-bonsai-slate-50 border-b border-bonsai-slate-200 py-2 px-3 flex items-center shrink-0" style={{ height: DATE_COLUMN_WIDTH_PX }}>
-            <span className="text-secondary font-semibold text-bonsai-slate-700">HABIT</span>
-          </div>
-          {habits.map((habit) => (
-            <div key={habit.id} className="border-b border-bonsai-slate-100 py-2 px-3 bg-white hover:bg-bonsai-slate-50/50 group flex items-center shrink-0" style={{ height: DATE_COLUMN_WIDTH_PX }}>
-              <button type="button" onClick={() => onEditHabit(habit)} className="text-sm font-bold text-bonsai-brown-700 hover:text-bonsai-brown-800 text-left truncate max-w-full block w-full">{habit.name}</button>
+    <div className="w-full overflow-x-auto">
+      <div className="inline-block min-w-full border border-bonsai-slate-200 rounded-lg overflow-hidden bg-white shadow-sm align-top">
+        {dateRangeText && onPrevRange && onNextRange && (
+          <DateRangeBar dateRangeText={dateRangeText} onPrev={onPrevRange} onNext={onNextRange} />
+        )}
+        <div className="flex">
+          {/* Sticky habit column: clear border so it doesn't blend with dates */}
+          <div className="shrink-0 border-r border-bonsai-slate-200 bg-bonsai-slate-50/50 z-10 flex flex-col" style={{ width: HABIT_COLUMN_WIDTH_PX }}>
+            <div className="bg-bonsai-slate-50 border-b border-bonsai-slate-200 py-2 px-3 flex items-center shrink-0" style={{ height: DATE_COLUMN_WIDTH_PX }}>
+              <span className="text-secondary font-semibold text-bonsai-slate-700">HABIT</span>
             </div>
-          ))}
-        </div>
-        {/* Dates + streak: fixed width table with square cells */}
-        <div style={{ width: rightPanelWidthPx }}>
-          <table className="border-collapse" style={{ tableLayout: 'fixed', width: rightPanelWidthPx }}>
+            {habits.map((habit) => (
+              <div key={habit.id} className="border-b border-bonsai-slate-100 py-2 px-3 bg-white hover:bg-bonsai-slate-50/50 group flex items-center shrink-0" style={{ height: DATE_COLUMN_WIDTH_PX }}>
+                <button type="button" onClick={() => onEditHabit(habit)} className="text-sm font-bold text-bonsai-brown-700 hover:text-bonsai-brown-800 text-left truncate max-w-full block w-full">{habit.name}</button>
+              </div>
+            ))}
+          </div>
+          {/* Dates + streak: fixed width table with square cells; scrolls horizontally within container on smaller screens */}
+          <div style={{ width: rightPanelWidthPx }}>
+            <table className="border-collapse" style={{ tableLayout: 'fixed', width: rightPanelWidthPx }}>
           <thead>
             <tr className="border-b border-bonsai-slate-200 bg-bonsai-slate-50" style={{ height: DATE_COLUMN_WIDTH_PX }}>
               {dates.map((d) => {
@@ -344,8 +347,9 @@ export function HabitTable({
               </tr>
             )
           })}
-        </tbody>
-        </table>
+            </tbody>
+            </table>
+          </div>
       </div>
       </div>
     </div>

@@ -212,7 +212,7 @@ export async function deleteHabit(id: string): Promise<void> {
 
 /**
  * Set or clear entry for a habit on a date. status 'completed' | 'minimum' | 'skipped' upserts; null means delete (open).
- * When status is 'completed' or 'minimum' and reminderId is provided, the habit reminder is advanced to the next occurrence (dismissed for today).
+ * When status is 'completed', 'minimum', or 'skipped' and reminderId is provided, the habit reminder is advanced to the next occurrence (dismissed for today).
  */
 export async function setEntry(
   habitId: string,
@@ -247,8 +247,8 @@ export async function setEntry(
     throw error
   }
 
-  /* When habit is marked complete or minimum, dismiss the linked reminder if it is due on entryDate (advance to next occurrence) */
-  if ((status === 'completed' || status === 'minimum') && reminderId) {
+  /* When habit is marked complete, minimum, or skipped, dismiss the linked reminder if it is due on entryDate (advance to next occurrence) */
+  if ((status === 'completed' || status === 'minimum' || status === 'skipped') && reminderId) {
     try {
       await advanceReminderToNextOccurrenceIfDueOn(reminderId, entryDate)
     } catch (err) {

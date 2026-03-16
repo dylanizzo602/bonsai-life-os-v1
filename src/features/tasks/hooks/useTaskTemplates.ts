@@ -1,6 +1,7 @@
 /* useTaskTemplates hook: Load, create, and delete per-user task templates */
 import { useState, useCallback } from 'react'
 import { getTaskTemplates, createTaskTemplate, deleteTaskTemplate } from '../../../lib/supabase/taskTemplates'
+import { getTaskChecklists, getTaskChecklistItems } from '../../../lib/supabase/tasks'
 import type { Task, TaskTemplate, TaskTemplateData } from '../types'
 import type { ChecklistWithItems } from './useTaskChecklists'
 
@@ -16,41 +17,6 @@ interface UseTaskTemplatesResult {
     subtasks?: Task[]
   }) => Promise<TaskTemplate>
   removeTemplate: (id: string) => Promise<void>
-}
-
-/** Build a TaskTemplateData snapshot from a task plus its checklists and optional subtasks. */
-function buildTemplateData(args: {
-  task: Task
-  checklists: ChecklistWithItems[]
-  subtasks?: Task[]
-}): TaskTemplateData {
-  const { task, checklists, subtasks = [] } = args
-
-  return {
-    title: task.title,
-    description: task.description,
-    priority: task.priority,
-    goal_id: task.goal_id,
-    time_estimate: task.time_estimate,
-    attachments: task.attachments ?? [],
-    category: task.category,
-    recurrence_pattern: task.recurrence_pattern,
-    tags: task.tags ?? [],
-    checklists: checklists.map((cl) => ({
-      title: cl.title,
-      items: (cl.items ?? []).map((item) => ({
-        title: item.title,
-        completed: item.completed,
-      })),
-    })),
-    subtasks: subtasks.map((st) => ({
-      title: st.title,
-      description: st.description,
-      priority: st.priority,
-      time_estimate: st.time_estimate,
-      recurrence_pattern: st.recurrence_pattern,
-    })),
-  }
 }
 
 export function useTaskTemplates(): UseTaskTemplatesResult {
@@ -74,7 +40,7 @@ export function useTaskTemplates(): UseTaskTemplatesResult {
     }
   }, [])
 
-  /* Create a new template from the given task snapshot */
+  /* Create a new template from the given task snapshot, including optional subtask checklists. */
   const saveTemplateFromTask = useCallback(
     async (args: {
       name: string
@@ -84,7 +50,58 @@ export function useTaskTemplates(): UseTaskTemplatesResult {
     }): Promise<TaskTemplate> => {
       try {
         setError(null)
-        const data: TaskTemplateData = buildTemplateData(args)
+        const { task, checklists, subtasks = [] } = args
+
+        /* Build main task checklist snapshot for the template payload. */
+        const mainChecklistSnapshots: TaskTemplateData['checklists'] = checklists.map((cl) => ({
+          title: cl.title,
+          items: (cl.items ?? []).map((item) => ({
+            title: item.title,
+            completed: item.completed,
+          })),
+        }))
+
+        /* Build subtask snapshots, including optional checklists/items for each subtask. */
+        const subtaskSnapshots: TaskTemplateData['subtasks'] = await Promise.all(
+          subtasks.map(async (st) => {
+            const subtaskChecklists = await getTaskChecklists(st.id)
+            const checklistSnapshots = await Promise.all(
+              subtaskChecklists.map(async (cl) => {
+                const items = await getTaskChecklistItems(cl.id)
+                return {
+                  title: cl.title,
+                  items: items.map((item) => ({
+                    title: item.title,
+                    completed: item.completed,
+                  })),
+                }
+              }),
+            )
+
+            return {
+              title: st.title,
+              description: st.description,
+              priority: st.priority,
+              time_estimate: st.time_estimate,
+              recurrence_pattern: st.recurrence_pattern,
+              checklists: checklistSnapshots,
+            }
+          }),
+        )
+
+        const data: TaskTemplateData = {
+          title: task.title,
+          description: task.description,
+          priority: task.priority,
+          goal_id: task.goal_id,
+          time_estimate: task.time_estimate,
+          attachments: task.attachments ?? [],
+          category: task.category,
+          recurrence_pattern: task.recurrence_pattern,
+          tags: task.tags ?? [],
+          checklists: mainChecklistSnapshots,
+          subtasks: subtaskSnapshots,
+        }
         const created = await createTaskTemplate({ name: args.name, data })
         setTemplates((prev) => [created, ...prev])
         return created
