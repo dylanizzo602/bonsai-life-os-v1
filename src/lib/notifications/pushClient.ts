@@ -70,9 +70,11 @@ export async function getOrCreatePushSubscription(): Promise<PushSubscription | 
   }
 
   try {
+    /* Subscribe options: cast to BufferSource for TS DOM compatibility across lib versions */
+    const applicationServerKey = urlBase64ToUint8Array(publicKey) as unknown as BufferSource
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
+      applicationServerKey,
     })
     return subscription
   } catch (error) {

@@ -9,11 +9,28 @@ export function getBrowserVapidPublicKey(): string | null {
   return key.trim()
 }
 
+/* Environment access: support Deno (edge) and Node (server) without bundling either into the browser */
+function getRuntimeEnvValue(name: string): string | undefined {
+  const globalAny = globalThis as unknown as {
+    Deno?: { env?: { get?: (key: string) => string | undefined } }
+    process?: { env?: Record<string, string | undefined> }
+  }
+
+  const denoValue = globalAny.Deno?.env?.get?.(name)
+  if (typeof denoValue === 'string') return denoValue
+
+  const nodeValue = globalAny.process?.env?.[name]
+  if (typeof nodeValue === 'string') return nodeValue
+
+  return undefined
+}
+
 /* Server-side VAPID configuration: intended for edge functions or backend workers sending web push */
 export function getServerVapidConfig() {
-  const publicKey = Deno.env.get('NOTIFICATIONS_VAPID_PUBLIC_KEY') ?? ''
-  const privateKey = Deno.env.get('NOTIFICATIONS_VAPID_PRIVATE_KEY') ?? ''
-  const subject = Deno.env.get('NOTIFICATIONS_VAPID_SUBJECT') ?? 'mailto:notifications@example.com'
+  const publicKey = getRuntimeEnvValue('NOTIFICATIONS_VAPID_PUBLIC_KEY') ?? ''
+  const privateKey = getRuntimeEnvValue('NOTIFICATIONS_VAPID_PRIVATE_KEY') ?? ''
+  const subject =
+    getRuntimeEnvValue('NOTIFICATIONS_VAPID_SUBJECT') ?? 'mailto:notifications@example.com'
 
   return {
     publicKey,
