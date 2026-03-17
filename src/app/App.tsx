@@ -12,6 +12,11 @@ import { SettingsPage } from '../features/settings'
 import { useViewportWidth } from '../hooks/useViewportWidth'
 import { useAuth } from '../features/auth/AuthContext'
 import { AuthScreen } from '../features/auth/AuthScreen'
+import { useEffect, useRef, useState } from 'react'
+import {
+  getHasCompletedMorningBriefingToday,
+  getHasCompletedWeeklyBriefingThisWeek,
+} from '../lib/supabase/reflections'
 
 /**
  * Screen too small message component
@@ -44,8 +49,39 @@ function App() {
   const viewportWidth = useViewportWidth()
   const isScreenTooSmall = viewportWidth > 0 && viewportWidth < 300
 
-  /* Navigation hook: Manage active section state */
-  const { activeSection, setActiveSection } = useNavigation('home')
+  /* Morning briefing gate: determine whether today's briefing is already completed */
+  const [hasCompletedMorningBriefingToday, setHasCompletedMorningBriefingToday] = useState<
+    boolean | null
+  >(null)
+  const didApplyStartupGateRef = useRef(false)
+
+  /* Navigation hook: Default to briefings until we confirm completion for today */
+  const { activeSection, setActiveSection } = useNavigation('briefings')
+
+  /* Startup gate effect: on app start, route to Briefing until completed today */
+  useEffect(() => {
+    if (!session) return
+
+    let cancelled = false
+    getHasCompletedMorningBriefingToday().then((completed) => {
+      if (cancelled) return
+
+      setHasCompletedMorningBriefingToday(completed)
+
+      if (didApplyStartupGateRef.current) return
+      didApplyStartupGateRef.current = true
+
+      if (completed) {
+        setActiveSection('home')
+      } else {
+        setActiveSection('briefings')
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [session, setActiveSection])
 
   /* Content rendering: Render the appropriate page component based on active section */
   const renderContent = () => {
@@ -56,7 +92,21 @@ function App() {
         return (
           <BriefingsPage
             onNavigateToReflections={() => setActiveSection('reflections')}
-            onClose={() => setActiveSection('home')}
+            onClose={async () => {
+              /* Sunday continuation: after morning briefing, prompt weekly briefing if not completed this week */
+              const isSunday = new Date().getDay() === 0
+              if (!isSunday) {
+                setActiveSection('home')
+                return
+              }
+
+              try {
+                const hasCompletedWeekly = await getHasCompletedWeeklyBriefingThisWeek()
+                setActiveSection(hasCompletedWeekly ? 'home' : 'weekly-briefing')
+              } catch {
+                setActiveSection('home')
+              }
+            }}
           />
         )
       case 'weekly-briefing':
@@ -68,7 +118,12 @@ function App() {
       case 'habits':
         return <HabitsPage />
       case 'reflections':
-        return <ReflectionsPage />
+        return (
+          <ReflectionsPage
+            onOpenMorningBriefing={() => setActiveSection('briefings')}
+            onOpenWeeklyBriefing={() => setActiveSection('weekly-briefing')}
+          />
+        )
       case 'notes':
         return <NotesPage />
       case 'settings':
@@ -90,6 +145,15 @@ function App() {
   /* Conditional rendering: unauthenticated users see auth screen */
   if (!session) {
     return <AuthScreen />
+  }
+
+  /* Conditional rendering: avoid flashing non-briefing screens while briefing completion is loading */
+  if (hasCompletedMorningBriefingToday === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bonsai-slate-50">
+        <p className="text-body text-bonsai-slate-600">Loading your briefing…</p>
+      </div>
+    )
   }
 
   /* Conditional rendering: Show "screen too small" message if viewport < 320px, otherwise show app */

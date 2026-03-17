@@ -190,11 +190,12 @@ export function SettingsPage() {
             </p>
           </section>
 
-          {/* Notifications section: configure email and push preferences for different notification types */}
+          {/* Notifications section: configure mobile PWA push preferences for different notification types */}
           <section className="border border-bonsai-slate-200 rounded-xl p-4 md:p-6 bg-white">
             <h2 className="text-body font-semibold text-bonsai-brown-700 mb-4">Notifications</h2>
             <p className="text-secondary text-bonsai-slate-600 mb-4">
-              Choose how Bonsai notifies you about overdue tasks, reminders, and habit reminders.
+              Enable mobile push notifications for overdue tasks and reminders when using the Bonsai
+              PWA from your Home Screen.
             </p>
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse">
@@ -208,8 +209,6 @@ export function SettingsPage() {
                         key={channel}
                         className="text-secondary text-bonsai-slate-600 text-left py-2 px-2"
                       >
-                        {channel === 'email' && 'Email'}
-                        {channel === 'push_web' && 'Web push'}
                         {channel === 'push_mobile' && 'Mobile push'}
                       </th>
                     ))}

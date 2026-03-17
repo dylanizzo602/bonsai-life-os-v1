@@ -1,17 +1,7 @@
 /* Mobile side navigation: Overlay menu for tablet/mobile screens */
 import { useEffect } from 'react'
 import { BonsaiLogo, CloseIcon } from '../../../components/icons'
-import {
-  HomeIcon,
-  TasksIcon,
-  HabitsIcon,
-  GoalsIcon,
-  ReflectionsIcon,
-  BriefingsIcon,
-  WeeklyBriefingIcon,
-  NotesIcon,
-  SettingsIcon,
-} from '../../../components/icons'
+import { HomeIcon, TasksIcon, HabitsIcon, GoalsIcon, ReflectionsIcon, NotesIcon, SettingsIcon } from '../../../components/icons'
 import type { NavigationSection } from '../hooks/useNavigation'
 
 interface MobileSideNavProps {
@@ -32,8 +22,6 @@ const navItems: Array<{
   label: string
 }> = [
   { id: 'home', icon: HomeIcon, label: 'Home' },
-  { id: 'briefings', icon: BriefingsIcon, label: 'Briefing' },
-  { id: 'weekly-briefing', icon: WeeklyBriefingIcon, label: 'Weekly Briefing' },
   { id: 'goals', icon: GoalsIcon, label: 'Goals' },
   { id: 'tasks', icon: TasksIcon, label: 'Tasks' },
   { id: 'habits', icon: HabitsIcon, label: 'Habits' },

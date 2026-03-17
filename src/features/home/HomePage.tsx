@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react'
 import type { NavigationSection } from '../layout/hooks/useNavigation'
 import { useMorningBriefingBanner } from './hooks/useMorningBriefingBanner'
+import { useWeeklyBriefingBanner } from './hooks/useWeeklyBriefingBanner'
 import { useHomeWidgetConfig, type HomeWidgetId } from './hooks/useHomeWidgetConfig'
 import { useTasks } from '../tasks/hooks/useTasks'
 import { useInbox } from './hooks/useInbox'
@@ -38,7 +39,11 @@ export interface HomePageProps {
  * Dashboard with greeting, morning briefing banner, and widget grid (line up, inbox, upcoming tasks, habits, goals, reflections, misc).
  */
 export function HomePage({ onNavigate }: HomePageProps) {
-  const { showBanner, dismiss } = useMorningBriefingBanner()
+  /* Briefing banners: show prompts when briefings are incomplete */
+  const { showBanner: showMorningBriefingBanner, dismiss: dismissMorningBriefingBanner } =
+    useMorningBriefingBanner()
+  const { showBanner: showWeeklyBriefingBanner, dismiss: dismissWeeklyBriefingBanner } =
+    useWeeklyBriefingBanner()
   const { order, hidden, toggleHidden, moveUp, moveDown } = useHomeWidgetConfig()
   const {
     tasks,
@@ -127,7 +132,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
           >
             {isCustomizing ? 'Done' : 'Customize widgets'}
           </Button>
-          {showBanner && (
+          {showMorningBriefingBanner && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-4 py-3 md:justify-end">
             <p className="text-body text-bonsai-slate-700">
               Looks like you didn&apos;t finish your morning briefing.
@@ -141,11 +146,41 @@ export function HomePage({ onNavigate }: HomePageProps) {
               >
                 Review morning briefing &gt;
               </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={dismiss}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={dismissMorningBriefingBanner}
+              >
                 Dismiss
               </Button>
             </div>
           </div>
+          )}
+          {showWeeklyBriefingBanner && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-4 py-3 md:justify-end">
+              <p className="text-body text-bonsai-slate-700">
+                It&apos;s Sunday — time for your weekly briefing.
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={() => onNavigate?.('weekly-briefing')}
+                >
+                  Start weekly briefing &gt;
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={dismissWeeklyBriefingBanner}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       </div>

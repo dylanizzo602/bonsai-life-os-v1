@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getTasks as getTasksFromApi } from '../../lib/supabase/tasks'
 import { getMilestonesForGoal } from '../../lib/supabase/goals'
+import { saveOrUpdateWeeklyBriefingEntryForThisWeek } from '../../lib/supabase/reflections'
 import { useTasks } from '../tasks/hooks/useTasks'
 import { useHabits } from '../habits/hooks/useHabits'
 import { useGoals } from '../goals/hooks/useGoals'
@@ -123,6 +124,17 @@ export function WeeklyBriefingPage() {
     [tasks]
   )
 
+  /* Finish handler: persist this week's completion as a reflection entry */
+  const finishWeeklyBriefing = useCallback(async () => {
+    const title = `Weekly briefing – ${new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })}`
+    await saveOrUpdateWeeklyBriefingEntryForThisWeek({ title, responses: {} })
+    setStep(3)
+  }, [])
+
   /* When showing goal detail in-context, render GoalDetailPage overlay */
   if (selectedGoalId) {
     return (
@@ -192,7 +204,7 @@ export function WeeklyBriefingPage() {
           onEditTask={setEditTask}
           onArchiveTask={handleArchiveTask}
           onDeleteTask={handleDeleteTask}
-          onFinish={() => setStep(3)}
+          onFinish={finishWeeklyBriefing}
         />
       )}
 

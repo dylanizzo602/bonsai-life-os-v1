@@ -1,19 +1,29 @@
 /* Reflections page: List reflection entries (e.g. morning briefings); open one to view overview and show right-click menu for delete */
 
 import { useCallback, useEffect, useState } from 'react'
+import { Button } from '../../components/Button'
 import {
   getReflectionEntries,
   getReflectionEntry,
   deleteReflectionEntry,
+  getHasCompletedMorningBriefingToday,
+  getHasCompletedWeeklyBriefingThisWeek,
 } from '../../lib/supabase/reflections'
 import type { ReflectionEntry, MorningBriefingResponses } from './types'
 import { ReflectionEntryView } from './ReflectionEntryView'
 
+interface ReflectionsPageProps {
+  /** Optional handler to open the morning briefing flow */
+  onOpenMorningBriefing?: () => void
+  /** Optional handler to open the weekly briefing flow */
+  onOpenWeeklyBriefing?: () => void
+}
+
 /**
- * Reflections section: lists saved reflection entries (e.g. morning briefings).
+ * Reflections section: lists saved reflection entries and provides shortcuts to open briefing flows.
  * Clicking an entry shows the full overview (same Q&A as in Briefing).
  */
-export function ReflectionsPage() {
+export function ReflectionsPage({ onOpenMorningBriefing, onOpenWeeklyBriefing }: ReflectionsPageProps) {
   /* List of all entries (newest first) */
   const [entries, setEntries] = useState<ReflectionEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -24,6 +34,10 @@ export function ReflectionsPage() {
   /* Context menu state: which entry is open and at what position (matches task context menu pattern) */
   const [contextEntry, setContextEntry] = useState<ReflectionEntry | null>(null)
   const [contextPosition, setContextPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+
+  /* Briefing status: whether morning briefing is done today and weekly briefing is done this week */
+  const [hasCompletedMorningToday, setHasCompletedMorningToday] = useState<boolean | null>(null)
+  const [hasCompletedWeeklyThisWeek, setHasCompletedWeeklyThisWeek] = useState<boolean | null>(null)
 
   /* Delete handler: allow user to delete an entry (invoked from right-click on list item) */
   const handleDeleteEntry = useCallback(
@@ -62,6 +76,32 @@ export function ReflectionsPage() {
   useEffect(() => {
     fetchEntries()
   }, [fetchEntries])
+
+  /* Fetch briefing completion status on mount */
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const [morningDone, weeklyDone] = await Promise.all([
+          getHasCompletedMorningBriefingToday(),
+          getHasCompletedWeeklyBriefingThisWeek(),
+        ])
+        if (!cancelled) {
+          setHasCompletedMorningToday(morningDone)
+          setHasCompletedWeeklyThisWeek(weeklyDone)
+        }
+      } catch {
+        if (!cancelled) {
+          setHasCompletedMorningToday(false)
+          setHasCompletedWeeklyThisWeek(false)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   /* When user clicks an entry, load full entry and show detail */
   const handleSelectEntry = useCallback(async (entry: ReflectionEntry) => {
@@ -104,6 +144,54 @@ export function ReflectionsPage() {
     <div className="min-h-full">
       <h1 className="text-page-title font-bold text-bonsai-brown-700 mb-6">Reflections</h1>
 
+      {/* Briefing shortcuts: Buttons to open morning and weekly briefing flows from Reflections */}
+      <div className="mb-6 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-4 py-3">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-body text-bonsai-slate-700">
+            Open your briefing flows directly from Reflections.
+          </p>
+          <div className="flex flex-wrap items-center gap-2 text-secondary text-bonsai-slate-600">
+            <span>
+              Morning:{' '}
+              {hasCompletedMorningToday == null
+                ? 'Checking...'
+                : hasCompletedMorningToday
+                  ? 'Completed today'
+                  : 'Not completed today'}
+            </span>
+            <span className="hidden md:inline-block">•</span>
+            <span>
+              Weekly:{' '}
+              {hasCompletedWeeklyThisWeek == null
+                ? 'Checking...'
+                : hasCompletedWeeklyThisWeek
+                  ? 'Completed this week'
+                  : 'Not completed this week'}
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={onOpenMorningBriefing}
+            disabled={!onOpenMorningBriefing}
+          >
+            Open morning briefing
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={onOpenWeeklyBriefing}
+            disabled={!onOpenWeeklyBriefing}
+          >
+            Open weekly briefing
+          </Button>
+        </div>
+      </div>
+
       {error && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-body text-red-700">
           {error}
@@ -114,7 +202,7 @@ export function ReflectionsPage() {
         <p className="text-body text-bonsai-slate-500">Loading...</p>
       ) : entries.length === 0 ? (
         <p className="text-body text-bonsai-slate-600">
-          No reflection entries yet. Complete a morning briefing in the Briefing section to see your first entry here.
+          No reflection entries yet. Complete a morning briefing to see your first entry here.
         </p>
       ) : (
         <ul className="space-y-2">

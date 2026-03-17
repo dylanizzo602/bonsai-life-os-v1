@@ -117,6 +117,7 @@ export async function getReflectionEntries(limit = 50): Promise<ReflectionEntry[
   const { data, error } = await supabase
     .from('reflection_entries')
     .select('*')
+    .neq('type', 'weekly_briefing')
     .order('created_at', { ascending: false })
     .limit(limit)
 
@@ -152,6 +153,104 @@ export async function getHasCompletedMorningBriefingToday(): Promise<boolean> {
     return false
   }
   return (data?.length ?? 0) > 0
+}
+
+/**
+ * Compute the start (inclusive) and end (exclusive) ISO week window for the provided date.
+ * ISO week starts on Monday; the window is [Monday 00:00, next Monday 00:00).
+ */
+function getIsoWeekRange(date: Date): { from: string; to: string } {
+  const base = new Date(date)
+  const day = base.getDay() // 0=Sun ... 6=Sat
+  const daysSinceMonday = (day + 6) % 7
+
+  const weekStart = new Date(base.getFullYear(), base.getMonth(), base.getDate())
+  weekStart.setDate(weekStart.getDate() - daysSinceMonday)
+
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekEnd.getDate() + 7)
+
+  return { from: weekStart.toISOString(), to: weekEnd.toISOString() }
+}
+
+/**
+ * Return true if the user has completed a weekly briefing in the current ISO week.
+ * Completion is defined as a reflection entry with type 'weekly_briefing' created within this week.
+ */
+export async function getHasCompletedWeeklyBriefingThisWeek(): Promise<boolean> {
+  const { from, to } = getIsoWeekRange(new Date())
+
+  const { data, error } = await supabase
+    .from('reflection_entries')
+    .select('id')
+    .eq('type', 'weekly_briefing')
+    .gte('created_at', from)
+    .lt('created_at', to)
+    .limit(1)
+
+  if (error) {
+    console.error('Error checking weekly briefing this week:', error)
+    return false
+  }
+  return (data?.length ?? 0) > 0
+}
+
+/**
+ * Create or update this week's weekly briefing entry so only one is stored per ISO week.
+ * If an entry exists in this week window, update its title/responses instead of inserting a new row.
+ */
+export async function saveOrUpdateWeeklyBriefingEntryForThisWeek(
+  input: Omit<CreateReflectionEntryInput, 'type'>,
+): Promise<ReflectionEntry> {
+  const { from, to } = getIsoWeekRange(new Date())
+
+  const { data: existing, error: existingError } = await supabase
+    .from('reflection_entries')
+    .select('*')
+    .eq('type', 'weekly_briefing')
+    .gte('created_at', from)
+    .lt('created_at', to)
+    .order('created_at', { ascending: true })
+
+  if (existingError) {
+    console.error('Error checking existing weekly briefing entry for this week:', existingError)
+    throw existingError
+  }
+
+  const existingEntries = (existing as ReflectionEntry[] | null) ?? []
+  const existingEntry = existingEntries[0]
+
+  if (existingEntry) {
+    // If multiple entries exist for this week, keep the earliest and delete the rest so only one remains.
+    if (existingEntries.length > 1) {
+      const extraIds = existingEntries.slice(1).map((e) => e.id)
+      const { error: deleteError } = await supabase.from('reflection_entries').delete().in('id', extraIds)
+      if (deleteError) {
+        console.error('Error cleaning up extra weekly briefing entries for this week:', deleteError)
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('reflection_entries')
+      .update({
+        title: input.title ?? existingEntry.title,
+        responses: input.responses ?? existingEntry.responses,
+      })
+      .eq('id', existingEntry.id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error updating existing weekly briefing entry for this week:', error)
+      throw error
+    }
+    return data as ReflectionEntry
+  }
+
+  return createReflectionEntry({
+    ...input,
+    type: 'weekly_briefing',
+  })
 }
 
 /**

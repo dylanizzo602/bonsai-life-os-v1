@@ -1,9 +1,9 @@
-/* Notifications edge function: scan overdue tasks and due reminders/habit reminders and send email/push notifications */
+/* Notifications edge function: scan overdue tasks and due reminders/habit reminders and send mobile push notifications */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 type NotificationType = 'task_overdue' | 'reminder_due' | 'habit_reminder_due'
-type NotificationChannel = 'email' | 'push_web' | 'push_mobile'
+type NotificationChannel = 'push_mobile'
 
 interface UserNotificationPreferenceRow {
   user_id: string
@@ -108,7 +108,7 @@ async function sendEmail(params: {
   }
 }
 
-/* Push adapter stub: logs intended push notifications for future provider integration */
+/* Push adapter: delegates to external web push API / worker, or logs when not configured */
 async function sendPush(params: {
   userId: string
   title: string
@@ -116,7 +116,28 @@ async function sendPush(params: {
   data?: Record<string, unknown>
   channels: NotificationChannel[]
 }): Promise<void> {
-  console.log('Push notification (stub only):', params)
+  const apiUrl = Deno.env.get('NOTIFICATIONS_PUSH_API_URL')
+  const apiKey = Deno.env.get('NOTIFICATIONS_PUSH_API_KEY')
+
+  if (!apiUrl || !apiKey) {
+    console.log('Push notification (log-only, provider not configured):', params)
+    return
+  }
+
+  const res = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(params),
+  })
+
+  if (!res.ok) {
+    const body = await res.text()
+    console.error('Push provider error:', res.status, body)
+    throw new Error(`Push provider error: ${res.status}`)
+  }
 }
 
 /* Fetch a map of user id -> email address from auth.users */
@@ -271,7 +292,6 @@ serve(async (req) => {
 
     const userIdList = Array.from(allUserIds)
     const prefsByUser = await loadPreferencesByUserIds(supabase, userIdList)
-    const emailsByUser = await loadUserEmails(supabase, userIdList)
 
     for (const task of (taskRows ?? []) as {
       id: string
@@ -282,7 +302,6 @@ serve(async (req) => {
     }[]) {
       const userId = task.user_id
       const prefs = prefsByUser[userId] ?? {}
-      const email = emailsByUser[userId]
       const basePayload = {
         kind: 'task',
         task_id: task.id,
@@ -290,7 +309,7 @@ serve(async (req) => {
         due_date: task.due_date,
       }
 
-      for (const channel of ['email', 'push_web', 'push_mobile'] as NotificationChannel[]) {
+      for (const channel of ['push_mobile'] as NotificationChannel[]) {
         if (!isEnabled(prefs, 'task_overdue', channel)) continue
         const already = await hasExistingNotification(
           supabase,
@@ -302,68 +321,37 @@ serve(async (req) => {
         )
         if (already) continue
 
-        if (channel === 'email' && email) {
-          const subject = `Task overdue: ${task.title}`
-          const text = `Your task "${task.title}" is overdue.\n\nDue date: ${task.due_date ?? 'No due date'}`
-          try {
-            await sendEmail({ to: email, subject, text })
-            await recordNotification({
-              supabase,
-              userId,
-              type: 'task_overdue',
-              channel: 'email',
-              sourceType: 'task',
-              sourceId: task.id,
-              payload: basePayload,
-              status: 'sent',
-            })
-          } catch (err) {
-            console.error('Error sending overdue task email:', err)
-            await recordNotification({
-              supabase,
-              userId,
-              type: 'task_overdue',
-              channel: 'email',
-              sourceType: 'task',
-              sourceId: task.id,
-              payload: basePayload,
-              status: 'error',
-              errorMessage: (err as Error).message,
-            })
-          }
-        } else if (channel === 'push_web' || channel === 'push_mobile') {
-          try {
-            await sendPush({
-              userId,
-              title: 'Task overdue',
-              body: task.title,
-              data: basePayload,
-              channels: [channel],
-            })
-            await recordNotification({
-              supabase,
-              userId,
-              type: 'task_overdue',
-              channel,
-              sourceType: 'task',
-              sourceId: task.id,
-              payload: basePayload,
-              status: 'sent',
-            })
-          } catch (err) {
-            console.error('Error sending overdue task push:', err)
-            await recordNotification({
-              supabase,
-              userId,
-              type: 'task_overdue',
-              channel,
-              sourceType: 'task',
-              sourceId: task.id,
-              payload: basePayload,
-              status: 'error',
-              errorMessage: (err as Error).message,
-            })
-          }
+        try {
+          await sendPush({
+            userId,
+            title: 'Task overdue',
+            body: task.title,
+            data: basePayload,
+            channels: [channel],
+          })
+          await recordNotification({
+            supabase,
+            userId,
+            type: 'task_overdue',
+            channel,
+            sourceType: 'task',
+            sourceId: task.id,
+            payload: basePayload,
+            status: 'sent',
+          })
+        } catch (err) {
+          console.error('Error sending overdue task push:', err)
+          await recordNotification({
+            supabase,
+            userId,
+            type: 'task_overdue',
+            channel,
+            sourceType: 'task',
+            sourceId: task.id,
+            payload: basePayload,
+            status: 'error',
+            errorMessage: (err as Error).message,
+          })
         }
       }
     }
@@ -376,7 +364,6 @@ serve(async (req) => {
     }[]) {
       const userId = reminder.user_id
       const prefs = prefsByUser[userId] ?? {}
-      const email = emailsByUser[userId]
       const basePayload = {
         kind: 'reminder',
         reminder_id: reminder.id,
@@ -384,7 +371,7 @@ serve(async (req) => {
         remind_at: reminder.remind_at,
       }
 
-      for (const channel of ['email', 'push_web', 'push_mobile'] as NotificationChannel[]) {
+      for (const channel of ['push_mobile'] as NotificationChannel[]) {
         if (!isEnabled(prefs, 'reminder_due', channel)) continue
         const already = await hasExistingNotification(
           supabase,
@@ -396,68 +383,37 @@ serve(async (req) => {
         )
         if (already) continue
 
-        if (channel === 'email' && email) {
-          const subject = `Reminder due: ${reminder.name}`
-          const text = `Your reminder "${reminder.name}" is due.\n\nWhen: ${reminder.remind_at ?? 'No time set'}`
-          try {
-            await sendEmail({ to: email, subject, text })
-            await recordNotification({
-              supabase,
-              userId,
-              type: 'reminder_due',
-              channel: 'email',
-              sourceType: 'reminder',
-              sourceId: reminder.id,
-              payload: basePayload,
-              status: 'sent',
-            })
-          } catch (err) {
-            console.error('Error sending reminder email:', err)
-            await recordNotification({
-              supabase,
-              userId,
-              type: 'reminder_due',
-              channel: 'email',
-              sourceType: 'reminder',
-              sourceId: reminder.id,
-              payload: basePayload,
-              status: 'error',
-              errorMessage: (err as Error).message,
-            })
-          }
-        } else if (channel === 'push_web' || channel === 'push_mobile') {
-          try {
-            await sendPush({
-              userId,
-              title: 'Reminder due',
-              body: reminder.name,
-              data: basePayload,
-              channels: [channel],
-            })
-            await recordNotification({
-              supabase,
-              userId,
-              type: 'reminder_due',
-              channel,
-              sourceType: 'reminder',
-              sourceId: reminder.id,
-              payload: basePayload,
-              status: 'sent',
-            })
-          } catch (err) {
-            console.error('Error sending reminder push:', err)
-            await recordNotification({
-              supabase,
-              userId,
-              type: 'reminder_due',
-              channel,
-              sourceType: 'reminder',
-              sourceId: reminder.id,
-              payload: basePayload,
-              status: 'error',
-              errorMessage: (err as Error).message,
-            })
-          }
+        try {
+          await sendPush({
+            userId,
+            title: 'Reminder due',
+            body: reminder.name,
+            data: basePayload,
+            channels: [channel],
+          })
+          await recordNotification({
+            supabase,
+            userId,
+            type: 'reminder_due',
+            channel,
+            sourceType: 'reminder',
+            sourceId: reminder.id,
+            payload: basePayload,
+            status: 'sent',
+          })
+        } catch (err) {
+          console.error('Error sending reminder push:', err)
+          await recordNotification({
+            supabase,
+            userId,
+            type: 'reminder_due',
+            channel,
+            sourceType: 'reminder',
+            sourceId: reminder.id,
+            payload: basePayload,
+            status: 'error',
+            errorMessage: (err as Error).message,
+          })
         }
       }
     }
@@ -470,7 +426,6 @@ serve(async (req) => {
     }[]) {
       const userId = reminder.user_id
       const prefs = prefsByUser[userId] ?? {}
-      const email = emailsByUser[userId]
       const basePayload = {
         kind: 'habit_reminder',
         reminder_id: reminder.id,
@@ -478,7 +433,7 @@ serve(async (req) => {
         remind_at: reminder.remind_at,
       }
 
-      for (const channel of ['email', 'push_web', 'push_mobile'] as NotificationChannel[]) {
+      for (const channel of ['push_mobile'] as NotificationChannel[]) {
         if (!isEnabled(prefs, 'habit_reminder_due', channel)) continue
         const already = await hasExistingNotification(
           supabase,
@@ -490,70 +445,37 @@ serve(async (req) => {
         )
         if (already) continue
 
-        if (channel === 'email' && email) {
-          const subject = `Habit reminder: ${reminder.name}`
-          const text = `Your habit "${reminder.name}" has a reminder due.\n\nWhen: ${
-            reminder.remind_at ?? 'No time set'
-          }`
-          try {
-            await sendEmail({ to: email, subject, text })
-            await recordNotification({
-              supabase,
-              userId,
-              type: 'habit_reminder_due',
-              channel: 'email',
-              sourceType: 'habit_reminder',
-              sourceId: reminder.id,
-              payload: basePayload,
-              status: 'sent',
-            })
-          } catch (err) {
-            console.error('Error sending habit reminder email:', err)
-            await recordNotification({
-              supabase,
-              userId,
-              type: 'habit_reminder_due',
-              channel: 'email',
-              sourceType: 'habit_reminder',
-              sourceId: reminder.id,
-              payload: basePayload,
-              status: 'error',
-              errorMessage: (err as Error).message,
-            })
-          }
-        } else if (channel === 'push_web' || channel === 'push_mobile') {
-          try {
-            await sendPush({
-              userId,
-              title: 'Habit reminder',
-              body: reminder.name,
-              data: basePayload,
-              channels: [channel],
-            })
-            await recordNotification({
-              supabase,
-              userId,
-              type: 'habit_reminder_due',
-              channel,
-              sourceType: 'habit_reminder',
-              sourceId: reminder.id,
-              payload: basePayload,
-              status: 'sent',
-            })
-          } catch (err) {
-            console.error('Error sending habit reminder push:', err)
-            await recordNotification({
-              supabase,
-              userId,
-              type: 'habit_reminder_due',
-              channel,
-              sourceType: 'habit_reminder',
-              sourceId: reminder.id,
-              payload: basePayload,
-              status: 'error',
-              errorMessage: (err as Error).message,
-            })
-          }
+        try {
+          await sendPush({
+            userId,
+            title: 'Habit reminder',
+            body: reminder.name,
+            data: basePayload,
+            channels: [channel],
+          })
+          await recordNotification({
+            supabase,
+            userId,
+            type: 'habit_reminder_due',
+            channel,
+            sourceType: 'habit_reminder',
+            sourceId: reminder.id,
+            payload: basePayload,
+            status: 'sent',
+          })
+        } catch (err) {
+          console.error('Error sending habit reminder push:', err)
+          await recordNotification({
+            supabase,
+            userId,
+            type: 'habit_reminder_due',
+            channel,
+            sourceType: 'habit_reminder',
+            sourceId: reminder.id,
+            payload: basePayload,
+            status: 'error',
+            errorMessage: (err as Error).message,
+          })
         }
       }
     }

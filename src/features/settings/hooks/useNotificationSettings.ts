@@ -6,12 +6,14 @@ import {
   buildEffectivePreferencesMap,
 } from '../../../lib/supabase/notificationPreferences'
 import type { NotificationType, NotificationChannel } from '../../../lib/notifications/types'
+import { getOrCreatePushSubscription, serializePushSubscription } from '../../../lib/notifications/pushClient'
+import { supabase } from '../../../lib/supabase/client'
 
 /* Ordered list of notification types shown in the settings UI */
 const NOTIFICATION_TYPES: NotificationType[] = ['task_overdue', 'reminder_due', 'habit_reminder_due']
 
-/* Ordered list of channels shown in the settings UI */
-const CHANNELS: NotificationChannel[] = ['email', 'push_web', 'push_mobile']
+/* Ordered list of channels shown in the settings UI: mobile PWA push only */
+const CHANNELS: NotificationChannel[] = ['push_mobile']
 
 interface UseNotificationSettingsState {
   /** Whether preferences are currently loading from Supabase */
@@ -26,7 +28,7 @@ interface UseNotificationSettingsState {
   channels: NotificationChannel[]
   /** Check if a given type/channel is enabled (defaults to true when unset) */
   isEnabled: (type: NotificationType, channel: NotificationChannel) => boolean
-  /** Toggle a specific preference on or off and persist to Supabase */
+  /** Toggle a specific preference on or off and persist to Supabase (and manage push subscriptions when relevant) */
   togglePreference: (type: NotificationType, channel: NotificationChannel) => Promise<void>
 }
 
@@ -95,7 +97,47 @@ export function useNotificationSettings(): UseNotificationSettingsState {
     try {
       const current = isEnabled(type, channel)
       const nextEnabled = !current
+      /* Mobile PWA guard: only allow enabling mobile push from installed PWA context */
+      if (channel === 'push_mobile' && nextEnabled) {
+        const inStandaloneDisplay =
+          typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches
+        const standaloneNavigator =
+          typeof navigator !== 'undefined' &&
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (navigator as any).standalone === true
+        const isInstalledPwa = inStandaloneDisplay || standaloneNavigator
+
+        if (!isInstalledPwa) {
+          setError('Open Bonsai from your Home Screen app icon to enable mobile push notifications.')
+          return
+        }
+      }
+
       await upsertNotificationPreference(type, channel, nextEnabled)
+
+      /* Mobile push subscription: create subscription and store full JSON payload for push worker delivery */
+      if (channel === 'push_mobile' && nextEnabled) {
+        const subscription = await getOrCreatePushSubscription()
+        const serialized = serializePushSubscription(subscription)
+        if (serialized) {
+          const userAgent = typeof window !== 'undefined' ? window.navigator.userAgent : ''
+          const isIos = /iPad|iPhone|iPod/.test(userAgent)
+          const isAndroid = /Android/i.test(userAgent)
+          const platform = isIos ? 'ios_pwa' : isAndroid ? 'android' : 'web'
+
+          await supabase.from('notification_devices').upsert(
+            {
+              platform,
+              token_or_endpoint: JSON.stringify(serialized),
+              is_active: true,
+            },
+            {
+              onConflict: 'user_id,platform,token_or_endpoint',
+            },
+          )
+        }
+      }
+
       setRawPrefs((prev) => {
         const existingIndex = prev.findIndex((p) => p.type === type && p.channel === channel)
         if (existingIndex === -1) {
