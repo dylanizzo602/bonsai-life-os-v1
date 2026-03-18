@@ -293,16 +293,20 @@ export function TaskList({
     })
   }
 
-  /* Combine tasks, reminders, and habit reminders into a single list; optionally interleave by date based on current view/sort */
+  /* Combine tasks, reminders, and habit reminders into a single list; interleave when sort can apply across item types */
   const combinedItems = useMemo(() => {
     const items: Array<{
       type: 'task' | 'reminder' | 'habit_reminder'
       id: string
       created_at: string
+      sourceIndex: number
       task?: Task
       reminder?: Reminder
       habitReminder?: { habit: HabitWithStreaks; remindAt: string | null }
     }> = []
+
+    /* Stable ordering: keep the original insertion order as a tie-breaker so task ordering from TasksPage is preserved. */
+    let sourceIndex = 0
 
     /* Add tasks in their current order (already sorted by TasksPage) */
     tasks.forEach((task) => {
@@ -310,6 +314,7 @@ export function TaskList({
         type: 'task',
         id: task.id,
         created_at: task.created_at,
+        sourceIndex: sourceIndex++,
         task,
       })
     })
@@ -320,6 +325,7 @@ export function TaskList({
         type: 'reminder',
         id: reminder.id,
         created_at: reminder.created_at || new Date().toISOString(),
+        sourceIndex: sourceIndex++,
         reminder,
       })
     })
@@ -330,42 +336,58 @@ export function TaskList({
         type: 'habit_reminder',
         id: `habit-${habit.id}`,
         created_at: habit.created_at,
+        sourceIndex: sourceIndex++,
         habitReminder: { habit, remindAt },
       })
     })
 
-    /* When in All view using the default due-date sort, interleave tasks and reminders by earliest date so they are not grouped */
-    const isAllDefaultDueSort =
-      viewMode === 'all' &&
-      effectiveSortBy.length === 2 &&
-      effectiveSortBy[0].field === 'due_date' &&
-      effectiveSortBy[0].direction === 'asc' &&
-      effectiveSortBy[1].field === 'start_date' &&
-      effectiveSortBy[1].direction === 'asc'
+    /* Interleaving sort: if the active sort includes fields that apply to tasks and reminders, sort the combined list accordingly. */
+    const canInterleave =
+      (viewMode === 'available' || viewMode === 'all' || viewMode === 'custom') &&
+      effectiveSortBy.some((s) => s.field === 'due_date' || s.field === 'start_date' || s.field === 'task_name')
 
-    if (isAllDefaultDueSort) {
-      const getPrimaryTimestamp = (item: (typeof items)[number]) => {
+    if (canInterleave) {
+      /* Shared sort keys: map task/reminder/habit reminder to comparable values for date or name sorts. */
+      const getTimestampForField = (
+        item: (typeof items)[number],
+        field: 'start_date' | 'due_date',
+      ): number => {
         if (item.type === 'task' && item.task) {
-          const due = item.task.due_date ? new Date(item.task.due_date).getTime() : null
-          const start = item.task.start_date ? new Date(item.task.start_date).getTime() : null
-          if (due != null) return due
-          if (start != null) return start
-          return Number.MAX_SAFE_INTEGER
+          const iso = field === 'due_date' ? item.task.due_date : item.task.start_date
+          return iso ? new Date(iso).getTime() : Number.MAX_SAFE_INTEGER
         }
         if (item.type === 'reminder' && item.reminder) {
           return item.reminder.remind_at ? new Date(item.reminder.remind_at).getTime() : Number.MAX_SAFE_INTEGER
         }
         if (item.type === 'habit_reminder' && item.habitReminder) {
-          return item.habitReminder.remindAt ? new Date(item.habitReminder.remindAt).getTime() : Number.MAX_SAFE_INTEGER
+          return item.habitReminder.remindAt
+            ? new Date(item.habitReminder.remindAt).getTime()
+            : Number.MAX_SAFE_INTEGER
         }
         return Number.MAX_SAFE_INTEGER
       }
 
+      const getName = (item: (typeof items)[number]) => {
+        if (item.type === 'task' && item.task) return item.task.title ?? ''
+        if (item.type === 'reminder' && item.reminder) return item.reminder.name ?? ''
+        if (item.type === 'habit_reminder' && item.habitReminder) return item.habitReminder.habit.name ?? ''
+        return ''
+      }
+
       items.sort((a, b) => {
-        const at = getPrimaryTimestamp(a)
-        const bt = getPrimaryTimestamp(b)
-        if (at !== bt) return at - bt
-        return a.created_at.localeCompare(b.created_at)
+        for (const { field, direction } of effectiveSortBy) {
+          let cmp = 0
+          if (field === 'due_date' || field === 'start_date') {
+            cmp = getTimestampForField(a, field) - getTimestampForField(b, field)
+          } else if (field === 'task_name') {
+            cmp = getName(a).localeCompare(getName(b), undefined, { sensitivity: 'base' })
+          } else {
+            continue
+          }
+          if (cmp !== 0) return direction === 'asc' ? cmp : -cmp
+        }
+        /* Tie-breaker: stable original order so pre-sorted task ordering is preserved (e.g. Available priority/status rules). */
+        return a.sourceIndex - b.sourceIndex
       })
     }
 
