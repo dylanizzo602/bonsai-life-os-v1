@@ -12,6 +12,13 @@ export interface AddEditGoalModalProps {
   onUpdateGoal?: (id: string, input: UpdateGoalInput) => Promise<Goal>
   onDeleteGoal?: (id: string) => Promise<void>
   goal?: Goal | null
+  /**
+   * Optional: force the goal's visibility state (used when creating goals from an identity slot).
+   * When set, the user cannot change the toggle via the form UI.
+   */
+  forceIsActive?: boolean
+  /** When true, hide the visibility toggle section entirely. */
+  hideIsActiveToggle?: boolean
 }
 
 /**
@@ -25,6 +32,8 @@ export function AddEditGoalModal({
   onUpdateGoal,
   onDeleteGoal,
   goal = null,
+  forceIsActive,
+  hideIsActiveToggle = false,
 }: AddEditGoalModalProps) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -35,6 +44,7 @@ export function AddEditGoalModal({
   const [isActive, setIsActive] = useState(true)
 
   const isEditMode = !!goal
+  const isVisibilityLocked = typeof forceIsActive === 'boolean'
 
   /* Sync form state when modal opens or goal (edit) changes */
   useEffect(() => {
@@ -44,7 +54,7 @@ export function AddEditGoalModal({
         setDescription(goal.description ?? '')
         setStartDate(goal.start_date ?? '')
         setTargetDate(goal.target_date ?? '')
-        setIsActive(goal.is_active)
+        setIsActive(isVisibilityLocked ? (forceIsActive as boolean) : goal.is_active)
         setDeleteConfirm(false)
       } else {
         /* Create mode: leave dates empty so they are optional */
@@ -52,10 +62,10 @@ export function AddEditGoalModal({
         setDescription('')
         setStartDate('')
         setTargetDate('')
-        setIsActive(true)
+        setIsActive(isVisibilityLocked ? (forceIsActive as boolean) : true)
       }
     }
-  }, [isOpen, goal])
+  }, [isOpen, goal, isVisibilityLocked, forceIsActive])
 
   /* Handle form submission: only name required; start/target dates optional */
   const handleSubmit = async () => {
@@ -68,7 +78,7 @@ export function AddEditGoalModal({
       description: description.trim() || null,
       start_date: startDate.trim() || null,
       target_date: targetDate.trim() || null,
-      is_active: isActive,
+      is_active: isVisibilityLocked ? (forceIsActive as boolean) : isActive,
     }
 
     try {
@@ -201,31 +211,37 @@ export function AddEditGoalModal({
           </div>
         </div>
 
-        {/* Active / inactive toggle */}
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-secondary font-medium text-bonsai-slate-700">
-              Show in widgets and briefings
-            </p>
-            <p className="text-secondary text-bonsai-slate-500">
-              When off, this goal stays in the Goals section only.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsActive((prev) => !prev)}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              isActive ? 'bg-bonsai-sage-600' : 'bg-bonsai-slate-300'
-            }`}
-            aria-pressed={isActive}
-          >
-            <span
-              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                isActive ? 'translate-x-5' : 'translate-x-1'
+        {/* Active / inactive toggle (optional) */}
+        {hideIsActiveToggle || isVisibilityLocked ? (
+          <p className="text-secondary text-bonsai-slate-500">
+            Goal visibility is controlled by the identity slot you&apos;re assigning to.
+          </p>
+        ) : (
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-secondary font-medium text-bonsai-slate-700">
+                Show in widgets and briefings
+              </p>
+              <p className="text-secondary text-bonsai-slate-500">
+                When off, this goal stays in the Goals section only.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsActive((prev) => !prev)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                isActive ? 'bg-bonsai-sage-600' : 'bg-bonsai-slate-300'
               }`}
-            />
-          </button>
-        </div>
+              aria-pressed={isActive}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                  isActive ? 'translate-x-5' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        )}
 
         {/* Validation error */}
         {startDate && targetDate && startDate > targetDate && (

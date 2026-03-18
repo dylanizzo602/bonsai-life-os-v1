@@ -1,195 +1,192 @@
-/* Goals page: Responsive grid of goal gauge cards with create goal button */
-import { useState, useEffect } from 'react'
-import { AddButton } from '../../components/AddButton'
-import { GoalsIcon, PlusIcon } from '../../components/icons'
-import { useGoals } from './hooks/useGoals'
-import { GoalGaugeCard } from './GoalGaugeCard'
+/* Goals page: 8-category identity/badge view with 3 active slots per identity */
+
+import { useMemo, useState } from 'react'
 import { GoalDetailPage } from './GoalDetailPage'
-import { AddEditGoalModal } from './AddEditGoalModal'
-import { getMilestonesForGoal } from '../../lib/supabase/goals'
-import type { Goal, GoalMilestone } from './types'
+import { useGoalIdentities } from './hooks/useGoalIdentities'
+import type { IdentitySlotResolved } from '../../lib/supabase/identities'
+import { IdentityCategoryRow } from './identities/IdentityCategoryRow'
+import { IdentitySlotPickerModal } from './identities/IdentitySlotPickerModal'
 
 /**
  * Goals page component.
- * Displays goals in a responsive grid (1 col mobile, 2 cols tablet, 3 cols desktop).
- * Clicking a goal navigates to goal detail page.
+ * Replaced from the legacy goal-gauge grid with an identity-driven layout.
  */
 export function GoalsPage() {
-  const { goals, loading, error, createGoal, updateGoal, deleteGoal, refetch } = useGoals()
+  const {
+    identities,
+    loading,
+    error,
+    refetch,
+    toggleIdentityFocus,
+    setSlotHabit,
+    setSlotGoal,
+    completeGoalInSlot,
+    uploadBadge,
+    updateIdentityCopy,
+    activeIdentityCount,
+    canEnableMoreActiveIdentities,
+  } = useGoalIdentities()
+
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null)
-  const [milestonesByGoal, setMilestonesByGoal] = useState<Record<string, GoalMilestone[]>>({})
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editingGoal, setEditingGoal] = useState<Goal | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerIdentityId, setPickerIdentityId] = useState<string | null>(null)
+  const [pickerSlotIndex, setPickerSlotIndex] = useState<0 | 1 | 2>(0)
 
-  /* Split goals into active and inactive for separate sections */
-  const activeGoals = goals.filter((g) => g.is_active !== false)
-  const inactiveGoals = goals.filter((g) => g.is_active === false)
+  const activeIdentities = useMemo(
+    () => identities.filter((i) => i.identity.is_active),
+    [identities],
+  )
+  const passiveIdentities = useMemo(
+    () => identities.filter((i) => !i.identity.is_active),
+    [identities],
+  )
 
-  /* Fetch milestones for all goals */
-  useEffect(() => {
-    const fetchMilestones = async () => {
-      const milestonesMap: Record<string, GoalMilestone[]> = {}
-      for (const goal of goals) {
-        try {
-          const milestones = await getMilestonesForGoal(goal.id)
-          milestonesMap[goal.id] = milestones
-        } catch (err) {
-          console.error(`Error fetching milestones for goal ${goal.id}:`, err)
-          milestonesMap[goal.id] = []
-        }
-      }
-      setMilestonesByGoal(milestonesMap)
-    }
+  const openPicker = (identityId: string, slotIndex: 0 | 1 | 2) => {
+    setPickerIdentityId(identityId)
+    setPickerSlotIndex(slotIndex)
+    setPickerOpen(true)
+  }
 
-    if (goals.length > 0) {
-      fetchMilestones()
-    }
-  }, [goals])
+  const closePicker = () => {
+    setPickerOpen(false)
+    setPickerIdentityId(null)
+  }
 
-  /* Handle goal card click: navigate to detail page */
-  const handleGoalClick = (goalId: string) => {
+  const pickerIdentityWithSlots = useMemo(() => {
+    if (!pickerIdentityId) return null
+    return identities.find((i) => i.identity.id === pickerIdentityId) ?? null
+  }, [identities, pickerIdentityId])
+
+  const currentPickerSlot = useMemo((): IdentitySlotResolved | null => {
+    if (!pickerIdentityWithSlots) return null
+    return pickerIdentityWithSlots.currentSlots[pickerSlotIndex] ?? null
+  }, [pickerIdentityWithSlots, pickerSlotIndex])
+
+  const handleOpenGoal = (goalId: string) => {
     setSelectedGoalId(goalId)
+    setPickerOpen(false)
   }
 
-  /* Handle back from detail page */
-  const handleBack = () => {
-    setSelectedGoalId(null)
-    refetch()
-  }
-
-  /* Handle create goal button */
-  const handleOpenCreate = () => {
-    setEditingGoal(null)
-    setModalOpen(true)
-  }
-
-  /* Handle edit goal */
-  /* Handle close modal */
-  const handleCloseModal = () => {
-    setModalOpen(false)
-    setEditingGoal(null)
-  }
-
-  /* If a goal is selected, show detail page (key forces fresh mount when goal changes) */
   if (selectedGoalId) {
     return (
       <GoalDetailPage
         key={selectedGoalId}
         goalId={selectedGoalId}
-        onBack={handleBack}
+        onBack={() => {
+          setSelectedGoalId(null)
+          void refetch()
+        }}
       />
     )
   }
 
   return (
     <div className="min-h-full">
-      {/* Header: title and Create Goal button */}
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-4 mb-6">
-        <div>
-          <h1 className="text-page-title font-bold text-bonsai-brown-700">Goals</h1>
-          <p className="text-secondary text-bonsai-slate-600 mt-1">
-            Track your progress toward meaningful objectives with milestones and habit integration.
-          </p>
-        </div>
-        <div className="shrink-0">
-          <AddButton onClick={handleOpenCreate} hideChevron>Create Goal</AddButton>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-page-title font-bold text-bonsai-brown-700">Goals</h1>
+        <p className="text-secondary text-bonsai-slate-600 mt-1">
+          Choose your identity focus. Each active identity has 3 slots for habits or goals, and completed goals remain available.
+        </p>
       </div>
 
-      {/* Loading state */}
-      {loading && (
-        <p className="text-body text-bonsai-slate-500 py-8">Loading goals…</p>
-      )}
+      {loading && <p className="text-body text-bonsai-slate-500 py-8">Loading identities…</p>}
 
-      {/* Error state */}
       {error && (
         <p className="text-body text-red-600 py-2" role="alert">
           {error}
         </p>
       )}
 
-      {/* Empty state: Card with icon, message, and Create Your First Goal CTA */}
-      {!loading && goals.length === 0 && (
-        <div className="flex min-h-[60vh] items-center justify-center">
-          <div className="w-full max-w-md rounded-xl border border-bonsai-slate-200 bg-white p-8 shadow-sm">
-            {/* Icon: Circular grey background with goals icon */}
-            <div className="flex justify-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-bonsai-slate-100">
-                <GoalsIcon className="h-7 w-7 text-bonsai-slate-500" />
+      {!loading && (
+        <div className="space-y-10">
+          {/* Active identities */}
+          <section>
+            <div className="flex items-end justify-between gap-4 mb-4">
+              <div>
+                <h2 className="text-body font-semibold text-bonsai-brown-700">Active identities</h2>
+                <p className="text-secondary text-bonsai-slate-600 mt-1">
+                  Up to 4 active identities. Currently active: {activeIdentityCount}.
+                </p>
               </div>
             </div>
-            {/* Heading */}
-            <h2 className="mt-4 text-center text-body font-semibold text-bonsai-brown-700">
-              No goals yet
-            </h2>
-            {/* Description */}
-            <p className="mt-2 text-center text-body text-bonsai-slate-600">
-              Start achieving your objectives by creating your first goal with milestones.
-            </p>
-            {/* CTA: Black pill button with plus and label */}
-            <div className="mt-8 flex justify-center">
-              <button
-                type="button"
-                onClick={handleOpenCreate}
-                className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-body font-semibold text-white transition-colors hover:bg-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-slate-500 focus:ring-offset-2"
-              >
-                <PlusIcon className="h-5 w-5" />
-                Create Your First Goal
-              </button>
+
+            {activeIdentities.length === 0 ? (
+              <div className="rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50/50 p-4">
+                <p className="text-secondary text-bonsai-slate-600">
+                  Toggle a category into Active to start filling its three slots.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {activeIdentities.map((identityWithSlots) => (
+                  <IdentityCategoryRow
+                    key={identityWithSlots.identity.id}
+                    identityWithSlots={identityWithSlots}
+                    showFocusToggle
+                    focusToggleDisabled={false}
+                    onToggleFocus={(nextIsActive) => toggleIdentityFocus(identityWithSlots.identity.id, nextIsActive)}
+                    onUploadBadge={async (identityId, file) => uploadBadge(identityId, file)}
+                    onOpenPicker={(slotIndex) => openPicker(identityWithSlots.identity.id, slotIndex)}
+                    onOpenGoal={handleOpenGoal}
+                    onCompleteGoal={(slotIndex) => completeGoalInSlot(identityWithSlots.identity.id, slotIndex)}
+                    onUpdateIdentityCopy={updateIdentityCopy}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Passive identities */}
+          <section>
+            <h2 className="text-body font-semibold text-bonsai-brown-700 mb-4">Passive identities</h2>
+
+            <div className="space-y-4">
+              {passiveIdentities.map((identityWithSlots) => {
+                const isDisabled = !canEnableMoreActiveIdentities
+                return (
+                  <IdentityCategoryRow
+                    key={identityWithSlots.identity.id}
+                    identityWithSlots={identityWithSlots}
+                    showFocusToggle
+                    focusToggleDisabled={isDisabled}
+                    onToggleFocus={(nextIsActive) =>
+                      toggleIdentityFocus(identityWithSlots.identity.id, nextIsActive)
+                    }
+                    onUploadBadge={async (identityId, file) => uploadBadge(identityId, file)}
+                    onOpenPicker={(slotIndex) => openPicker(identityWithSlots.identity.id, slotIndex)}
+                    onOpenGoal={handleOpenGoal}
+                    onCompleteGoal={(slotIndex) => completeGoalInSlot(identityWithSlots.identity.id, slotIndex)}
+                    onUpdateIdentityCopy={updateIdentityCopy}
+                  />
+                )
+              })}
+
+              {passiveIdentities.length === 0 && (
+                <div className="rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50/50 p-4">
+                  <p className="text-secondary text-bonsai-slate-600">All categories are currently active.</p>
+                </div>
+              )}
             </div>
-          </div>
+          </section>
         </div>
       )}
 
-      {/* Active goals grid: responsive (1 col mobile, 2 cols tablet, 3 cols desktop) */}
-      {!loading && activeGoals.length > 0 && (
-        <div className="mb-8">
-          <h2 className="mb-3 text-body font-semibold text-bonsai-brown-700">
-            Active goals
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {activeGoals.map((goal) => (
-              <GoalGaugeCard
-                key={goal.id}
-                goal={goal}
-                milestones={milestonesByGoal[goal.id] ?? []}
-                onClick={() => handleGoalClick(goal.id)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Inactive goals grid: only visible in Goals section */}
-      {!loading && inactiveGoals.length > 0 && (
-        <div>
-          <h2 className="mb-3 text-body font-semibold text-bonsai-brown-700">
-            Inactive goals
-          </h2>
-          <p className="mb-2 text-secondary text-bonsai-slate-600">
-            These goals do not appear in widgets or briefings but can still be updated here.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {inactiveGoals.map((goal) => (
-              <GoalGaugeCard
-                key={goal.id}
-                goal={goal}
-                milestones={milestonesByGoal[goal.id] ?? []}
-                onClick={() => handleGoalClick(goal.id)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Add/Edit goal modal */}
-      <AddEditGoalModal
-        isOpen={modalOpen}
-        onClose={handleCloseModal}
-        onCreateGoal={createGoal}
-        onUpdateGoal={updateGoal}
-        onDeleteGoal={deleteGoal}
-        goal={editingGoal}
+      <IdentitySlotPickerModal
+        key={`${pickerIdentityId ?? 'none'}-${pickerSlotIndex}-${currentPickerSlot?.item_type ?? 'empty'}-${currentPickerSlot?.habit?.id ?? ''}-${currentPickerSlot?.goal?.id ?? ''}`}
+        isOpen={pickerOpen && !!pickerIdentityId}
+        identityId={pickerIdentityId ?? ''}
+        identityIsActive={pickerIdentityWithSlots?.identity.is_active ?? false}
+        slotIndex={pickerSlotIndex}
+        onClose={closePicker}
+        currentSlot={currentPickerSlot}
+        onAssignHabit={async (habitId) => {
+          if (!pickerIdentityId) return
+          await setSlotHabit(pickerIdentityId, pickerSlotIndex, habitId)
+        }}
+        onAssignGoal={async (goalId) => {
+          if (!pickerIdentityId) return
+          await setSlotGoal(pickerIdentityId, pickerSlotIndex, goalId)
+        }}
       />
     </div>
   )
