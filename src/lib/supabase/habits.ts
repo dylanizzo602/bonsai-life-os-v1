@@ -5,6 +5,7 @@ import {
   updateReminder,
   deleteReminder,
   advanceReminderToNextOccurrenceIfDueOn,
+  habitReminderInstantForLocalToday,
 } from './reminders'
 import { serializeRecurrencePattern } from '../recurrence'
 import type { RecurrencePattern } from '../recurrence'
@@ -44,14 +45,6 @@ function recurrenceForHabitFrequency(
   return serializeRecurrencePattern(pattern)
 }
 
-/** Build first remind_at ISO string for today at given time (HH:mm or HH:mm:ss) */
-function firstRemindAt(reminderTime: string): string {
-  const now = new Date()
-  const ymd = now.toISOString().slice(0, 10)
-  const timePart = reminderTime.length <= 5 ? `${reminderTime}:00` : reminderTime.slice(0, 8)
-  return `${ymd}T${timePart}`
-}
-
 /**
  * Fetch all habits ordered by sort_order then created_at.
  */
@@ -80,7 +73,7 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
       input.frequency ?? 'daily',
       input.frequency_target ?? null
     )
-    const remindAt = firstRemindAt(input.reminder_time)
+    const remindAt = habitReminderInstantForLocalToday(input.reminder_time)
     const reminder = await createReminder({
       name: input.name,
       remind_at: remindAt,
@@ -145,7 +138,7 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
   let reminderId: string | null = habit.reminder_id
   if (addToTodos && reminderTime) {
     const recurrence = recurrenceForHabitFrequency(frequency, frequencyTarget)
-    const remindAt = firstRemindAt(reminderTime)
+    const remindAt = habitReminderInstantForLocalToday(reminderTime)
     if (reminderId) {
       await updateReminder(reminderId, {
         name: input.name ?? habit.name,

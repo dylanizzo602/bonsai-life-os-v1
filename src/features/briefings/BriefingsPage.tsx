@@ -30,6 +30,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useCalendarAgenda } from './hooks/useCalendarAgenda'
 import { getDueStatus } from '../tasks/utils/date'
 import { getAvailableTasksFromList } from '../tasks/utils/available'
+import { habitReminderInstantForLocalDay } from '../../lib/supabase/reminders'
 
 /** Total steps in the flow (greeting + overdue + inbox review + plan + 4 reflection + completion) */
 const TOTAL_STEPS = 9
@@ -241,7 +242,9 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
           const linked = reminders.find((r) => r.id === habit.reminder_id!)
           const remindAt =
             linked?.remind_at ??
-            (habit.reminder_time ? `${todayYMD}T${habit.reminder_time}` : null)
+            (habit.reminder_time
+              ? habitReminderInstantForLocalDay(todayYMD, habit.reminder_time)
+              : null)
           return { habit, remindAt }
         })
 

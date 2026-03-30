@@ -88,6 +88,29 @@ function parseISODateLocal(isoString: string | null | undefined): Date | null {
   return isNaN(d.getTime()) ? null : d
 }
 
+/**
+ * Habit reminders: combine linked reminder.remind_at (which calendar occurrence) with habit.reminder_time (wall clock in settings).
+ * Legacy rows stored naive times as UTC so the clock in the DB disagreed with settings (e.g. 12:30 settings → 8:30 local display).
+ * Returns an ISO instant for due labels, colors, and overdue logic that matches the habit modal time.
+ */
+export function habitReminderEffectiveInstant(
+  remindAt: string | null,
+  wallTimeHHmm: string | null | undefined
+): string | null {
+  if (!remindAt) return null
+  if (wallTimeHHmm == null || String(wallTimeHHmm).trim() === '') return remindAt
+  const d = parseISODateLocal(remindAt)
+  if (!d) return remindAt
+  const raw = String(wallTimeHHmm).trim()
+  const normalized = raw.length <= 5 ? `${raw}:00` : raw.slice(0, 8)
+  const parts = normalized.split(':').map((x) => parseInt(x, 10))
+  const hh = parts[0] ?? 0
+  const mm = parts[1] ?? 0
+  const ss = parts[2] ?? 0
+  const local = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hh, mm, ss)
+  return local.toISOString()
+}
+
 /** Return true when an ISO string refers to today's local calendar day (ignoring time). */
 function isTodayISO(isoString: string | null | undefined): boolean {
   const d = parseISODateLocal(isoString)

@@ -2,7 +2,7 @@
 
 import { Button } from '../../components/Button'
 import { BellIcon } from '../../components/icons'
-import { getDueStatus, formatStartDueDisplay } from '../tasks/utils/date'
+import { getDueStatus, formatStartDueDisplay, habitReminderEffectiveInstant } from '../tasks/utils/date'
 import type { HabitWithStreaks } from './types'
 
 /** Format reminder date for display: "Due Today", "Due Tomorrow", or "Due {date}" using shared task/reminder helpers */
@@ -40,13 +40,18 @@ export interface HabitReminderItemProps {
 export function HabitReminderItem({
   habit,
   remindAt,
+  reminderTime,
   onMarkComplete,
   onSkip,
   hideSkip = false,
   density = 'default',
 }: HabitReminderItemProps) {
+  /* Effective instant: occurrence date from remind_at + clock from habit settings (fixes legacy UTC skew vs modal) */
+  const wallTime = reminderTime ?? habit.reminder_time
+  const effectiveRemindAt = habitReminderEffectiveInstant(remindAt, wallTime)
+
   /* Due status for styling: overdue = red, due today/tomorrow = yellow/amber (same as tasks and reminders) */
-  const dueStatus = remindAt != null ? getDueStatus(remindAt) : null
+  const dueStatus = effectiveRemindAt != null ? getDueStatus(effectiveRemindAt) : null
   const isRemindOverdue = dueStatus === 'overdue'
   const isRemindDueSoon = dueStatus === 'dueSoon'
 
@@ -88,7 +93,7 @@ export function HabitReminderItem({
       >
         <BellIcon className="w-4 h-4 shrink-0" aria-hidden />
         <span className="whitespace-nowrap">
-          {formatNotificationDate(remindAt)}
+          {formatNotificationDate(effectiveRemindAt)}
         </span>
       </div>
 

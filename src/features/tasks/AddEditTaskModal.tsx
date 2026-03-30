@@ -825,13 +825,28 @@ export function AddEditTaskModal({
         >
           <TaskStatusIndicator status={status} />
         </button>
-        {/* Task title input: Takes remaining space */}
+        {/* Task title input: Takes remaining space; in edit mode persist on blur like description (footer has no Save) */}
         <div className="flex-1">
           <Input
             placeholder="What needs to be done?"
             className="border-bonsai-slate-300"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            onBlur={async () => {
+              /* Edit mode: persist title when user leaves the field so "auto-saved" matches behavior */
+              if (!isEditMode || !task || !onUpdateTask) return
+              const trimmed = title.trim()
+              if (!trimmed) {
+                setTitle(task.title)
+                return
+              }
+              if (trimmed === task.title) return
+              try {
+                await onUpdateTask(task.id, { title: trimmed })
+              } catch (error) {
+                console.error('Failed to auto-save task title from modal:', error)
+              }
+            }}
             spellCheck
           />
         </div>

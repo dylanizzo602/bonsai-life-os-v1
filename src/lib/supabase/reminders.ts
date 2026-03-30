@@ -91,12 +91,62 @@ export async function deleteReminder(id: string): Promise<void> {
   }
 }
 
-/** Parse ISO or date string to YYYY-MM-DD for recurrence */
+/** Format a Date as the user's local calendar date YYYY-MM-DD (not UTC). */
+function formatLocalYMD(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/**
+ * Parse ISO timestamp to local calendar YYYY-MM-DD for recurrence and habit-dismiss matching.
+ * Using UTC date here shifted reminders near midnight vs the user's timezone.
+ */
 function toDateOnly(iso: string | null): string | null {
   if (!iso) return null
   if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso
   const d = new Date(iso)
-  return d.toISOString().slice(0, 10)
+  if (Number.isNaN(d.getTime())) return null
+  return formatLocalYMD(d)
+}
+
+/**
+ * Next occurrence at the same local time-of-day as referenceIso, on the given local calendar day.
+ * Produces a full ISO string for TIMESTAMPTZ so Postgres stores the correct instant (not naive UTC).
+ */
+function remindAtForLocalDate(ymd: string, referenceIso: string | null): string {
+  const ref = referenceIso ? new Date(referenceIso) : new Date()
+  const h = ref.getHours()
+  const min = ref.getMinutes()
+  const s = ref.getSeconds()
+  const ms = ref.getMilliseconds()
+  const [y, mo, d] = ymd.split('-').map(Number)
+  const local = new Date(y ?? 0, (mo ?? 1) - 1, d ?? 1, h, min, s, ms)
+  return local.toISOString()
+}
+
+/**
+ * Build TIMESTAMPTZ for a habit reminder on a local calendar day (YYYY-MM-DD) at reminderTime (HH:mm or HH:mm:ss).
+ * Used when linking UI to habit_time without a loaded reminder row, and for create/update.
+ */
+export function habitReminderInstantForLocalDay(ymd: string, reminderTime: string): string {
+  const timePart = reminderTime.length <= 5 ? `${reminderTime}:00` : reminderTime.slice(0, 8)
+  const parts = timePart.split(':').map((x) => parseInt(x, 10))
+  const hh = parts[0] ?? 0
+  const mm = parts[1] ?? 0
+  const ss = parts[2] ?? 0
+  const [y, mo, d] = ymd.split('-').map(Number)
+  const local = new Date(y ?? 0, (mo ?? 1) - 1, d ?? 1, hh, mm, ss)
+  return local.toISOString()
+}
+
+/**
+ * Build TIMESTAMPTZ for a new habit reminder: today's local date at reminderTime (HH:mm or HH:mm:ss).
+ */
+export function habitReminderInstantForLocalToday(reminderTime: string): string {
+  const now = new Date()
+  return habitReminderInstantForLocalDay(formatLocalYMD(now), reminderTime)
 }
 
 /**
@@ -138,10 +188,8 @@ export async function toggleReminderComplete(id: string, completed: boolean): Pr
     return updateReminder(id, { completed: true })
   }
 
-  /* Preserve time from original remind_at; use noon if date-only */
-  const orig = reminder.remind_at
-  const timePart = orig && orig.includes('T') ? orig.slice(11, 19) : '12:00:00'
-  const nextRemindAt = `${nextDueYMD}T${timePart}`
+  /* Preserve local time-of-day from the current occurrence (not UTC substring, which skews display vs settings) */
+  const nextRemindAt = remindAtForLocalDate(nextDueYMD, reminder.remind_at)
 
   return updateReminder(id, { remind_at: nextRemindAt, completed: false })
 }
@@ -174,10 +222,8 @@ export async function advanceReminderToNextOccurrence(id: string): Promise<Remin
     const currentDate = new Date(dueYMD + 'T12:00:00')
     const nextDate = new Date(currentDate)
     nextDate.setDate(currentDate.getDate() + 1)
-    const nextDueYMD = nextDate.toISOString().slice(0, 10)
-    const orig = reminder.remind_at
-    const timePart = orig && orig.includes('T') ? orig.slice(11, 19) : '12:00:00'
-    const nextRemindAt = `${nextDueYMD}T${timePart}`
+    const nextDueYMD = formatLocalYMD(nextDate)
+    const nextRemindAt = remindAtForLocalDate(nextDueYMD, reminder.remind_at)
     return updateReminder(id, { remind_at: nextRemindAt })
   }
 
@@ -186,9 +232,7 @@ export async function advanceReminderToNextOccurrence(id: string): Promise<Remin
     return reminder
   }
 
-  const orig = reminder.remind_at
-  const timePart = orig && orig.includes('T') ? orig.slice(11, 19) : '12:00:00'
-  const nextRemindAt = `${nextDueYMD}T${timePart}`
+  const nextRemindAt = remindAtForLocalDate(nextDueYMD, reminder.remind_at)
   return updateReminder(id, { remind_at: nextRemindAt })
 }
 

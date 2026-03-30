@@ -33,6 +33,7 @@ import {
   loadTodaysLineupTaskIds,
   saveTodaysLineupTaskIds,
 } from '../../lib/todaysLineup'
+import { habitReminderInstantForLocalDay } from '../../lib/supabase/reminders'
 
 /**
  * Dropdown content for Add new task: "Add new reminder" option; click opens reminder modal.
@@ -586,7 +587,9 @@ export function TasksPage() {
         const linked = reminders.find((r) => r.id === habit.reminder_id!)
         const remindAt =
           linked?.remind_at ??
-          (habit.reminder_time ? `${todayYMD}T${habit.reminder_time}` : null)
+          (habit.reminder_time
+            ? habitReminderInstantForLocalDay(todayYMD, habit.reminder_time)
+            : null)
         return { habit, remindAt }
       })
   }, [habitsWithStreaks, reminders, todayYMD])
