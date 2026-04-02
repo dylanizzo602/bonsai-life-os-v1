@@ -3,6 +3,7 @@
  * Bottom row: tag, dependency icons, time estimate, start/due date, and flag.
  * No hover tooltips; safe for compact views and small screens. */
 
+import { useState, useRef } from 'react'
 import {
   CalendarIcon,
   BlockedIcon,
@@ -18,9 +19,11 @@ import {
 } from '../../components/icons'
 import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { Tooltip } from '../../components/Tooltip'
+import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
 import { getDueStatus, formatStartDueDisplay } from './utils/date'
-import type { Task, TaskPriority, TaskStatus } from './types'
+import { useUserTimeZone } from '../settings/useUserTimeZone'
+import type { Task, TaskPriority, TaskStatus, UpdateTaskInput } from './types'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
 type DisplayStatus = 'open' | 'in_progress' | 'complete'
@@ -30,8 +33,8 @@ export interface CompactTaskItemProps {
   task: Task
   /** Whether this task has subtasks (shows chevron and allows expand/collapse) */
   hasSubtasks?: boolean
-  /** Total number of subtasks linked to this task (for subtask count indicator) */
-  subtaskCount?: number
+  /** Number of subtasks not yet completed (subtask icon badge; completed excluded) */
+  incompleteSubtaskCount?: number
   /** Whether subtasks section is expanded */
   expanded?: boolean
   /** Toggle expand/collapse when chevron is clicked */
@@ -58,6 +61,8 @@ export interface CompactTaskItemProps {
   onDependencyClick?: () => void
   /** Format date for display (e.g. Jan 22 at 12pm) */
   formatDueDate?: (iso: string | null | undefined) => string | null
+  /** Optional task update (priority picker; same behavior as FullTaskItem / TabletTaskItem) */
+  onUpdateTask?: (taskId: string, input: UpdateTaskInput) => Promise<void>
 }
 
 /** Map TaskStatus to display status for the status circle */
@@ -145,7 +150,7 @@ function getPriorityFlagClasses(priority: TaskPriority): string {
 export function CompactTaskItem({
   task,
   hasSubtasks = false,
-  subtaskCount = 0,
+  incompleteSubtaskCount = 0,
   expanded = false,
   onToggleExpand,
   isBlocked = false,
@@ -157,15 +162,20 @@ export function CompactTaskItem({
   onRemove,
   onDependencyClick,
   formatDueDate: _formatDueDate,
+  onUpdateTask,
 }: CompactTaskItemProps) {
+  const timeZone = useUserTimeZone()
   const displayStatus = getDisplayStatus(task.status)
   /* Date display: single line for start/due (Starts Jan 1, Due Jan 3 at 5pm, Jan 1 - Jan 3 at 5pm, etc.) */
-  const dateDisplay = formatStartDueDisplay(task.start_date, task.due_date)
-  const dueStatus = getDueStatus(task.due_date)
+  const dateDisplay = formatStartDueDisplay(task.start_date, task.due_date, timeZone)
+  const dueStatus = getDueStatus(task.due_date, timeZone)
   const isDueOverdue = dueStatus === 'overdue'
   const isDueSoon = dueStatus === 'dueSoon'
   const isRecurring = Boolean(task.recurrence_pattern)
   const priority: TaskPriority = task.priority ?? 'medium'
+  /* Priority picker state: matches tablet/desktop task rows */
+  const [isPriorityModalOpen, setIsPriorityModalOpen] = useState(false)
+  const priorityButtonRef = useRef<HTMLButtonElement>(null)
   const tagDisplay = task.tags?.[0] ?? null
   /* Tag pill class by color (mint, blue, lavender, yellow, periwinkle, default) */
   const tagPillClass = tagDisplay
@@ -181,6 +191,45 @@ export function CompactTaskItem({
               ? 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800'
               : 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-bonsai-slate-100 text-bonsai-slate-700'
     : ''
+
+  /* Priority flag: same interactive pattern as FullTaskItem / TabletTaskItem when onUpdateTask is set */
+  const priorityControl = onUpdateTask ? (
+    <button
+      ref={priorityButtonRef}
+      type="button"
+      data-task-interactive
+      onClick={(e) => {
+        e.stopPropagation()
+        setIsPriorityModalOpen(true)
+      }}
+      className={`ml-1 shrink-0 inline-flex items-center justify-center rounded p-0.5 transition-colors hover:bg-bonsai-slate-100 disabled:cursor-default disabled:hover:bg-transparent ${
+        task.goal_id
+          ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
+          : getPriorityFlagClasses(priority)
+      }`}
+      aria-label={task.goal_id ? 'Edit priority (linked to goal)' : 'Edit priority'}
+    >
+      {task.goal_id ? (
+        <TrophyIcon className="w-3.5 h-3.5" />
+      ) : (
+        <FlagIcon className="w-3.5 h-3.5" />
+      )}
+    </button>
+  ) : (
+    <span
+      className={`ml-1 shrink-0 inline-flex ${
+        task.goal_id
+          ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
+          : getPriorityFlagClasses(priority)
+      }`}
+    >
+      {task.goal_id ? (
+        <TrophyIcon className="w-3.5 h-3.5" />
+      ) : (
+        <FlagIcon className="w-3.5 h-3.5" />
+      )}
+    </span>
+  )
 
   return (
     <div
@@ -255,11 +304,11 @@ export function CompactTaskItem({
       <div className="mt-2 flex min-w-0 flex-nowrap items-center gap-1 text-xs text-bonsai-slate-600 overflow-x-auto">
         {/* Tag: show first tag if available; shrink-0 so row stays single line */}
         {(tagDisplay != null ? <span className={tagPillClass}>{tagDisplay.name}</span> : null)}
-        {/* Subtask count indicator: shows total subtasks when present, using a distinct tasks icon */}
-        {hasSubtasks && subtaskCount > 0 && (
+        {/* Subtask count indicator: incomplete subtasks only (completed not counted) */}
+        {hasSubtasks && incompleteSubtaskCount > 0 && (
           <span className="flex shrink-0 items-center gap-0.5 text-bonsai-slate-600">
             <TasksIcon className="w-3.5 h-3.5" aria-hidden />
-            <span>{subtaskCount}</span>
+            <span>{incompleteSubtaskCount}</span>
           </span>
         )}
         {/* Description icon when task has description (consistent with main task list) */}
@@ -343,19 +392,7 @@ export function CompactTaskItem({
                   <RepeatIcon className="w-3.5 h-3.5 shrink-0 text-bonsai-slate-500" aria-hidden />
                   <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
                   <span className="truncate">{dateDisplay}</span>
-                  <span
-                    className={`ml-1 shrink-0 ${
-                      task.goal_id
-                        ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
-                        : getPriorityFlagClasses(priority)
-                    }`}
-                  >
-                    {task.goal_id ? (
-                      <TrophyIcon className="w-3.5 h-3.5" />
-                    ) : (
-                      <FlagIcon className="w-3.5 h-3.5" />
-                    )}
-                  </span>
+                  {priorityControl}
                 </span>
               </Tooltip>
             ) : (
@@ -370,37 +407,29 @@ export function CompactTaskItem({
               >
                 <CalendarIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
                 <span className="truncate">{dateDisplay}</span>
-                <span
-                  className={`ml-1 shrink-0 ${
-                    task.goal_id
-                      ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
-                      : getPriorityFlagClasses(priority)
-                  }`}
-                >
-                  {task.goal_id ? (
-                    <TrophyIcon className="w-3.5 h-3.5" />
-                  ) : (
-                    <FlagIcon className="w-3.5 h-3.5" />
-                  )}
-                </span>
+                {priorityControl}
               </span>
             )
           : (
-            <span
-              className={`ml-1 shrink-0 ${
-                task.goal_id
-                  ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
-                  : getPriorityFlagClasses(priority)
-              }`}
-            >
-              {task.goal_id ? (
-                <TrophyIcon className="w-3.5 h-3.5" />
-              ) : (
-                <FlagIcon className="w-3.5 h-3.5" />
-              )}
-            </span>
+            priorityControl
           )}
       </div>
+      {/* Priority popover: same modal as other breakpoints when onUpdateTask is set */}
+      {onUpdateTask && (
+        <PriorityPickerModal
+          isOpen={isPriorityModalOpen}
+          onClose={() => setIsPriorityModalOpen(false)}
+          value={priority}
+          triggerRef={priorityButtonRef}
+          onSelect={async (newPriority) => {
+            try {
+              await onUpdateTask(task.id, { priority: newPriority })
+            } catch (error) {
+              console.error('Failed to update priority (compact):', error)
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

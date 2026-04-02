@@ -1,176 +1,194 @@
-/* Date helpers for task views (e.g. overdue detection, start/due display) */
+/* Date helpers for task views (e.g. overdue detection, start/due display) — zoned with IANA timeZone */
+import { DateTime } from 'luxon'
 
 /**
- * Returns true if dueDate is set and is now or earlier (overdue).
- * Date-only (YYYY-MM-DD) is treated as end of that day in local time.
+ * Map an ISO due/start string to a DateTime in the user's zone for calendar-day and display logic.
+ * Plain YYYY-MM-DD is that civil date in `timeZone`.
+ * UTC midnight (T00:00:00Z) with no real wall time is treated as the **date part only** (matches date picker),
+ * not as an instant that shifts to the previous local day.
+ * Non-midnight times use the instant, then convert to `timeZone`.
  */
-export function isOverdue(dueDate: string | null | undefined): boolean {
-  if (!dueDate) return false
-  const isDateOnly = !dueDate.includes('T')
-  const endOfDue =
-    isDateOnly
-      ? (() => {
-          const [y, m, day] = dueDate.split('-').map(Number)
-          const d = new Date(y, (m ?? 1) - 1, day ?? 1)
-          d.setHours(23, 59, 59, 999)
-          return d.getTime()
-        })()
-      : new Date(dueDate).getTime()
-  if (Number.isNaN(endOfDue)) return false
-  return endOfDue < Date.now()
+function toZonedDateTime(
+  isoString: string | null | undefined,
+  timeZone: string,
+): DateTime | null {
+  if (isoString == null || isoString === '') return null
+  if (!isoString.includes('T')) {
+    const dt = DateTime.fromISO(isoString, { zone: timeZone })
+    return dt.isValid ? dt : null
+  }
+  if (!hasExplicitTimeInString(isoString)) {
+    const datePart = isoString.slice(0, 10)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      const dt = DateTime.fromISO(datePart, { zone: timeZone })
+      return dt.isValid ? dt : null
+    }
+  }
+  const parsed = DateTime.fromISO(isoString, { setZone: true })
+  if (!parsed.isValid) return null
+  return parsed.setZone(timeZone)
+}
+
+/** Detect non-midnight time in the raw string (00:00 is treated as date-only / legacy UTC midnight). */
+function hasExplicitTimeInString(isoString: string): boolean {
+  const timeMatch = isoString.match(/T(\d{2}):(\d{2})/)
+  return !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
 }
 
 /**
- * Returns true if startDate is set and now is after the start date.
- * Date-only (YYYY-MM-DD) is treated as end of that day in local time.
+ * Returns true if dueDate is set and is now or earlier (overdue).
+ * Date-only (YYYY-MM-DD) is end of that civil day in `timeZone`.
+ * Legacy UTC midnight (T00:00:00Z) uses end of that calendar day in `timeZone`.
+ * Explicit times compare instants to now.
  */
-export function isPastStartDate(startDate: string | null | undefined): boolean {
+export function isOverdue(dueDate: string | null | undefined, timeZone: string): boolean {
+  if (!dueDate) return false
+  const hasT = dueDate.includes('T')
+  const explicit = hasExplicitTimeInString(dueDate)
+  if (!hasT) {
+    const end = DateTime.fromISO(dueDate, { zone: timeZone }).endOf('day')
+    if (!end.isValid) return false
+    return end.toMillis() < Date.now()
+  }
+  if (!explicit) {
+    const z = toZonedDateTime(dueDate, timeZone)
+    if (!z) return false
+    return z.endOf('day').toMillis() < Date.now()
+  }
+  const instant = DateTime.fromISO(dueDate, { setZone: true })
+  if (!instant.isValid) return false
+  return instant.toMillis() < Date.now()
+}
+
+/**
+ * Returns true if startDate is set and now is after the start boundary.
+ * Same date-only / midnight / explicit-time rules as isOverdue.
+ */
+export function isPastStartDate(startDate: string | null | undefined, timeZone: string): boolean {
   if (!startDate) return false
-  const isDateOnly = !startDate.includes('T')
-  const endOfStart =
-    isDateOnly
-      ? (() => {
-          const [y, m, day] = startDate.split('-').map(Number)
-          const d = new Date(y, (m ?? 1) - 1, day ?? 1)
-          d.setHours(23, 59, 59, 999)
-          return d.getTime()
-        })()
-      : new Date(startDate).getTime()
-  if (Number.isNaN(endOfStart)) return false
-  return endOfStart < Date.now()
+  const hasT = startDate.includes('T')
+  const explicit = hasExplicitTimeInString(startDate)
+  if (!hasT) {
+    const end = DateTime.fromISO(startDate, { zone: timeZone }).endOf('day')
+    if (!end.isValid) return false
+    return end.toMillis() < Date.now()
+  }
+  if (!explicit) {
+    const z = toZonedDateTime(startDate, timeZone)
+    if (!z) return false
+    return z.endOf('day').toMillis() < Date.now()
+  }
+  const instant = DateTime.fromISO(startDate, { setZone: true })
+  if (!instant.isValid) return false
+  return instant.toMillis() < Date.now()
 }
 
 /** Classification for due dates: none (no special status), dueSoon (within 24h), overdue (past end of due day). */
 export type DueStatus = 'none' | 'dueSoon' | 'overdue'
 
+/** For timed dues, amber “due soon” only in the last hour before the instant (not all morning on due day). */
+const DUE_SOON_BEFORE_INSTANT_MS = 60 * 60 * 1000
+
 /**
- * Get due status for a given due date:
- * - 'overdue': due calendar day is strictly before today.
- * - 'dueSoon': due calendar day is today, or in the future but within the next 24 hours.
- * - 'none': all other cases (no due date or further in the future).
+ * Get due status for a given due date in `timeZone`:
+ * - Date-only / legacy midnight: same as before — overdue if day before today; dueSoon if due calendar day is today or next day starts within 24h.
+ * - Explicit clock time: compare instants — overdue after due time; dueSoon only in the hour before; neutral until then.
  */
-export function getDueStatus(dueDate: string | null | undefined): DueStatus {
+export function getDueStatus(dueDate: string | null | undefined, timeZone: string): DueStatus {
   if (!dueDate) return 'none'
-  const due = parseISODateLocal(dueDate)
+  const due = toZonedDateTime(dueDate, timeZone)
   if (!due) return 'none'
 
-  const today = new Date()
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0)
-  const todayKey = todayStart.getFullYear() * 10000 + (todayStart.getMonth() + 1) * 100 + todayStart.getDate()
-  const dueKey = due.getFullYear() * 10000 + (due.getMonth() + 1) * 100 + due.getDate()
+  const hasT = dueDate.includes('T')
+  const explicit = hasExplicitTimeInString(dueDate)
+
+  /* Timed reminder / due-at: do not treat “today” as due-soon until we are near or past the clock time */
+  if (hasT && explicit) {
+    const instant = DateTime.fromISO(dueDate, { setZone: true })
+    if (!instant.isValid) return 'none'
+    const dueMs = instant.toMillis()
+    const nowMs = Date.now()
+    if (dueMs < nowMs) return 'overdue'
+    const untilDue = dueMs - nowMs
+    if (untilDue <= DUE_SOON_BEFORE_INSTANT_MS) return 'dueSoon'
+    return 'none'
+  }
+
+  const now = DateTime.now().setZone(timeZone)
+  const todayStart = now.startOf('day')
+  const dueDayStart = due.startOf('day')
+
+  const todayKey = todayStart.year * 10000 + todayStart.month * 100 + todayStart.day
+  const dueKey = dueDayStart.year * 10000 + dueDayStart.month * 100 + dueDayStart.day
 
   if (dueKey < todayKey) return 'overdue'
   if (dueKey === todayKey) return 'dueSoon'
 
-  // Future date: mark as dueSoon when the start of that day is within the next 24 hours.
-  const dueStart = new Date(due.getFullYear(), due.getMonth(), due.getDate(), 0, 0, 0, 0)
   const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000
-  const diff = dueStart.getTime() - today.getTime()
-
+  const diff = dueDayStart.toMillis() - now.toMillis()
   if (diff >= 0 && diff <= TWENTY_FOUR_HOURS_MS) return 'dueSoon'
   return 'none'
 }
 
-/** Parse ISO to Date using local date for date-only/midnight so timezone does not shift the calendar day (e.g. Feb 28 UTC midnight stays Feb 28 local) */
-function parseISODateLocal(isoString: string | null | undefined): Date | null {
-  if (isoString == null || isoString === '') return null
-  const timeMatch = isoString.match(/T(\d{2}):(\d{2})/)
-  const hasExplicitTime =
-    !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
-  const isDateOnly = !isoString.includes('T') || !hasExplicitTime
-  if (isDateOnly) {
-    const datePart = isoString.includes('T') ? isoString.slice(0, 10) : isoString
-    const [y, m, day] = datePart.split('-').map(Number)
-    const d = new Date(y ?? 0, (m ?? 1) - 1, day ?? 1)
-    return isNaN(d.getTime()) ? null : d
-  }
-  const d = new Date(isoString)
-  return isNaN(d.getTime()) ? null : d
-}
-
-/**
- * Habit reminders: combine linked reminder.remind_at (which calendar occurrence) with habit.reminder_time (wall clock in settings).
- * Legacy rows stored naive times as UTC so the clock in the DB disagreed with settings (e.g. 12:30 settings → 8:30 local display).
- * Returns an ISO instant for due labels, colors, and overdue logic that matches the habit modal time.
- */
-export function habitReminderEffectiveInstant(
-  remindAt: string | null,
-  wallTimeHHmm: string | null | undefined
-): string | null {
-  if (!remindAt) return null
-  if (wallTimeHHmm == null || String(wallTimeHHmm).trim() === '') return remindAt
-  const d = parseISODateLocal(remindAt)
-  if (!d) return remindAt
-  const raw = String(wallTimeHHmm).trim()
-  const normalized = raw.length <= 5 ? `${raw}:00` : raw.slice(0, 8)
-  const parts = normalized.split(':').map((x) => parseInt(x, 10))
-  const hh = parts[0] ?? 0
-  const mm = parts[1] ?? 0
-  const ss = parts[2] ?? 0
-  const local = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hh, mm, ss)
-  return local.toISOString()
-}
-
-/** Return true when an ISO string refers to today's local calendar day (ignoring time). */
-function isTodayISO(isoString: string | null | undefined): boolean {
-  const d = parseISODateLocal(isoString)
+/** Return true when an ISO string is today's calendar day in `timeZone`. */
+function isTodayInZone(isoString: string | null | undefined, timeZone: string): boolean {
+  const d = toZonedDateTime(isoString, timeZone)
   if (!d) return false
-  const today = new Date()
+  const now = DateTime.now().setZone(timeZone)
+  return d.year === now.year && d.month === now.month && d.day === now.day
+}
+
+/** Return true when an ISO string is tomorrow's calendar day in `timeZone`. */
+function isTomorrowInZone(isoString: string | null | undefined, timeZone: string): boolean {
+  const d = toZonedDateTime(isoString, timeZone)
+  if (!d) return false
+  const tomorrow = DateTime.now().setZone(timeZone).plus({ days: 1 }).startOf('day')
+  const dueDay = d.startOf('day')
   return (
-    d.getFullYear() === today.getFullYear() &&
-    d.getMonth() === today.getMonth() &&
-    d.getDate() === today.getDate()
+    dueDay.year === tomorrow.year &&
+    dueDay.month === tomorrow.month &&
+    dueDay.day === tomorrow.day
   )
 }
 
-/** Return true when an ISO string refers to tomorrow's local calendar day (ignoring time). */
-function isTomorrowISO(isoString: string | null | undefined): boolean {
-  const d = parseISODateLocal(isoString)
-  if (!d) return false
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  return (
-    d.getFullYear() === tomorrow.getFullYear() &&
-    d.getMonth() === tomorrow.getMonth() &&
-    d.getDate() === tomorrow.getDate()
-  )
-}
-
-/** Build "Due Today" / "Due Tomorrow" with optional " at {time}" when due date has explicit time. */
-function getDueTodayOrTomorrowLabel(
-  dueDate: string | null | undefined,
-  dayLabel: 'Today' | 'Tomorrow'
-): string {
-  const d = parseISODateLocal(dueDate)
-  if (!d) return `Due ${dayLabel}`
-  const timeMatch = dueDate?.match(/T(\d{2}):(\d{2})/)
-  const hasExplicitTime =
-    !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
-  if (!dueDate?.includes('T') || !hasExplicitTime) return `Due ${dayLabel}`
-  const timeStr = d.toLocaleTimeString('en-US', {
+/** Format wall time for display when the raw ISO encodes a non-midnight time (or legacy rules). */
+function formatWallTimeInZone(isoString: string | null | undefined, timeZone: string): string {
+  const d = toZonedDateTime(isoString, timeZone)
+  if (!d) return ''
+  return d.toLocaleString({
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
   })
+}
+
+/** Build "Due Today" / "Due Tomorrow" with optional " at {time}" when due has explicit time in string. */
+function getDueTodayOrTomorrowLabel(
+  dueDate: string | null | undefined,
+  dayLabel: 'Today' | 'Tomorrow',
+  timeZone: string,
+): string {
+  const d = toZonedDateTime(dueDate, timeZone)
+  if (!d) return `Due ${dayLabel}`
+  const hasT = dueDate?.includes('T')
+  const explicit = hasT && hasExplicitTimeInString(dueDate ?? '')
+  if (!hasT || !explicit) return `Due ${dayLabel}`
+  const timeStr = formatWallTimeInZone(dueDate, timeZone)
   return `Due ${dayLabel} at ${timeStr}`
 }
 
-/** Build "Today" / "Tomorrow" or "Today at {time}" / "Tomorrow at {time}" for use in start–due range. */
+/** Build "Today" / "Tomorrow" or "Today at {time}" for start–due range. */
 function getDueDayOnlyLabel(
   dueDate: string | null | undefined,
-  dayLabel: 'Today' | 'Tomorrow'
+  dayLabel: 'Today' | 'Tomorrow',
+  timeZone: string,
 ): string {
-  const d = parseISODateLocal(dueDate)
+  const d = toZonedDateTime(dueDate, timeZone)
   if (!d) return dayLabel
-  const timeMatch = dueDate?.match(/T(\d{2}):(\d{2})/)
-  const hasExplicitTime =
-    !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
-  if (!dueDate?.includes('T') || !hasExplicitTime) return dayLabel
-  const timeStr = d.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  })
+  const hasT = dueDate?.includes('T')
+  const explicit = hasT && hasExplicitTimeInString(dueDate ?? '')
+  if (!hasT || !explicit) return dayLabel
+  const timeStr = formatWallTimeInZone(dueDate, timeZone)
   return `${dayLabel} at ${timeStr}`
 }
 
@@ -178,107 +196,136 @@ function getDueDayOnlyLabel(
 function ordinalSuffix(day: number): string {
   if (day >= 11 && day <= 13) return 'th'
   switch (day % 10) {
-    case 1: return 'st'
-    case 2: return 'nd'
-    case 3: return 'rd'
-    default: return 'th'
+    case 1:
+      return 'st'
+    case 2:
+      return 'nd'
+    case 3:
+      return 'rd'
+    default:
+      return 'th'
   }
 }
 
-/** Format date with ordinal day for "Starts Oct 6th" style (date-only or midnight treated as local). */
-export function formatDateWithOrdinal(isoString: string | null | undefined): string | null {
-  const d = parseISODateLocal(isoString)
+/** Format date with ordinal day for "Starts Oct 6th" style in `timeZone`. */
+export function formatDateWithOrdinal(
+  isoString: string | null | undefined,
+  timeZone: string,
+): string | null {
+  const d = toZonedDateTime(isoString, timeZone)
   if (!d) return null
-  const month = d.toLocaleDateString('en-US', { month: 'short' })
-  const day = d.getDate()
+  const month = d.toLocaleString({ month: 'short' })
+  const day = d.day
   return `${month} ${day}${ordinalSuffix(day)}`
 }
 
-/** Format as "Jan 22" using local date (date-only/midnight not shifted by timezone). For use in pills and inputs. */
-export function formatDateShort(isoString: string | null | undefined): string | null {
-  const d = parseISODateLocal(isoString)
+/** Format as "Jan 22" in `timeZone` for pills and inputs. */
+export function formatDateShort(isoString: string | null | undefined, timeZone: string): string | null {
+  const d = toZonedDateTime(isoString, timeZone)
   if (!d) return null
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return d.toLocaleString({ month: 'short', day: 'numeric' })
+}
+
+/** Format as "Jan 1, 2025" in `timeZone` for tooltips (matches zoned due labels). */
+export function formatDateTooltipLong(isoString: string | null | undefined, timeZone: string): string | null {
+  const d = toZonedDateTime(isoString, timeZone)
+  if (!d) return null
+  return d.toLocaleString({ month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 /**
  * Format ISO date as "Jan 22" or "Jan 22 at 3:00pm" when time present.
- * Treats strings that only encode a midnight time (e.g. "2026-03-31T00:00:00+00:00")
- * as date-only so that clearing time or storing date-only values does not show
- * a phantom time from timezone conversion.
+ * Midnight-only strings (no explicit time) omit the time portion.
  */
-function formatDateWithOptionalTime(isoString: string | null | undefined): string | null {
-  const d = parseISODateLocal(isoString)
+function formatDateWithOptionalTime(
+  isoString: string | null | undefined,
+  timeZone: string,
+): string | null {
+  const d = toZonedDateTime(isoString, timeZone)
   if (!d) return null
+  const hasT = isoString?.includes('T')
+  const explicit = hasT && hasExplicitTimeInString(isoString ?? '')
+  const isDateOnly = !hasT || !explicit
 
-  const timeMatch = isoString?.match(/T(\d{2}):(\d{2})/)
-  const hasExplicitTime =
-    !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
-  const isDateOnly = !isoString?.includes('T') || !hasExplicitTime
-
-  const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const dateStr = d.toLocaleString({ month: 'short', day: 'numeric' })
   if (isDateOnly) return dateStr
 
-  const timeStr = d.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  })
+  const timeStr = formatWallTimeInZone(isoString, timeZone)
   return `${dateStr} at ${timeStr}`
 }
 
 /**
- * Single display string for task start/due dates:
- * - No dates: null
- * - Start only, future: "Starts Jan 1"
- * - Start only, past: "Started Jan 1"
- * - Due only: "Due Jan 3 at 5pm"
- * - Start + due, not yet at start: "Jan 1 - Jan 3 at 5pm"
- * - Start + due, past start: "Due Jan 3 at 5pm"
+ * Single display string for task start/due dates in `timeZone`.
  */
 export function formatStartDueDisplay(
   startDate: string | null | undefined,
-  dueDate: string | null | undefined
+  dueDate: string | null | undefined,
+  timeZone: string,
 ): string | null {
   const hasStart = startDate != null && startDate !== ''
   const hasDue = dueDate != null && dueDate !== ''
   if (!hasStart && !hasDue) return null
   if (hasStart && !hasDue) {
-    const isToday = isTodayISO(startDate)
-    const formatted = formatDateWithOrdinal(startDate) ?? formatDateWithOptionalTime(startDate)
-    if (!formatted && !isToday) return null
-    if (isToday) {
-      return isPastStartDate(startDate) ? 'Started Today' : 'Starts Today'
+    const today = isTodayInZone(startDate, timeZone)
+    const formatted =
+      formatDateWithOrdinal(startDate, timeZone) ?? formatDateWithOptionalTime(startDate, timeZone)
+    if (!formatted && !today) return null
+    if (today) {
+      return isPastStartDate(startDate, timeZone) ? 'Started Today' : 'Starts Today'
     }
-    return isPastStartDate(startDate) ? `Started ${formatted}` : `Starts ${formatted}`
+    return isPastStartDate(startDate, timeZone) ? `Started ${formatted}` : `Starts ${formatted}`
   }
   if (!hasStart && hasDue) {
-    if (isTodayISO(dueDate)) return getDueTodayOrTomorrowLabel(dueDate, 'Today')
-    if (isTomorrowISO(dueDate)) return getDueTodayOrTomorrowLabel(dueDate, 'Tomorrow')
-    const formatted = formatDateWithOptionalTime(dueDate)
+    if (isTodayInZone(dueDate, timeZone)) return getDueTodayOrTomorrowLabel(dueDate, 'Today', timeZone)
+    if (isTomorrowInZone(dueDate, timeZone))
+      return getDueTodayOrTomorrowLabel(dueDate, 'Tomorrow', timeZone)
+    const formatted = formatDateWithOptionalTime(dueDate, timeZone)
     return formatted ? `Due ${formatted}` : null
   }
   /* hasStart && hasDue */
-  const isDueToday = isTodayISO(dueDate)
-  const isDueTomorrow = isTomorrowISO(dueDate)
-  const dueFormatted = formatDateWithOptionalTime(dueDate)
+  const isDueToday = isTodayInZone(dueDate, timeZone)
+  const isDueTomorrow = isTomorrowInZone(dueDate, timeZone)
+  const dueFormatted = formatDateWithOptionalTime(dueDate, timeZone)
   if (!dueFormatted && !isDueToday && !isDueTomorrow) return null
 
-  if (isPastStartDate(startDate)) {
-    if (isDueToday) return getDueTodayOrTomorrowLabel(dueDate, 'Today')
-    if (isDueTomorrow) return getDueTodayOrTomorrowLabel(dueDate, 'Tomorrow')
+  if (isPastStartDate(startDate, timeZone)) {
+    if (isDueToday) return getDueTodayOrTomorrowLabel(dueDate, 'Today', timeZone)
+    if (isDueTomorrow) return getDueTodayOrTomorrowLabel(dueDate, 'Tomorrow', timeZone)
     return `Due ${dueFormatted}`
   }
 
-  const startFormatted = formatDateWithOptionalTime(startDate)
+  const startFormatted = formatDateWithOptionalTime(startDate, timeZone)
   if (isDueToday) {
-    const dayLabel = getDueDayOnlyLabel(dueDate, 'Today')
+    const dayLabel = getDueDayOnlyLabel(dueDate, 'Today', timeZone)
     return startFormatted ? `${startFormatted} - ${dayLabel}` : `Due ${dayLabel}`
   }
   if (isDueTomorrow) {
-    const dayLabel = getDueDayOnlyLabel(dueDate, 'Tomorrow')
+    const dayLabel = getDueDayOnlyLabel(dueDate, 'Tomorrow', timeZone)
     return startFormatted ? `${startFormatted} - ${dayLabel}` : `Due ${dayLabel}`
   }
 
   return startFormatted ? `${startFormatted} - ${dueFormatted}` : `Due ${dueFormatted}`
+}
+
+/**
+ * Habit reminders: combine reminder.remind_at with habit.reminder_time (wall clock in settings).
+ * Returns an ISO instant for due labels and overdue logic in the user's zone.
+ */
+export function habitReminderEffectiveInstant(
+  remindAt: string | null,
+  wallTimeHHmm: string | null | undefined,
+  timeZone: string,
+): string | null {
+  if (!remindAt) return null
+  if (wallTimeHHmm == null || String(wallTimeHHmm).trim() === '') return remindAt
+  const base = toZonedDateTime(remindAt, timeZone)
+  if (!base) return remindAt
+  const raw = String(wallTimeHHmm).trim()
+  const normalized = raw.length <= 5 ? `${raw}:00` : raw.slice(0, 8)
+  const parts = normalized.split(':').map((x) => parseInt(x, 10))
+  const hh = parts[0] ?? 0
+  const mm = parts[1] ?? 0
+  const ss = parts[2] ?? 0
+  const combined = base.set({ hour: hh, minute: mm, second: ss, millisecond: 0 })
+  return combined.toUTC().toISO()
 }

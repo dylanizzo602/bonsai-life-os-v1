@@ -2,31 +2,21 @@
 
 import { Button } from '../../components/Button'
 import { GoalGauge } from '../goals/GoalGauge'
+import type { Task } from '../tasks/types'
 import type { Goal, GoalMilestone } from '../goals/types'
+import { countFullyCompleteMilestones } from '../goals/utils/milestoneProgress'
 
 interface GoalsProgressScreenProps {
   /** Goals to display with progress */
   goals: Goal[]
   /** Optional milestones per goal for "X / Y milestones" display */
   milestonesByGoal?: Record<string, GoalMilestone[]>
+  /** Task trees keyed by milestone id (same as GoalGaugeCard) */
+  taskTreesByMilestoneId?: Record<string, Task[]>
   /** Open goal detail to update progress (parent shows GoalDetailPage in-context) */
   onUpdateProgress: (goalId: string) => void
   /** Advance to next step */
   onNext: () => void
-}
-
-/* Compute completed milestone count for display (same logic as GoalGaugeCard) */
-function completedMilestoneCount(milestones: GoalMilestone[]): number {
-  return milestones.filter((m) => {
-    if (m.type === 'task') return m.completed
-    if (m.type === 'number')
-      return (
-        m.current_value != null &&
-        m.target_value != null &&
-        m.current_value >= m.target_value
-      )
-    return m.completed
-  }).length
 }
 
 /**
@@ -36,6 +26,7 @@ function completedMilestoneCount(milestones: GoalMilestone[]): number {
 export function GoalsProgressScreen({
   goals,
   milestonesByGoal = {},
+  taskTreesByMilestoneId = {},
   onUpdateProgress,
   onNext,
 }: GoalsProgressScreenProps) {
@@ -61,7 +52,7 @@ export function GoalsProgressScreen({
           <ul className="space-y-4">
             {goals.map((goal) => {
               const milestones = milestonesByGoal[goal.id] ?? []
-              const completed = completedMilestoneCount(milestones)
+              const completed = countFullyCompleteMilestones(milestones, taskTreesByMilestoneId)
               const total = milestones.length
               return (
                 <li

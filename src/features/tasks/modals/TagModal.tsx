@@ -65,10 +65,12 @@ export function TagModal({
   const [editingTagName, setEditingTagName] = useState('')
   /* Tag whose color is being changed (swatches apply to this tag) */
   const [editingColorTagId, setEditingColorTagId] = useState<string | null>(null)
+  /* Track previous open state: only sync from parent `value` when opening, not on every render */
+  const prevIsOpenRef = useRef(false)
 
-  /* Sync selected tags from value when modal opens */
+  /* Sync selected tags from value only when the popover opens (not when `value` reference churns) */
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !prevIsOpenRef.current) {
       setSelectedTags(value)
       setSearchQuery('')
       setSearchResults([])
@@ -77,7 +79,10 @@ export function TagModal({
       setEditingColorTagId(null)
       setTimeout(() => inputRef.current?.focus(), 0)
     }
-  }, [isOpen, value])
+    prevIsOpenRef.current = isOpen
+    /* value is intentionally read only when transitioning to open; omitting from deps avoids resetting on unstable [] from parent */
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync only on open; `value` must be current when `isOpen` flips true
+  }, [isOpen])
 
   /* Search tags when query changes */
   useEffect(() => {
@@ -337,52 +342,54 @@ export function TagModal({
           {searchQuery.trim() && !atLimit && (
             <p className="text-xs text-bonsai-slate-500">
               {searchResults.some((t) => t.name.toLowerCase() === searchQuery.trim().toLowerCase())
-                ? 'Press Create to add existing tag, or pick from list below'
-                : 'Press Create or Enter to save as new tag'}
+                ? 'Choose a tag below, or press Create to add the matching tag'
+                : 'Press Create or Enter to save as a new tag'}
             </p>
           )}
         </div>
 
-        {/* Search results list; shrink-0 so height is bounded */}
-        {searchQuery.trim() && (
-          <div className="max-h-32 shrink-0 overflow-hidden border-t border-bonsai-slate-100 px-3 py-2">
-            {searchResults.length > 0 ? (
-              <ul className="space-y-0.5">
-                {searchResults
-                  .filter((t) => !selectedTags.some((s) => s.id === t.id))
-                  .slice(0, 5)
-                  .map((tag) => (
-                    <li key={tag.id}>
-                      <button
-                        type="button"
-                        onClick={() => handleAddTag(tag)}
-                        disabled={atLimit}
-                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-bonsai-slate-50 disabled:opacity-50"
+        {/* Existing labels: all tags (or search matches) between search and color picker */}
+        <div className="max-h-36 shrink-0 overflow-y-auto border-t border-bonsai-slate-100 px-3 py-2">
+          <p className="mb-1.5 text-secondary text-bonsai-slate-600">Your tags</p>
+          {searchResults.filter((t) => !selectedTags.some((s) => s.id === t.id)).length > 0 ? (
+            <ul className="space-y-0.5">
+              {searchResults
+                .filter((t) => !selectedTags.some((s) => s.id === t.id))
+                .map((tag) => (
+                  <li key={tag.id}>
+                    <button
+                      type="button"
+                      onClick={() => handleAddTag(tag)}
+                      disabled={atLimit}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-bonsai-slate-50 disabled:opacity-50"
+                    >
+                      <span
+                        className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${getTagClasses(tag.color as TagColorId)}`}
                       >
-                        <span
-                          className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${getTagClasses(tag.color as TagColorId)}`}
-                        >
-                          {tag.name}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-            ) : null}
-            {searchQuery.trim() &&
-              !searchResults.some((t) => t.name.toLowerCase() === searchQuery.trim().toLowerCase()) &&
-              !selectedTags.some((t) => t.name.toLowerCase() === searchQuery.trim().toLowerCase()) && (
-                <button
-                  type="button"
-                  onClick={handleCreateAndAdd}
-                  disabled={atLimit}
-                  className="w-full rounded px-2 py-1.5 text-left text-sm text-bonsai-sage-600 hover:bg-bonsai-slate-50 disabled:opacity-50"
-                >
-                  Create &quot;{searchQuery.trim()}&quot;
-                </button>
-              )}
-          </div>
-        )}
+                        {tag.name}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          ) : (
+            <p className="text-secondary text-bonsai-slate-500">
+              {searchQuery.trim() ? 'No matching tags.' : 'No tags yet — type a name and click Create.'}
+            </p>
+          )}
+          {searchQuery.trim() &&
+            !searchResults.some((t) => t.name.toLowerCase() === searchQuery.trim().toLowerCase()) &&
+            !selectedTags.some((t) => t.name.toLowerCase() === searchQuery.trim().toLowerCase()) && (
+              <button
+                type="button"
+                onClick={handleCreateAndAdd}
+                disabled={atLimit}
+                className="mt-2 w-full rounded px-2 py-1.5 text-left text-sm text-bonsai-sage-600 hover:bg-bonsai-slate-50 disabled:opacity-50"
+              >
+                Create &quot;{searchQuery.trim()}&quot;
+              </button>
+            )}
+        </div>
 
         {/* Selected tags with remove / delete-from-all; flex-1 min-h-0 so content fits in viewport */}
         <div className="min-h-0 flex-1 overflow-hidden border-t border-bonsai-slate-100 px-3 py-2">

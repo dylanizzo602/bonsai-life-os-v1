@@ -23,6 +23,7 @@ import {
 } from '../../components/icons'
 import { parseRecurrencePattern, getNextOccurrence } from '../../lib/recurrence'
 import { formatDateShort } from './utils/date'
+import { useUserTimeZone } from '../settings/useUserTimeZone'
 import { DatePickerModal } from './modals/DatePickerModal'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { TagModal } from './modals/TagModal'
@@ -289,6 +290,8 @@ export function AddEditTaskModal({
   onRemoveFromLineUp,
   initialTitle,
 }: AddEditTaskModalProps) {
+  /* Profile time zone: format date pills consistently with task list and due logic */
+  const timeZone = useUserTimeZone()
   /* Core task form state: title, description, dates, priority, goal, tags, estimate, attachments, status */
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -397,11 +400,15 @@ export function AddEditTaskModal({
     }
   }
 
-  /* Prefill form when editing or reset when opening for add */
+  /* Load templates when modal opens (header template controls need data) */
   useEffect(() => {
     if (!isOpen) return
-    /* When modal opens, load templates so header controls have data. */
     void fetchTemplates()
+  }, [isOpen, fetchTemplates])
+
+  /* Prefill when modal opens or when switching tasks; do not depend on full `task` — parent often passes a new object reference on re-render, which would wipe local edits (e.g. priority set to None before Save) */
+  useEffect(() => {
+    if (!isOpen) return
 
     if (task) {
       setTitle(task.title)
@@ -435,7 +442,7 @@ export function AddEditTaskModal({
       setDraftSubtasks([])
       setNewDraftSubtaskTitle('')
     }
-  }, [isOpen, task, initialTitle, fetchTemplates])
+  }, [isOpen, task?.id, initialTitle])
 
   /* Submit: create or update task with all form fields (invoked by callers that still want explicit save) */
   const handleSubmit = async () => {
@@ -449,7 +456,8 @@ export function AddEditTaskModal({
           start_date: start_date || null,
           due_date: due_date || null,
           recurrence_pattern: recurrence_pattern ?? null,
-          priority: goal_id ? 'high' : priority,
+          /* Persist chosen priority; goal link no longer forces High on save (DB trigger removed). */
+          priority,
           goal_id: goal_id || null,
           time_estimate,
           attachments: attachments.length ? attachments : undefined,
@@ -528,8 +536,8 @@ export function AddEditTaskModal({
     }
   }
 
-  /* Format date for pill display (use local date so Feb 28 UTC midnight shows as Feb 28) */
-  const formatDate = formatDateShort
+  /* Format date for pill display using the same zone as Settings / task list */
+  const formatDate = (iso: string | null | undefined) => formatDateShort(iso, timeZone)
   const formatEstimate = (min: number | null) =>
     min == null ? null : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`.replace(/ 0m$/, '')
 
@@ -999,7 +1007,17 @@ export function AddEditTaskModal({
         onClose={() => setPriorityOpen(false)}
         value={priority}
         triggerRef={priorityButtonRef}
-        onSelect={setPriority}
+        onSelect={async (newPriority) => {
+          setPriority(newPriority)
+          /* Edit mode: persist priority immediately (same pattern as status/description auto-save) */
+          if (isEditMode && task && onUpdateTask) {
+            try {
+              await onUpdateTask(task.id, { priority: newPriority })
+            } catch (err) {
+              console.error('Failed to save priority from edit modal:', err)
+            }
+          }
+        }}
       />
       <TagModal
         isOpen={tagOpen}
@@ -1017,7 +1035,18 @@ export function AddEditTaskModal({
         isOpen={timeEstimateOpen}
         onClose={() => setTimeEstimateOpen(false)}
         minutes={time_estimate}
-        onSave={setTimeEstimate}
+        onSave={async (minutes) => {
+          /* Update local pill immediately */
+          setTimeEstimate(minutes)
+          /* Edit mode: persist like dates and priority so Close does not drop the estimate */
+          if (isEditMode && task && onUpdateTask) {
+            try {
+              await onUpdateTask(task.id, { time_estimate: minutes })
+            } catch (err) {
+              console.error('Failed to save time estimate from edit modal:', err)
+            }
+          }
+        }}
         taskId={task?.id ?? null}
         parentTaskMinutes={time_estimate}
       />
@@ -1099,15 +1128,12 @@ export function AddEditTaskModal({
               onChange={(e) => {
                 const selectedGoalId = e.target.value || null
                 setGoalId(selectedGoalId)
-                /* Auto-set priority to high when goal is linked */
-                if (selectedGoalId && priority !== 'high') {
-                  setPriority('high')
-                }
+                /* Do not change priority when linking a goal — user and row picker control priority; DB no longer forces High */
               }}
             />
             {goal_id && (
               <p className="mt-1 text-xs text-bonsai-slate-500">
-                Task priority set to High automatically when linked to a goal
+                Change priority anytime with the priority control above; linking a goal does not override it.
               </p>
             )}
           </div>

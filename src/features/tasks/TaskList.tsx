@@ -173,9 +173,9 @@ export function TaskList({
   const [taskEnrichment, setTaskEnrichment] = useState<Record<string, {
     checklistSummary?: { completed: number; total: number }
     hasSubtasks: boolean
-    /** Total number of subtasks linked to this task (for subtask count indicator) */
+    /** Total subtasks (for enrichment bookkeeping; icon uses incomplete count only) */
     subtaskCount: number
-    /** Number of subtasks that are not completed (for unresolved-items modal) */
+    /** Subtasks not completed (icon badge + unresolved-items modal) */
     incompleteSubtaskCount: number
     /** Sum of subtask time_estimate in minutes (for "total with subtasks" display) */
     subtaskTimeTotal: number
@@ -509,7 +509,6 @@ export function TaskList({
                         : undefined
                     }
                     hasSubtasks={enrichment.hasSubtasks}
-                    subtaskCount={enrichment.subtaskCount}
                     incompleteSubtaskCount={enrichment.incompleteSubtaskCount}
                     checklistSummary={enrichment.checklistSummary}
                     totalTimeWithSubtasks={totalTimeWithSubtasks}
@@ -658,7 +657,7 @@ export function TaskList({
                   <CompactTaskItem
                     task={task}
                     hasSubtasks={enrichment.hasSubtasks}
-                    subtaskCount={enrichment.subtaskCount}
+                    incompleteSubtaskCount={enrichment.incompleteSubtaskCount}
                     expanded={isExpanded}
                     onToggleExpand={() => toggleExpand(task.id)}
                     onClick={() => editingNameTaskId !== task.id && onOpenEditModal?.(task)}
@@ -682,6 +681,9 @@ export function TaskList({
                     }
                     isBlocked={enrichment.isBlocked}
                     isBlocking={enrichment.isBlocking}
+                    onUpdateTask={async (taskId, input) => {
+                      await updateTask(taskId, input)
+                    }}
                   />
                   {isExpanded && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
                     <div className="ml-4 pl-3 border-l-2 border-bonsai-slate-200">
@@ -792,7 +794,6 @@ export function TaskList({
                         : undefined
                     }
                     hasSubtasks={enrichment.hasSubtasks}
-                    subtaskCount={enrichment.subtaskCount}
                     incompleteSubtaskCount={enrichment.incompleteSubtaskCount}
                     checklistSummary={enrichment.checklistSummary}
                     totalTimeWithSubtasks={totalTimeWithSubtasks}

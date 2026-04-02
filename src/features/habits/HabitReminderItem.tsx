@@ -3,12 +3,13 @@
 import { Button } from '../../components/Button'
 import { BellIcon } from '../../components/icons'
 import { getDueStatus, formatStartDueDisplay, habitReminderEffectiveInstant } from '../tasks/utils/date'
+import { useUserTimeZone } from '../settings/useUserTimeZone'
 import type { HabitWithStreaks } from './types'
 
 /** Format reminder date for display: "Due Today", "Due Tomorrow", or "Due {date}" using shared task/reminder helpers */
-function formatNotificationDate(remindAt: string | null): string {
+function formatNotificationDate(remindAt: string | null, timeZone: string): string {
   if (!remindAt) return 'No time set'
-  const display = formatStartDueDisplay(undefined, remindAt)
+  const display = formatStartDueDisplay(undefined, remindAt, timeZone)
   return display ?? 'No time set'
 }
 
@@ -46,12 +47,13 @@ export function HabitReminderItem({
   hideSkip = false,
   density = 'default',
 }: HabitReminderItemProps) {
+  const timeZone = useUserTimeZone()
   /* Effective instant: occurrence date from remind_at + clock from habit settings (fixes legacy UTC skew vs modal) */
   const wallTime = reminderTime ?? habit.reminder_time
-  const effectiveRemindAt = habitReminderEffectiveInstant(remindAt, wallTime)
+  const effectiveRemindAt = habitReminderEffectiveInstant(remindAt, wallTime, timeZone)
 
   /* Due status for styling: overdue = red, due today/tomorrow = yellow/amber (same as tasks and reminders) */
-  const dueStatus = effectiveRemindAt != null ? getDueStatus(effectiveRemindAt) : null
+  const dueStatus = effectiveRemindAt != null ? getDueStatus(effectiveRemindAt, timeZone) : null
   const isRemindOverdue = dueStatus === 'overdue'
   const isRemindDueSoon = dueStatus === 'dueSoon'
 
@@ -93,7 +95,7 @@ export function HabitReminderItem({
       >
         <BellIcon className="w-4 h-4 shrink-0" aria-hidden />
         <span className="whitespace-nowrap">
-          {formatNotificationDate(effectiveRemindAt)}
+          {formatNotificationDate(effectiveRemindAt, timeZone)}
         </span>
       </div>
 

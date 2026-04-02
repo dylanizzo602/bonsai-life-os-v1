@@ -1,7 +1,7 @@
 /* TabletTaskItem component: Reusable tablet task display with consistent icon layout.
 * Tablet task items never use hover tooltips; icons are display-only for touch and small screens. */
 
-import { useState, useRef } from 'react'
+import { useState, useRef, type RefObject } from 'react'
 import {
   ChecklistIcon,
   CalendarIcon,
@@ -15,14 +15,29 @@ import {
   TrophyIcon,
   ChevronDownIcon,
   TasksIcon,
+  TagIcon,
 } from '../../components/icons'
 import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { Tooltip } from '../../components/Tooltip'
 import { TimeEstimateTooltip } from './modals/TimeEstimateTooltip'
 import { StatusPickerModal } from './modals/StatusPickerModal'
+import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
 import { getDueStatus, formatStartDueDisplay } from './utils/date'
-import type { Task, TaskPriority, TaskStatus } from './types'
+import { useUserTimeZone } from '../settings/useUserTimeZone'
+import type { Task, TaskPriority, TaskStatus, UpdateTaskInput } from './types'
+
+/** Human-readable priority label (matches FullTaskItem) */
+function getPriorityLabel(priority: TaskPriority): string {
+  const map: Record<TaskPriority, string> = {
+    none: 'None',
+    low: 'Low',
+    medium: 'Normal',
+    high: 'High',
+    urgent: 'Urgent',
+  }
+  return map[priority] ?? 'None'
+}
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
 type DisplayStatus = 'open' | 'in_progress' | 'complete'
@@ -32,8 +47,8 @@ export interface TabletTaskItemProps {
   task: Task
   /** Whether this task has subtasks (shows chevron and allows expand/collapse) */
   hasSubtasks?: boolean
-  /** Total number of subtasks linked to this task (for subtask count indicator) */
-  subtaskCount?: number
+  /** Number of subtasks not yet completed (shown next to subtasks icon; completed excluded) */
+  incompleteSubtaskCount?: number
   /** Checklist completed/total when task has checklists */
   checklistSummary?: { completed: number; total: number }
   /** Total time in minutes (task estimate + sum of subtask estimates) for tooltip display */
@@ -66,12 +81,18 @@ export interface TabletTaskItemProps {
   formatDueDate?: (iso: string | null | undefined) => string | null
   /** Optional status update handler (used to complete/reopen tasks, including recurring) */
   onUpdateStatus?: (taskId: string, status: TaskStatus) => Promise<void>
+  /** Optional task update handler (priority picker; matches desktop FullTaskItem behavior) */
+  onUpdateTask?: (taskId: string, input: UpdateTaskInput) => Promise<void>
   /** Whether subtasks section is expanded (for tablet expand/collapse) */
   expanded?: boolean
   /** Toggle expand/collapse when chevron is tapped */
   onToggleExpand?: () => void
   /** Called when expanding to add a first subtask (optional; focuses add input) */
   onExpandForSubtask?: () => void
+  /** Ref for the tag control (parent positions TagModal below this button) */
+  tagButtonRef?: RefObject<HTMLButtonElement | null>
+  /** Open tag popover; parent mounts TagModal beside this row */
+  onManageTags?: () => void
 }
 
 /** Map TaskStatus to display status for the status circle */
@@ -175,7 +196,7 @@ export function TabletTaskItem({
   blockedByCount: _blockedByCount = 0,
   isShared = false,
   hasSubtasks = false,
-  subtaskCount = 0,
+  incompleteSubtaskCount = 0,
   onClick,
   onContextMenu,
   inlineEditTitle,
@@ -186,11 +207,15 @@ export function TabletTaskItem({
   expanded = false,
   onToggleExpand,
   onExpandForSubtask,
+  onUpdateTask,
+  tagButtonRef,
+  onManageTags,
 }: TabletTaskItemProps) {
+  const timeZone = useUserTimeZone()
   const displayStatus = getDisplayStatus(task.status)
   /* Date display: single line for start/due (Starts Jan 1, Due Jan 3 at 5pm, Jan 1 - Jan 3 at 5pm, etc.) */
-  const dateDisplay = formatStartDueDisplay(task.start_date, task.due_date)
-  const dueStatus = getDueStatus(task.due_date)
+  const dateDisplay = formatStartDueDisplay(task.start_date, task.due_date, timeZone)
+  const dueStatus = getDueStatus(task.due_date, timeZone)
   const isDueOverdue = dueStatus === 'overdue'
   const isDueSoon = dueStatus === 'dueSoon'
   const isRecurring = Boolean(task.recurrence_pattern)
@@ -198,8 +223,12 @@ export function TabletTaskItem({
 
   /* Modal state: Track whether status picker modal is open on tablet */
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
+  /* Modal state: Priority picker (same as desktop FullTaskItem) */
+  const [isPriorityModalOpen, setIsPriorityModalOpen] = useState(false)
   /* Status button ref: Used to position the status popover on tablet */
   const statusButtonRef = useRef<HTMLButtonElement>(null)
+  /* Priority button ref: Used to position the priority popover on tablet */
+  const priorityButtonRef = useRef<HTMLButtonElement>(null)
 
   return (
     <div
@@ -318,11 +347,11 @@ export function TabletTaskItem({
             )}
           </div>
         )}
-        {/* Subtask count indicator: shows total subtasks when present, distinct from reminder/recurrence icons */}
-        {hasSubtasks && subtaskCount > 0 && (
+        {/* Subtask count indicator: incomplete subtasks only (completed not counted) */}
+        {hasSubtasks && incompleteSubtaskCount > 0 && (
           <span className="flex shrink-0 items-center gap-0.5 text-bonsai-slate-600">
             <TasksIcon className="w-3.5 h-3.5" />
-            <span>{subtaskCount}</span>
+            <span>{incompleteSubtaskCount}</span>
           </span>
         )}
         {/* Description icon: No tooltip in tablet view */}
@@ -340,30 +369,45 @@ export function TabletTaskItem({
             </span>
           </span>
         )}
-        {/* Tags: Show up to 3 tags like FullTaskItem */}
-        {task.tags && task.tags.length > 0 && (
-          <div className="flex shrink-0 items-center gap-1">
-            {task.tags.slice(0, 3).map((t) => (
-              <span
-                key={t.id}
-                className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-                  t.color === 'mint'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : t.color === 'blue'
-                      ? 'bg-blue-100 text-blue-800'
-                      : t.color === 'lavender'
-                        ? 'bg-violet-100 text-violet-800'
-                        : t.color === 'yellow'
-                          ? 'bg-amber-100 text-amber-800'
-                          : t.color === 'periwinkle'
-                            ? 'bg-indigo-100 text-indigo-800'
-                            : 'bg-bonsai-slate-100 text-bonsai-slate-700'
-                }`}
-              >
-                {t.name}
-              </span>
-            ))}
-          </div>
+        {/* Tags: Tappable when parent provides TagModal + ref (same save path as desktop FullTaskItem) */}
+        {onUpdateTask && onManageTags && (
+          <button
+            ref={tagButtonRef}
+            type="button"
+            data-task-interactive
+            onClick={(e) => {
+              e.stopPropagation()
+              onManageTags()
+            }}
+            className="flex shrink-0 items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-bonsai-slate-100 transition-colors"
+            aria-label={(task.tags ?? []).length > 0 ? 'Manage tags' : 'Add tags'}
+            title="Add or edit tags"
+          >
+            {(task.tags ?? []).length > 0 ? (
+              (task.tags ?? []).slice(0, 3).map((t) => (
+                <span
+                  key={t.id}
+                  className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                    t.color === 'mint'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : t.color === 'blue'
+                        ? 'bg-blue-100 text-blue-800'
+                        : t.color === 'lavender'
+                          ? 'bg-violet-100 text-violet-800'
+                          : t.color === 'yellow'
+                            ? 'bg-amber-100 text-amber-800'
+                            : t.color === 'periwinkle'
+                              ? 'bg-indigo-100 text-indigo-800'
+                              : 'bg-bonsai-slate-100 text-bonsai-slate-700'
+                  }`}
+                >
+                  {t.name}
+                </span>
+              ))
+            ) : (
+              <TagIcon className="w-3.5 h-3.5 shrink-0 text-bonsai-slate-500" aria-hidden />
+            )}
+          </button>
         )}
         {/* Shared icon */}
         {isShared && (
@@ -438,20 +482,30 @@ export function TabletTaskItem({
             </span>
           )
         )}
-        {/* Priority flag or trophy icon (if goal-linked) */}
-        <span
-          className={`shrink-0 ${
+        {/* Priority flag or trophy icon (if goal-linked): tappable when onUpdateTask is set, same rules as desktop */}
+        <button
+          ref={priorityButtonRef}
+          type="button"
+          data-task-interactive
+          onClick={(e) => {
+            e.stopPropagation()
+            if (onUpdateTask) setIsPriorityModalOpen(true)
+          }}
+          className={`flex shrink-0 items-center gap-0.5 rounded px-0.5 transition-colors hover:bg-bonsai-slate-100 disabled:cursor-default disabled:hover:bg-transparent ${
             task.goal_id
               ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
               : getPriorityFlagClasses(priority)
           }`}
+          aria-label={task.goal_id ? 'Edit priority (linked to goal)' : 'Edit priority'}
+          disabled={!onUpdateTask}
         >
           {task.goal_id ? (
-            <TrophyIcon className="w-3.5 h-3.5" />
+            <TrophyIcon className="w-3.5 h-3.5 shrink-0" />
           ) : (
-            <FlagIcon className="w-3.5 h-3.5" />
+            <FlagIcon className="w-3.5 h-3.5 shrink-0" />
           )}
-        </span>
+          <span className="shrink-0 text-xs text-bonsai-slate-600">{getPriorityLabel(priority)}</span>
+        </button>
       </div>
 
       {/* Status picker popover for tablet: uses same options as desktop, driven by onUpdateStatus */}
@@ -467,6 +521,22 @@ export function TabletTaskItem({
               await onUpdateStatus(task.id, nextTaskStatus)
             } catch (error) {
               console.error('Failed to update task status (tablet picker):', error)
+            }
+          }}
+        />
+      )}
+      {/* Priority picker popover: same modal and update path as desktop FullTaskItem */}
+      {onUpdateTask && (
+        <PriorityPickerModal
+          isOpen={isPriorityModalOpen}
+          onClose={() => setIsPriorityModalOpen(false)}
+          value={priority}
+          triggerRef={priorityButtonRef}
+          onSelect={async (newPriority) => {
+            try {
+              await onUpdateTask(task.id, { priority: newPriority })
+            } catch (error) {
+              console.error('Failed to update priority (tablet):', error)
             }
           }}
         />

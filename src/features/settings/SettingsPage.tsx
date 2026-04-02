@@ -6,6 +6,8 @@ import { useNotificationSettings } from './hooks/useNotificationSettings'
 import { Input } from '../../components/Input'
 import { Button } from '../../components/Button'
 import { Checkbox } from '../../components/Checkbox'
+import { Select } from '../../components/Select'
+import { PROFILE_TIME_ZONE_OPTIONS } from '../../lib/timezone'
 
 /**
  * Settings page component
@@ -23,6 +25,7 @@ export function SettingsPage() {
     calendarIcsGoogle,
     calendarIcsMicrosoft,
     calendarIcsApple,
+    timeZone,
     saving,
     locating,
     error,
@@ -138,6 +141,19 @@ export function SettingsPage() {
                   {locating ? 'Finding location…' : 'Auto-fill from current location'}
                 </Button>
               </div>
+            </div>
+            <div className="mb-4">
+              <Select
+                label="Time zone"
+                value={timeZone}
+                onChange={(e) => setField('timeZone', e.target.value)}
+                options={PROFILE_TIME_ZONE_OPTIONS}
+                disabled={!user || saving}
+              />
+              <p className="text-secondary text-bonsai-slate-500 mt-2">
+                Used for &quot;Today&quot; / &quot;Tomorrow&quot;, due labels, and reminders. Use
+                device timezone unless your clock or region is incorrect.
+              </p>
             </div>
             <div className="flex justify-end">
               <Button

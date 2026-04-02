@@ -7,8 +7,10 @@ import { useGoals } from './hooks/useGoals'
 import { GoalGaugeCard } from './GoalGaugeCard'
 import { GoalDetailPage } from './GoalDetailPage'
 import { AddEditGoalModal } from './AddEditGoalModal'
-import { getMilestonesForGoal } from '../../lib/supabase/goals'
+import { getMilestonesForGoal, getTaskTreesByMilestoneId } from '../../lib/supabase/goals'
+import type { Task } from '../tasks/types'
 import type { Goal, GoalMilestone } from './types'
+import { aggregateGoalProgressPercent } from './utils/milestoneProgress'
 
 /**
  * Goals page component.
@@ -20,6 +22,7 @@ export function GoalsPage() {
   const { goals, loading, error, createGoal, updateGoal, deleteGoal, refetch } = useGoals()
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null)
   const [milestonesByGoal, setMilestonesByGoal] = useState<Record<string, GoalMilestone[]>>({})
+  const [taskTreesByMilestoneId, setTaskTreesByMilestoneId] = useState<Record<string, Task[]>>({})
   const [modalOpen, setModalOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null)
 
@@ -27,24 +30,31 @@ export function GoalsPage() {
   const activeGoals = goals.filter((g) => g.is_active !== false)
   const inactiveGoals = goals.filter((g) => g.is_active === false)
 
-  /* Fetch milestones for all goals so gauge cards can show completion counts */
+  /* Fetch milestones and task trees for task-type milestones (gauge subtitle + progress uses same rules) */
   useEffect(() => {
     const fetchMilestones = async () => {
       const milestonesMap: Record<string, GoalMilestone[]> = {}
+      const mergedTrees: Record<string, Task[]> = {}
       for (const goal of goals) {
         try {
           const milestones = await getMilestonesForGoal(goal.id)
           milestonesMap[goal.id] = milestones
+          const trees = await getTaskTreesByMilestoneId(milestones)
+          Object.assign(mergedTrees, trees)
         } catch (err) {
           console.error(`Error fetching milestones for goal ${goal.id}:`, err)
           milestonesMap[goal.id] = []
         }
       }
       setMilestonesByGoal(milestonesMap)
+      setTaskTreesByMilestoneId(mergedTrees)
     }
 
     if (goals.length > 0) {
       void fetchMilestones()
+    } else {
+      setMilestonesByGoal({})
+      setTaskTreesByMilestoneId({})
     }
   }, [goals])
 
@@ -154,6 +164,15 @@ export function GoalsPage() {
                 key={goal.id}
                 goal={goal}
                 milestones={milestonesByGoal[goal.id] ?? []}
+                taskTreesByMilestoneId={taskTreesByMilestoneId}
+                computedProgressPercent={
+                  milestonesByGoal[goal.id] !== undefined
+                    ? aggregateGoalProgressPercent(
+                        milestonesByGoal[goal.id] ?? [],
+                        taskTreesByMilestoneId,
+                      )
+                    : undefined
+                }
                 onClick={() => handleGoalClick(goal.id)}
               />
             ))}
@@ -176,6 +195,15 @@ export function GoalsPage() {
                 key={goal.id}
                 goal={goal}
                 milestones={milestonesByGoal[goal.id] ?? []}
+                taskTreesByMilestoneId={taskTreesByMilestoneId}
+                computedProgressPercent={
+                  milestonesByGoal[goal.id] !== undefined
+                    ? aggregateGoalProgressPercent(
+                        milestonesByGoal[goal.id] ?? [],
+                        taskTreesByMilestoneId,
+                      )
+                    : undefined
+                }
                 onClick={() => handleGoalClick(goal.id)}
               />
             ))}

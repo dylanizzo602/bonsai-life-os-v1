@@ -8,12 +8,13 @@ import { RepeatIcon } from '../../components/icons'
 import { SingleDatePickerModal } from './modals/SingleDatePickerModal'
 import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
 import { getDueStatus, formatStartDueDisplay } from '../tasks/utils/date'
+import { useUserTimeZone } from '../settings/useUserTimeZone'
 import type { Reminder, UpdateReminderInput } from './types'
 
 /** Format remind_at for list display: "Due Today", "Due Tomorrow", or "Due {date}" using shared task date helpers. */
-function formatRemindDate(iso: string | null): string {
+function formatRemindDate(iso: string | null, timeZone: string): string {
   if (!iso) return 'No date'
-  const display = formatStartDueDisplay(undefined, iso)
+  const display = formatStartDueDisplay(undefined, iso, timeZone)
   return display ?? 'No date'
 }
 
@@ -47,6 +48,7 @@ export function ReminderItem({
   inlineEditName,
   onUpdateReminder,
 }: ReminderItemProps) {
+  const timeZone = useUserTimeZone()
   /* Date picker popover: open state and trigger ref for positioning */
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
   const dateButtonRef = useRef<HTMLButtonElement>(null)
@@ -57,7 +59,7 @@ export function ReminderItem({
   }
 
   /* Due status for styling: overdue = red, due today/tomorrow = yellow/amber (same as tasks) */
-  const dueStatus = reminder.remind_at != null ? getDueStatus(reminder.remind_at) : null
+  const dueStatus = reminder.remind_at != null ? getDueStatus(reminder.remind_at, timeZone) : null
   const isRemindOverdue = dueStatus === 'overdue'
   const isRemindDueSoon = dueStatus === 'dueSoon'
 
@@ -127,7 +129,7 @@ export function ReminderItem({
                 aria-label={reminder.remind_at ? 'Edit reminder date' : 'Set reminder date'}
               >
                 <RepeatIcon className="w-4 h-4 shrink-0" aria-hidden />
-                {formatRemindDate(reminder.remind_at)}
+                {formatRemindDate(reminder.remind_at, timeZone)}
               </button>
             </Tooltip>
           ) : (
@@ -141,7 +143,7 @@ export function ReminderItem({
               className={`flex items-center gap-1 text-secondary shrink-0 ml-auto hover:underline transition-colors rounded px-1 -mx-1 ${isRemindOverdue ? 'text-red-600 font-medium hover:text-red-700' : isRemindDueSoon ? 'text-amber-600 font-medium hover:text-amber-700' : 'text-bonsai-slate-500 hover:text-bonsai-slate-700'}`}
               aria-label={reminder.remind_at ? 'Edit reminder date' : 'Set reminder date'}
             >
-              {formatRemindDate(reminder.remind_at)}
+              {formatRemindDate(reminder.remind_at, timeZone)}
             </button>
           )}
           <SingleDatePickerModal
@@ -160,7 +162,7 @@ export function ReminderItem({
           {reminder.recurrence_pattern ? (
             <RepeatIcon className="w-4 h-4 shrink-0" aria-hidden />
           ) : null}
-          {formatRemindDate(reminder.remind_at)}
+          {formatRemindDate(reminder.remind_at, timeZone)}
         </span>
       )}
     </div>

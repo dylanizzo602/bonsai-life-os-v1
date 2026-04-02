@@ -1,4 +1,5 @@
 /* Task data access layer: Supabase queries for CRUD on tasks, checklists, and dependencies */
+import { DateTime } from 'luxon'
 import { supabase } from './client'
 import { getTagsForTask } from './tags'
 import { parseRecurrencePattern, getNextOccurrence } from '../recurrence'
@@ -79,25 +80,36 @@ export async function getTasks(filters?: TaskFilters): Promise<Task[]> {
   }
 
   if (filters?.dueDateFilter && filters.dueDateFilter !== 'all') {
-    const now = new Date()
-    const todayStart = new Date(now)
-    todayStart.setHours(0, 0, 0, 0)
-    const todayEnd = new Date(now)
-    todayEnd.setHours(23, 59, 59, 999)
+    /* Due-date presets: use profile time zone when provided so "today" matches Settings / task list */
+    let rangeStartIso: string
+    let rangeEndIso: string
+    if (filters.timeZone) {
+      const nowZ = DateTime.now().setZone(filters.timeZone)
+      rangeStartIso = nowZ.startOf('day').toUTC().toISO()!
+      rangeEndIso = nowZ.endOf('day').toUTC().toISO()!
+    } else {
+      const now = new Date()
+      const todayStart = new Date(now)
+      todayStart.setHours(0, 0, 0, 0)
+      const todayEnd = new Date(now)
+      todayEnd.setHours(23, 59, 59, 999)
+      rangeStartIso = todayStart.toISOString()
+      rangeEndIso = todayEnd.toISOString()
+    }
 
     switch (filters.dueDateFilter) {
       case 'overdue':
         query = query
-          .lt('due_date', todayStart.toISOString())
+          .lt('due_date', rangeStartIso)
           .not('due_date', 'is', null)
         break
       case 'today':
         query = query
-          .gte('due_date', todayStart.toISOString())
-          .lte('due_date', todayEnd.toISOString())
+          .gte('due_date', rangeStartIso)
+          .lte('due_date', rangeEndIso)
         break
       case 'upcoming':
-        query = query.gt('due_date', todayEnd.toISOString())
+        query = query.gt('due_date', rangeEndIso)
         break
       case 'no-date':
         query = query.is('due_date', null)
@@ -449,6 +461,29 @@ export async function getSubtasks(taskId: string): Promise<Task[]> {
       attachments: Array.isArray(t.attachments) ? t.attachments : [],
     } as Task
   })
+}
+
+/**
+ * Linked task plus all descendant subtasks (recursive), for goal milestone progress.
+ */
+export async function getTaskTreeForProgress(rootTaskId: string): Promise<Task[]> {
+  const roots = await getTasksByIds([rootTaskId])
+  const root = roots[0]
+  if (!root) return []
+
+  const out: Task[] = [root]
+
+  /* Depth-first walk: each subtask may have its own subtasks */
+  async function walk(parentId: string): Promise<void> {
+    const subs = await getSubtasks(parentId)
+    for (const s of subs) {
+      out.push(s)
+      await walk(s.id)
+    }
+  }
+
+  await walk(rootTaskId)
+  return out
 }
 
 /**

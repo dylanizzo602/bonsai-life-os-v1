@@ -1,6 +1,7 @@
 /* Briefings page: Multi-step morning briefing flow with progress bar */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { DateTime } from 'luxon'
 import { useTasks } from '../tasks/hooks/useTasks'
 import { useReminders } from '../reminders/hooks/useReminders'
 import { useHabits } from '../habits/hooks/useHabits'
@@ -29,8 +30,31 @@ import type { InboxItem } from '../home/types'
 import { useAuth } from '../auth/AuthContext'
 import { useCalendarAgenda } from './hooks/useCalendarAgenda'
 import { getDueStatus } from '../tasks/utils/date'
+import { useUserTimeZone } from '../settings/useUserTimeZone'
 import { getAvailableTasksFromList } from '../tasks/utils/available'
-import { habitReminderInstantForLocalDay } from '../../lib/supabase/reminders'
+import { isHabitEligibleForTodoReminder, resolveHabitRemindAt } from '../habits/habitReminderEligibility'
+import { isoInstantToLocalCalendarYMD } from '../../lib/localCalendarDate'
+import { useViewportWidth } from '../../hooks/useViewportWidth'
+import { HabitTable } from '../habits/HabitTable'
+import { AddEditHabitModal } from '../habits/AddEditHabitModal'
+
+/** Desktop breakpoint: matches Habits page / HabitTable layout */
+const LG_BREAKPOINT = 1024
+
+/** Format date range for HabitTable bar: "Feb 15 – Feb 21, 2026" */
+function formatDateRange(start: string, end: string): string {
+  const s = new Date(start + 'T12:00:00')
+  const e = new Date(end + 'T12:00:00')
+  const sameYear = s.getFullYear() === e.getFullYear()
+  const startStr = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const endStr = e.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: sameYear ? undefined : 'numeric',
+  })
+  const yearStr = sameYear ? `, ${s.getFullYear()}` : ''
+  return `${startStr} – ${endStr}${yearStr}`
+}
 
 /** Total steps in the flow (greeting + overdue + inbox review + plan + 4 reflection + completion) */
 const TOTAL_STEPS = 9
@@ -51,11 +75,17 @@ export interface BriefingsPageProps {
 }
 
 /**
- * Briefing section: step-based morning briefing (greeting → overdue → plan day → 4 reflection questions → completion → overview).
+ * Briefing section: step-based morning briefing (greeting → overdue → inbox → plan day → 4 reflection questions → completion → overview).
  * Progress bar at bottom; each completed briefing is saved as a reflection entry.
  */
 export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPageProps) {
-  /* Step state: 0 = greeting, 1 = overdue, 2 = plan day, 3–6 = reflection Q1–Q4, 7 = completion */
+  /* Viewport: HabitTable uses desktop vs mobile layout like the Habits section */
+  const viewportWidth = useViewportWidth()
+  const isDesktop = viewportWidth >= LG_BREAKPOINT
+
+  /* User time zone: overdue step uses same due semantics as Tasks */
+  const timeZone = useUserTimeZone()
+  /* Step state: 0 = greeting, 1 = overdue, 2 = inbox, 3 = plan day, 4–7 = reflection Q1–Q4, 8 = completion */
   const [step, setStep] = useState(0)
   /* After completion, user can view overview (saved entry); overview is a separate view */
   const [showOverview, setShowOverview] = useState(false)
@@ -114,13 +144,41 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     toggleComplete: toggleReminderComplete,
   } = useReminders()
 
-  /* Habits: used to surface overdue habit reminders in the overdue step */
+  /* Habits: overdue step + habit table on "did everything" reflection step */
   const {
     habitsWithStreaks,
+    entriesByHabit,
+    dateRange,
     todayYMD,
     setEntry: setHabitEntry,
     refetch: refetchHabits,
+    cycleEntry,
+    createHabit,
+    updateHabit,
+    deleteHabit,
+    setWeekToToday,
+    goToPrevWeek,
+    goToNextWeek,
+    goToPrevRange,
+    goToNextRange,
+    loading: habitsLoading,
   } = useHabits()
+
+  /* Habit edit modal: opened from HabitTable name on the did-everything step */
+  const [habitBeingEdited, setHabitBeingEdited] = useState<HabitWithStreaks | null>(null)
+
+  /* Did-everything step: show the same week range as Habits (includes yesterday) */
+  useEffect(() => {
+    if (step === 6) {
+      setWeekToToday()
+    }
+  }, [step, setWeekToToday])
+
+  /* Close habit modal and refresh streak data after edits */
+  const closeHabitEditModal = useCallback(() => {
+    setHabitBeingEdited(null)
+    void refetchHabits()
+  }, [refetchHabits])
 
   /* Inbox items: used for inbox review step to convert items into tasks or delete them */
   const {
@@ -151,15 +209,14 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
       .catch(() => setBlockedTaskIds(new Set()))
   }, [tasks])
 
-  /* Today start/end for filtering */
+  /* Today start/end for filtering (same IANA zone as Settings / task list) */
   const { todayStart, todayEnd } = useMemo(() => {
-    const now = new Date()
-    const start = new Date(now)
-    start.setHours(0, 0, 0, 0)
-    const end = new Date(now)
-    end.setHours(23, 59, 59, 999)
-    return { todayStart: start.getTime(), todayEnd: end.getTime() }
-  }, [])
+    const z = DateTime.now().setZone(timeZone)
+    return {
+      todayStart: z.startOf('day').toMillis(),
+      todayEnd: z.endOf('day').toMillis(),
+    }
+  }, [timeZone])
 
   /* Tasks due today (count for greeting) */
   const tasksDueTodayCount = useMemo(
@@ -217,9 +274,9 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
         (t) =>
           t.due_date &&
           !['completed', 'archived', 'deleted'].includes(t.status) &&
-          getDueStatus(t.due_date) === 'overdue',
+          getDueStatus(t.due_date, timeZone) === 'overdue',
       ),
-    [tasks],
+    [tasks, timeZone],
   )
   const overdueReminders = useMemo(
     () =>
@@ -228,32 +285,30 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
           !r.deleted &&
           !r.completed &&
           r.remind_at &&
-          getDueStatus(r.remind_at) === 'overdue',
+          getDueStatus(r.remind_at, timeZone) === 'overdue',
       ),
-    [reminders],
+    [reminders, timeZone],
   )
 
   /* Overdue habit reminders: habits with add_to_todos and a linked reminder/reminder_time whose occurrence is before today */
   const overdueHabitReminders = useMemo(
     () => {
       const items: { habit: HabitWithStreaks; remindAt: string | null }[] = habitsWithStreaks
-        .filter((h) => h.add_to_todos && h.reminder_id)
+        .filter((h) => isHabitEligibleForTodoReminder(h))
         .map((habit) => {
-          const linked = reminders.find((r) => r.id === habit.reminder_id!)
-          const remindAt =
-            linked?.remind_at ??
-            (habit.reminder_time
-              ? habitReminderInstantForLocalDay(todayYMD, habit.reminder_time)
-              : null)
+          const linked = habit.reminder_id
+            ? reminders.find((r) => r.id === habit.reminder_id) ?? null
+            : null
+          const remindAt = resolveHabitRemindAt(habit, linked, todayYMD)
           return { habit, remindAt }
         })
 
       return items.filter(
         ({ remindAt }) =>
-          !!remindAt && getDueStatus(remindAt) === 'overdue',
+          !!remindAt && getDueStatus(remindAt, timeZone) === 'overdue',
       )
     },
-    [habitsWithStreaks, reminders, todayYMD],
+    [habitsWithStreaks, reminders, todayYMD, timeZone],
   )
 
   /* Available tasks: use shared helper so semantics match Available view and Upcoming widgets */
@@ -405,15 +460,14 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
           onUpdateReminder={updateReminder}
           onToggleReminderComplete={toggleReminderComplete}
           onHabitMarkComplete={async (habit, remindAt) => {
-            /* Mark habit occurrence complete; Supabase setEntry will advance the linked reminder when due on this date */
-            const occurrenceDate = remindAt ? remindAt.slice(0, 10) : todayYMD
+            /* Local calendar day must match reminder dismiss logic (not UTC prefix on ISO strings). */
+            const occurrenceDate = isoInstantToLocalCalendarYMD(remindAt) ?? todayYMD
             await setHabitEntry(habit.id, occurrenceDate, 'completed')
             await refetchHabits()
             await refetchReminders()
           }}
           onHabitSkip={async (habit, remindAt) => {
-            /* Mark habit occurrence skipped; still refresh reminders so overdue habit reminders list updates */
-            const occurrenceDate = remindAt ? remindAt.slice(0, 10) : todayYMD
+            const occurrenceDate = isoInstantToLocalCalendarYMD(remindAt) ?? todayYMD
             await setHabitEntry(habit.id, occurrenceDate, 'skipped')
             await refetchHabits()
             await refetchReminders()
@@ -451,6 +505,36 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
 
       {step >= 4 && step <= 7 && (
         <ReflectionQuestionScreen
+          aboveQuestion={
+            step === 6
+              ? habitsLoading
+                ? (
+                    <p className="text-body text-bonsai-slate-500">Loading habits…</p>
+                  )
+                : habitsWithStreaks.length === 0
+                  ? (
+                      <p className="text-secondary text-bonsai-slate-600">
+                        No habits yet. Add habits in the Habits section to track them here.
+                      </p>
+                    )
+                  : (
+                      <div className="flex justify-center w-full overflow-x-auto">
+                        <HabitTable
+                          habits={habitsWithStreaks}
+                          entriesByHabit={entriesByHabit}
+                          dateRange={dateRange}
+                          todayYMD={todayYMD}
+                          onCycleEntry={cycleEntry}
+                          onEditHabit={(habit) => setHabitBeingEdited(habit)}
+                          isDesktop={isDesktop}
+                          dateRangeText={formatDateRange(dateRange.start, dateRange.end)}
+                          onPrevRange={isDesktop ? goToPrevWeek : goToPrevRange}
+                          onNextRange={isDesktop ? goToNextWeek : goToNextRange}
+                        />
+                      </div>
+                    )
+              : undefined
+          }
           question={REFLECTION_QUESTIONS[step - 4].label}
           value={reflectionAnswers[REFLECTION_QUESTIONS[step - 4].key] ?? ''}
           onChange={(value) =>
@@ -512,6 +596,16 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
           onRemindersChanged={refetchReminders}
         />
       )}
+
+      {/* Edit habit from briefing habit table (did-everything step) */}
+      <AddEditHabitModal
+        isOpen={habitBeingEdited !== null}
+        onClose={closeHabitEditModal}
+        habit={habitBeingEdited}
+        onCreateHabit={createHabit}
+        onUpdateHabit={updateHabit}
+        onDeleteHabit={deleteHabit}
+      />
     </div>
   )
 }

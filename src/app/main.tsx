@@ -4,11 +4,14 @@ import { createRoot } from 'react-dom/client'
 import '../index.css'
 import App from './App.tsx'
 import { AuthProvider } from '../features/auth/AuthContext'
+import { UserTimeZoneProvider } from '../features/settings/UserTimeZoneProvider'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
-      <App />
+      <UserTimeZoneProvider>
+        <App />
+      </UserTimeZoneProvider>
     </AuthProvider>
   </StrictMode>,
 )

@@ -2,7 +2,9 @@
 import { Checkbox } from '../../components/Checkbox'
 import { CompactTaskItem } from '../tasks/CompactTaskItem'
 import { formatStartDueDisplay } from '../tasks/utils/date'
+import { useUserTimeZone } from '../settings/useUserTimeZone'
 import type { GoalMilestone } from './types'
+import { isNumberMilestoneMet } from './utils/numberMilestone'
 import type { Task } from '../tasks/types'
 
 interface MilestoneItemProps {
@@ -32,14 +34,13 @@ export function MilestoneItem({
   onOpenEditTaskModal,
   onOpenTaskContextMenu,
 }: MilestoneItemProps) {
+  const timeZone = useUserTimeZone()
   /* Determine if milestone is completed based on type */
   const isCompleted =
     milestone.type === 'task'
       ? milestone.completed
       : milestone.type === 'number'
-        ? milestone.current_value != null &&
-          milestone.target_value != null &&
-          milestone.current_value >= milestone.target_value
+        ? isNumberMilestoneMet(milestone)
         : milestone.completed
 
   /* Format number milestone display */
@@ -127,7 +128,7 @@ export function MilestoneItem({
         <div className="ml-8 mt-1">
           <CompactTaskItem
             task={linkedTask}
-            formatDueDate={(iso) => (iso ? formatStartDueDisplay(undefined, iso) : null)}
+            formatDueDate={(iso) => (iso ? formatStartDueDisplay(undefined, iso, timeZone) : null)}
             onClick={() => onOpenEditTaskModal?.(linkedTask)}
             onContextMenu={(e) => {
               e.preventDefault()

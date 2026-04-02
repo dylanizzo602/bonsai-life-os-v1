@@ -235,6 +235,8 @@ serve(async (req) => {
     const url = new URL(req.url)
     const debug = url.searchParams.get('debug') === 'true'
 
+    /* Overdue tasks: instant before "now" (UTC). For calendar-day parity with the app, users can set
+     * `time_zone` in auth user_metadata; a future improvement is to filter per-user using that zone. */
     const { data: taskRows, error: taskError } = await supabase
       .from('tasks')
       .select('id, user_id, title, due_date, status')

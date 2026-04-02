@@ -1,5 +1,6 @@
 /* Reminder data access layer: Supabase CRUD for reminders */
 import { supabase } from './client'
+import { isoInstantToLocalCalendarYMD } from '../localCalendarDate'
 import { parseRecurrencePattern, getNextOccurrence } from '../recurrence'
 import type { Reminder, CreateReminderInput, UpdateReminderInput } from '../../features/reminders/types'
 
@@ -101,14 +102,10 @@ function formatLocalYMD(d: Date): string {
 
 /**
  * Parse ISO timestamp to local calendar YYYY-MM-DD for recurrence and habit-dismiss matching.
- * Using UTC date here shifted reminders near midnight vs the user's timezone.
+ * Delegates to isoInstantToLocalCalendarYMD so UI habit completion uses the same date as advanceReminderToNextOccurrenceIfDueOn.
  */
 function toDateOnly(iso: string | null): string | null {
-  if (!iso) return null
-  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return null
-  return formatLocalYMD(d)
+  return isoInstantToLocalCalendarYMD(iso)
 }
 
 /**

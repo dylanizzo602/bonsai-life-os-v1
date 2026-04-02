@@ -37,6 +37,7 @@ import type {
   TaskAttachment,
 } from './types'
 import { formatDateShort } from './utils/date'
+import { useUserTimeZone } from '../settings/useUserTimeZone'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
 type DisplayStatus = 'open' | 'in_progress' | 'complete'
@@ -159,6 +160,8 @@ export function AddEditSubtaskModal({
   onRemoveDependency,
   onDependenciesChanged,
 }: AddEditSubtaskModalProps) {
+  /* Profile time zone: date pills match task list / Settings */
+  const timeZone = useUserTimeZone()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [start_date, setStartDate] = useState<string | null>(null)
@@ -236,7 +239,7 @@ export function AddEditSubtaskModal({
     }
   }
 
-  /* Prefill form when editing or reset when opening for add */
+  /* Prefill when modal opens or subtask id changes; avoid `[isOpen, subtask]` so parent re-renders with a new subtask object reference do not wipe local priority/date edits before Save */
   useEffect(() => {
     if (!isOpen) return
     if (subtask) {
@@ -262,7 +265,7 @@ export function AddEditSubtaskModal({
       setAttachments([])
       setStatus('open')
     }
-  }, [isOpen, subtask])
+  }, [isOpen, subtask?.id])
 
   /* Submit: create or update subtask with all form fields (uses description HTML from rich text editor) */
   const handleSubmit = async () => {
@@ -407,8 +410,8 @@ export function AddEditSubtaskModal({
           className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
         >
           <CalendarIcon className="w-4 h-4 text-bonsai-slate-600" />
-          {formatDateShort(start_date) || formatDateShort(due_date)
-            ? `Due: ${formatDateShort(due_date) ?? formatDateShort(start_date)}`
+          {formatDateShort(start_date, timeZone) || formatDateShort(due_date, timeZone)
+            ? `Due: ${formatDateShort(due_date, timeZone) ?? formatDateShort(start_date, timeZone)}`
             : 'Add start/due date'}
         </button>
         <button
@@ -537,7 +540,17 @@ export function AddEditSubtaskModal({
         isOpen={timeEstimateOpen}
         onClose={() => setTimeEstimateOpen(false)}
         minutes={time_estimate}
-        onSave={setTimeEstimate}
+        onSave={async (minutes) => {
+          setTimeEstimate(minutes)
+          /* Edit mode: persist so "automatically saved" matches task modal / date picker behavior */
+          if (isEditMode && subtask && onUpdateTask) {
+            try {
+              await onUpdateTask(subtask.id, { time_estimate: minutes })
+            } catch {
+              // Error handled by parent; keep local state so user can retry
+            }
+          }
+        }}
       />
       {subtask?.id && onUpdateTask && (
         <>

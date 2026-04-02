@@ -1,12 +1,20 @@
 /* GoalGaugeCard component: Goal card with gauge visualization for grid display */
 import { GoalGauge } from './GoalGauge'
+import type { Task } from '../tasks/types'
 import type { Goal, GoalMilestone } from './types'
+import { countFullyCompleteMilestones } from './utils/milestoneProgress'
 
 interface GoalGaugeCardProps {
   /** Goal data to display */
   goal: Goal
   /** Milestones for this goal (for completed count) */
   milestones?: GoalMilestone[]
+  /** Task trees keyed by milestone id (linked root + subtasks), for task milestone completion */
+  taskTreesByMilestoneId?: Record<string, Task[]>
+  /**
+   * Live progress from milestones (same rules as goal detail). When set, overrides stale goal.progress from list fetch.
+   */
+  computedProgressPercent?: number
   /** Click handler to navigate to goal detail */
   onClick: () => void
 }
@@ -16,21 +24,15 @@ interface GoalGaugeCardProps {
  * Displays goal as a card with circular gauge, name, milestone count, and dates.
  * Responsive sizing for grid layout.
  */
-export function GoalGaugeCard({ goal, milestones = [], onClick }: GoalGaugeCardProps) {
-  /* Calculate completed milestones count */
-  const completedCount = milestones.filter((m) => {
-    if (m.type === 'task') {
-      return m.completed
-    } else if (m.type === 'number') {
-      return (
-        m.current_value != null &&
-        m.target_value != null &&
-        m.current_value >= m.target_value
-      )
-    } else {
-      return m.completed
-    }
-  }).length
+export function GoalGaugeCard({
+  goal,
+  milestones = [],
+  taskTreesByMilestoneId = {},
+  computedProgressPercent,
+  onClick,
+}: GoalGaugeCardProps) {
+  /* Fully complete milestones: 100% on each milestone’s own rules (incl. task tree) */
+  const completedCount = countFullyCompleteMilestones(milestones, taskTreesByMilestoneId)
 
   const totalCount = milestones.length
 
@@ -41,8 +43,10 @@ export function GoalGaugeCard({ goal, milestones = [], onClick }: GoalGaugeCardP
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }
 
-  /* Use computed progress if available, otherwise use manual progress */
-  const displayProgress = goal.progress
+  /* Prefer live aggregate when parent has milestone data; list API often has stale goal.progress */
+  const displayProgress =
+    computedProgressPercent !== undefined ? computedProgressPercent : goal.progress
+  const progressRounded = Math.round(displayProgress)
 
   /* Render: Card as button so click navigates to goal detail; type="button" prevents form submit */
   return (
@@ -50,17 +54,20 @@ export function GoalGaugeCard({ goal, milestones = [], onClick }: GoalGaugeCardP
       type="button"
       onClick={onClick}
       className="w-full bg-white border border-bonsai-slate-200 rounded-lg p-4 md:p-6 hover:shadow-md transition-shadow text-left"
-      aria-label={`View goal: ${goal.name}`}
+      aria-label={`View goal: ${goal.name}, ${progressRounded}% progress`}
     >
-      {/* Gauge and goal name: centered */}
+      {/* Gauge: percentage + title inside the circle */}
       <div className="flex flex-col items-center mb-4">
         <GoalGauge
           progress={displayProgress}
           size={120}
           className="mb-3"
         >
-          <div className="px-2 min-w-0">
-            <h3 className="text-body font-semibold text-bonsai-brown-700 text-center break-words">
+          <div className="px-1 min-w-0 max-w-[100px] flex flex-col items-center justify-center gap-0.5">
+            <span className="text-body font-bold text-bonsai-sage-700 tabular-nums leading-tight">
+              {progressRounded}%
+            </span>
+            <h3 className="text-secondary font-medium text-bonsai-brown-700 text-center line-clamp-2 break-words leading-snug">
               {goal.name}
             </h3>
           </div>

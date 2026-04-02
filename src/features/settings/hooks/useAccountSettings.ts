@@ -27,6 +27,8 @@ interface AccountSettingsState {
   calendarIcsMicrosoft: string
   /** Apple Calendar ICS URL field value */
   calendarIcsApple: string
+  /** IANA timezone for the profile (empty = use device timezone in the app) */
+  timeZone: string
 }
 
 interface UseAccountSettingsReturn extends AccountSettingsState {
@@ -69,6 +71,7 @@ function getInitialStateFromUser(user: User | null): AccountSettingsState {
     typeof metadata.calendar_ics_microsoft === 'string' ? metadata.calendar_ics_microsoft : ''
   const rawCalendarIcsAppleMeta =
     typeof metadata.calendar_ics_apple === 'string' ? metadata.calendar_ics_apple : ''
+  const rawTimeZone = typeof metadata.time_zone === 'string' ? metadata.time_zone : ''
 
   let rawCalendarIcsGoogle = rawCalendarIcsGoogleMeta
   let rawCalendarIcsMicrosoft = rawCalendarIcsMicrosoftMeta
@@ -96,6 +99,7 @@ function getInitialStateFromUser(user: User | null): AccountSettingsState {
     calendarIcsGoogle: rawCalendarIcsGoogle,
     calendarIcsMicrosoft: rawCalendarIcsMicrosoft,
     calendarIcsApple: rawCalendarIcsApple,
+    timeZone: rawTimeZone,
   }
 }
 
@@ -223,6 +227,7 @@ export function useAccountSettings(user: User | null): UseAccountSettingsReturn 
         calendarIcsGoogle: state.calendarIcsGoogle || null,
         calendarIcsMicrosoft: state.calendarIcsMicrosoft || null,
         calendarIcsApple: state.calendarIcsApple || null,
+        timeZone: state.timeZone.trim() || null,
       })
 
       if (typeof window !== 'undefined') {
@@ -241,7 +246,18 @@ export function useAccountSettings(user: User | null): UseAccountSettingsReturn 
     } finally {
       setSaving(false)
     }
-  }, [hasUser, state.firstName, state.lastName, state.location, state.locationLat, state.locationLng])
+  }, [
+    hasUser,
+    state.firstName,
+    state.lastName,
+    state.location,
+    state.locationLat,
+    state.locationLng,
+    state.calendarIcsGoogle,
+    state.calendarIcsMicrosoft,
+    state.calendarIcsApple,
+    state.timeZone,
+  ])
 
   /* Email saver: persist email change using Supabase auth updateUser */
   const saveEmail = useCallback(async () => {

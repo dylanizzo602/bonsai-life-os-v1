@@ -1,6 +1,6 @@
 /* Goal data access layer: Supabase CRUD for goals, milestones, habit links, and history */
 import { supabase } from './client'
-import { getTasksByIds } from './tasks'
+import { getTasksByIds, getTaskTreeForProgress } from './tasks'
 import type { Task } from '../../features/tasks/types'
 import type {
   Goal,
@@ -12,6 +12,11 @@ import type {
   CreateMilestoneInput,
   UpdateMilestoneInput,
 } from '../../features/goals/types'
+import {
+  getBooleanMilestoneProgressPercent,
+  getNumberMilestoneProgressPercent,
+  getTaskMilestoneProgressPercentFromTree,
+} from '../../features/goals/utils/milestoneProgress'
 
 /**
  * Fetch all goals ordered by created_at descending.
@@ -93,8 +98,8 @@ export async function getGoal(id: string): Promise<GoalWithDetails> {
     habit: gh.habits ?? gh.habit ?? { id: gh.habit_id, name: 'Unknown', color: 'grey' },
   }))
 
-  /* Calculate progress from milestones (equal weight) */
-  const computed_progress = calculateProgressFromMilestones(milestones)
+  /* Calculate progress: average of each milestone’s 0–100% contribution */
+  const computed_progress = await calculateProgressFromMilestones(milestones)
 
   return {
     ...goal,
@@ -105,31 +110,46 @@ export async function getGoal(id: string): Promise<GoalWithDetails> {
 }
 
 /**
- * Calculate goal progress from milestones (equal weight).
- * Returns percentage (0-100) based on completed milestones.
+ * Load task trees for all task-type milestones (parallel) for progress aggregation.
  */
-function calculateProgressFromMilestones(milestones: GoalMilestone[]): number {
+export async function getTaskTreesByMilestoneId(
+  milestones: GoalMilestone[],
+): Promise<Record<string, Task[]>> {
+  const taskMilestones = milestones.filter((m) => m.type === 'task' && m.task_id)
+  const entries = await Promise.all(
+    taskMilestones.map(async (m) => {
+      const tree = await getTaskTreeForProgress(m.task_id!)
+      return [m.id, tree] as const
+    }),
+  )
+  return Object.fromEntries(entries)
+}
+
+/**
+ * Calculate goal progress from milestones (equal weight average of each milestone’s 0–100%).
+ * Boolean: 0 or 100. Number: linear from start to current toward target. Task: completed/total in tree.
+ */
+async function calculateProgressFromMilestones(milestones: GoalMilestone[]): Promise<number> {
   if (milestones.length === 0) return 0
 
-  const completed = milestones.filter((m) => {
-    if (m.type === 'task') {
-      /* Task milestone: check if linked task is completed (requires task lookup) */
-      /* For now, assume task completion is checked elsewhere and milestone.completed is updated */
-      return m.completed
-    } else if (m.type === 'number') {
-      /* Number milestone: completed when current_value >= target_value */
-      return (
-        m.current_value != null &&
-        m.target_value != null &&
-        m.current_value >= m.target_value
-      )
-    } else {
-      /* Boolean milestone: completed when completed = true */
-      return m.completed
-    }
-  }).length
+  const taskTreesByMilestoneId = await getTaskTreesByMilestoneId(milestones)
 
-  return Math.round((completed / milestones.length) * 100)
+  const parts = milestones.map((m) => {
+    if (m.type === 'boolean') {
+      return getBooleanMilestoneProgressPercent(m)
+    }
+    if (m.type === 'number') {
+      return getNumberMilestoneProgressPercent(m)
+    }
+    if (m.type === 'task') {
+      const tree = m.task_id ? taskTreesByMilestoneId[m.id] ?? [] : []
+      return getTaskMilestoneProgressPercentFromTree(tree)
+    }
+    return 0
+  })
+
+  const sum = parts.reduce((a, b) => a + b, 0)
+  return Math.round(sum / parts.length)
 }
 
 /**
@@ -486,11 +506,11 @@ export async function getGoalHistory(goalId: string): Promise<GoalHistory[]> {
 
 /**
  * Calculate goal progress from milestones and update goal.progress.
- * Uses equal weight: (completed_milestones / total_milestones) * 100
+ * Uses equal weight average of each milestone’s 0–100% contribution.
  */
 export async function calculateGoalProgress(goalId: string): Promise<number> {
   const milestones = await getMilestonesForGoal(goalId)
-  const progress = calculateProgressFromMilestones(milestones)
+  const progress = await calculateProgressFromMilestones(milestones)
 
   /* Update goal progress */
   await updateGoal(goalId, { progress })

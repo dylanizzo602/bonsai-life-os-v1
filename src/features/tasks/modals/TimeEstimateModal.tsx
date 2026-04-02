@@ -13,8 +13,8 @@ export interface TimeEstimateModalProps {
   onClose: () => void
   /** Current time estimate in minutes */
   minutes: number | null
-  /** Function to call when time estimate is saved (can be async) */
-  onSave: (minutes: number | null) => void
+  /** Function to call when time estimate is saved (may return a Promise so the modal can await persistence) */
+  onSave: (minutes: number | null) => void | Promise<void>
   /** Optional task ID to fetch subtasks and calculate total */
   taskId?: string | null
   /** Optional parent task minutes to include in rollup when viewing a task */

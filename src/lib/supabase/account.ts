@@ -19,6 +19,8 @@ interface UpdateAccountProfileInput {
   calendarIcsMicrosoft: string | null
   /** Apple Calendar ICS URL stored in user metadata */
   calendarIcsApple: string | null
+  /** IANA timezone (e.g. America/New_York) for due dates and notifications; empty uses device zone */
+  timeZone: string | null
 }
 
 /**
@@ -35,6 +37,7 @@ export async function updateAccountProfileMetadata(input: UpdateAccountProfileIn
       calendar_ics_google: input.calendarIcsGoogle,
       calendar_ics_microsoft: input.calendarIcsMicrosoft,
       calendar_ics_apple: input.calendarIcsApple,
+      time_zone: input.timeZone,
     },
   })
 

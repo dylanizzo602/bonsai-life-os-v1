@@ -195,6 +195,11 @@ export function AddEditMilestoneModal({
 
         {type === 'number' && (
           <div className="space-y-4">
+            {/* Hint: decreasing targets (e.g. weight loss) are detected when target is below start */}
+            <p className="text-secondary text-bonsai-slate-600">
+              For goals like weight loss, set start above target (e.g. start 200, target 180). Progress
+              completes when current reaches or passes the target in that direction.
+            </p>
             <div className="grid grid-cols-2 gap-4">
               <Input
                 label="Start Value"

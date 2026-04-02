@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getTasks as getTasksFromApi } from '../../lib/supabase/tasks'
-import { getMilestonesForGoal } from '../../lib/supabase/goals'
+import { getMilestonesForGoal, getTaskTreesByMilestoneId } from '../../lib/supabase/goals'
 import { saveOrUpdateWeeklyBriefingEntryForThisWeek } from '../../lib/supabase/reflections'
 import { useTasks } from '../tasks/hooks/useTasks'
 import { useHabits } from '../habits/hooks/useHabits'
@@ -51,6 +51,7 @@ export function WeeklyBriefingPage() {
   const { habitsWithStreaks } = useHabits()
   const { goals, refetch: refetchGoals } = useGoals()
   const [milestonesByGoal, setMilestonesByGoal] = useState<Record<string, GoalMilestone[]>>({})
+  const [taskTreesByMilestoneId, setTaskTreesByMilestoneId] = useState<Record<string, Task[]>>({})
 
   /* Derive active goals for weekly briefing (inactive goals stay only in Goals section) */
   const activeGoals = useMemo(
@@ -92,23 +93,28 @@ export function WeeklyBriefingPage() {
       .finally(() => setTasksCompletedLoading(false))
   }, [])
 
-  /* Fetch milestones for all active goals (for goals step display) */
+  /* Fetch milestones and task trees for weekly goals step (milestone counts match goal progress rules) */
   useEffect(() => {
     if (activeGoals.length === 0) {
       setMilestonesByGoal({})
+      setTaskTreesByMilestoneId({})
       return
     }
     const fetchMilestones = async () => {
       const map: Record<string, GoalMilestone[]> = {}
+      const mergedTrees: Record<string, Task[]> = {}
       for (const goal of activeGoals) {
         try {
           const milestones = await getMilestonesForGoal(goal.id)
           map[goal.id] = milestones
+          const trees = await getTaskTreesByMilestoneId(milestones)
+          Object.assign(mergedTrees, trees)
         } catch {
           map[goal.id] = []
         }
       }
       setMilestonesByGoal(map)
+      setTaskTreesByMilestoneId(mergedTrees)
     }
     fetchMilestones()
   }, [activeGoals])
@@ -193,6 +199,7 @@ export function WeeklyBriefingPage() {
         <GoalsProgressScreen
           goals={activeGoals}
           milestonesByGoal={milestonesByGoal}
+          taskTreesByMilestoneId={taskTreesByMilestoneId}
           onUpdateProgress={setSelectedGoalId}
           onNext={() => setStep(2)}
         />

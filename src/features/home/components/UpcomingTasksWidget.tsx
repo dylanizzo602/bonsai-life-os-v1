@@ -4,6 +4,7 @@ import { CompactTaskItem } from '../../tasks/CompactTaskItem'
 import { DashboardWidget } from './DashboardWidget'
 import { useUpcomingTasks } from '../hooks/useUpcomingTasks'
 import { formatStartDueDisplay } from '../../tasks/utils/date'
+import { useUserTimeZone } from '../../settings/useUserTimeZone'
 import type { Task } from '../../tasks/types'
 import { Button } from '../../../components/Button'
 
@@ -21,8 +22,9 @@ export function UpcomingTasksWidget({
   onAddTask,
   onOpenEditTask,
 }: UpcomingTasksWidgetProps) {
+  const timeZone = useUserTimeZone()
   const upcomingTasks = useUpcomingTasks()
-  const formatDue = (iso: string | null | undefined) => formatStartDueDisplay(iso, null)
+  const formatDue = (iso: string | null | undefined) => formatStartDueDisplay(iso, null, timeZone)
 
   return (
     <DashboardWidget

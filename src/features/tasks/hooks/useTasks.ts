@@ -12,6 +12,7 @@ import {
   createTaskDependency,
   deleteTaskDependency,
 } from '../../../lib/supabase/tasks'
+import { useUserTimeZone } from '../../settings/useUserTimeZone'
 import type {
   Task,
   CreateTaskInput,
@@ -24,6 +25,8 @@ import type {
  * Provides state management, loading states, and CRUD operations.
  */
 export function useTasks(initialFilters?: TaskFilters) {
+  /* Effective zone: same as Settings so due-date filters match on-screen "today" */
+  const timeZone = useUserTimeZone()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -34,7 +37,7 @@ export function useTasks(initialFilters?: TaskFilters) {
     try {
       setLoading(true)
       setError(null)
-      const data = await getTasks(filters)
+      const data = await getTasks({ ...filters, timeZone })
       setTasks(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch tasks')
@@ -42,7 +45,7 @@ export function useTasks(initialFilters?: TaskFilters) {
     } finally {
       setLoading(false)
     }
-  }, [filters])
+  }, [filters, timeZone])
 
   /* Initial fetch and refetch when filters change */
   useEffect(() => {

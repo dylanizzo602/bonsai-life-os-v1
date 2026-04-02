@@ -15,6 +15,7 @@ import {
   RepeatIcon,
   HourglassIcon,
   TasksIcon,
+  TagIcon,
 } from '../../components/icons'
 import { Tooltip } from '../../components/Tooltip'
 import { InlineTitleInput } from '../../components/InlineTitleInput'
@@ -31,7 +32,13 @@ import { TagModal } from './modals/TagModal'
 import { TaskDependenciesPopover } from './modals/TaskDependenciesPopover'
 import { TabletTaskItem } from './TabletTaskItem'
 import { useTags } from './hooks/useTags'
-import { getDueStatus, formatStartDueDisplay, isPastStartDate } from './utils/date'
+import {
+  getDueStatus,
+  formatStartDueDisplay,
+  isPastStartDate,
+  formatDateTooltipLong,
+} from './utils/date'
+import { useUserTimeZone } from '../settings/useUserTimeZone'
 import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
 import type { Task, TaskPriority, TaskStatus, UpdateTaskInput } from './types'
 
@@ -43,9 +50,7 @@ export interface FullTaskItemProps {
   task: Task
   /** Whether this task has subtasks (shows chevron and allows expand) */
   hasSubtasks?: boolean
-  /** Total number of subtasks linked to this task (for subtask count indicator) */
-  subtaskCount?: number
-  /** Number of subtasks that are not completed (for unresolved-items confirm modal) */
+  /** Number of subtasks not yet completed (icon badge + unresolved-items confirm modal) */
   incompleteSubtaskCount?: number
   /** Checklist completed/total when task has checklists */
   checklistSummary?: { completed: number; total: number }
@@ -180,27 +185,6 @@ function TaskStatusIndicator({ status }: { status: DisplayStatus }) {
   )
 }
 
-/** Format ISO date string as "Jan 1, 2025" for tooltip display.
- * Treats midnight timestamps (e.g. 2026-03-31T00:00:00+00:00) as date-only
- * so tooltips match the main date display and don't shift by timezone.
- */
-function formatDateForTooltip(isoString: string | null): string | null {
-  if (!isoString) return null
-  const timeMatch = isoString.match(/T(\d{2}):(\d{2})/)
-  const hasExplicitTime =
-    !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
-  const isDateOnly = !isoString.includes('T') || !hasExplicitTime
-  const d = isDateOnly
-    ? (() => {
-        const datePart = isoString.includes('T') ? isoString.slice(0, 10) : isoString
-        const [y, m, day] = datePart.split('-').map(Number)
-        return new Date(y, (m ?? 1) - 1, day ?? 1)
-      })()
-    : new Date(isoString)
-  if (isNaN(d.getTime())) return null
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 /** Priority flag color classes: none, low, normal (medium), high, urgent */
 function getPriorityFlagClasses(priority: TaskPriority): string {
   const map: Record<TaskPriority, string> = {
@@ -234,7 +218,6 @@ function getPriorityLabel(priority: TaskPriority): string {
 export function FullTaskItem({
   task,
   hasSubtasks = false,
-  subtaskCount = 0,
   incompleteSubtaskCount = 0,
   checklistSummary,
   totalTimeWithSubtasks,
@@ -260,6 +243,8 @@ export function FullTaskItem({
   onRemoveDependency,
   onDependenciesChanged,
 }: FullTaskItemProps) {
+  /* Settings / device time zone for due labels and tooltips */
+  const timeZone = useUserTimeZone()
   const displayStatus = getDisplayStatus(task.status)
   /* Modal state: Track whether status picker modal is open */
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
@@ -289,8 +274,8 @@ export function FullTaskItem({
   const timeEstimateButtonRef = useRef<HTMLButtonElement>(null)
   /* Date button ref: Used to position the date picker popover */
   const dateButtonRef = useRef<HTMLButtonElement>(null)
-  const dateDisplay = formatStartDueDisplay(task.start_date, task.due_date)
-  const dueStatus = getDueStatus(task.due_date)
+  const dateDisplay = formatStartDueDisplay(task.start_date, task.due_date, timeZone)
+  const dueStatus = getDueStatus(task.due_date, timeZone)
   const isDueOverdue = dueStatus === 'overdue'
   const isDueSoon = dueStatus === 'dueSoon'
   const isRecurring = Boolean(task.recurrence_pattern)
@@ -360,27 +345,54 @@ export function FullTaskItem({
    * Status behavior matches desktop: status circle uses shared onUpdateStatus handler,
    * so recurring tasks complete via the same toggleTaskComplete path.
    */
+  /* Tablet layout: same TagModal as desktop — parent must render it because TabletTaskItem does not */
   if (tablet) {
     return (
-      <TabletTaskItem
-        task={task}
-        checklistSummary={checklistSummary}
-        totalTimeWithSubtasks={totalTimeWithSubtasks}
-        isBlocked={isBlocked}
-        isBlocking={isBlocking}
-        blockingCount={blockingCount}
-        blockedByCount={blockedByCount}
-        isShared={isShared}
-        hasSubtasks={hasSubtasks}
-        subtaskCount={subtaskCount}
-        onClick={onClick}
-        onContextMenu={onContextMenu}
-        inlineEditTitle={inlineEditTitle}
-        onUpdateStatus={onUpdateStatus}
-        expanded={expanded}
-        onToggleExpand={onToggleExpand}
-        onExpandForSubtask={onExpandForSubtask}
-      />
+      <>
+        <TabletTaskItem
+          task={task}
+          checklistSummary={checklistSummary}
+          totalTimeWithSubtasks={totalTimeWithSubtasks}
+          isBlocked={isBlocked}
+          isBlocking={isBlocking}
+          blockingCount={blockingCount}
+          blockedByCount={blockedByCount}
+          isShared={isShared}
+          hasSubtasks={hasSubtasks}
+          incompleteSubtaskCount={incompleteSubtaskCount}
+          onClick={onClick}
+          onContextMenu={onContextMenu}
+          inlineEditTitle={inlineEditTitle}
+          onUpdateStatus={onUpdateStatus}
+          expanded={expanded}
+          onToggleExpand={onToggleExpand}
+          onExpandForSubtask={onExpandForSubtask}
+          onUpdateTask={onUpdateTask}
+          tagButtonRef={tagButtonRef}
+          onManageTags={onUpdateTask ? () => setIsTagModalOpen(true) : undefined}
+        />
+        {onUpdateTask && (
+          <TagModal
+            isOpen={isTagModalOpen}
+            onClose={() => setIsTagModalOpen(false)}
+            value={task.tags ?? []}
+            onSave={async (tags) => {
+              try {
+                await setTagsForTask(task.id, tags.map((t) => t.id))
+                onTagsUpdated?.()
+              } catch (err) {
+                console.error('Failed to update tags:', err)
+              }
+            }}
+            triggerRef={tagButtonRef}
+            taskId={task.id}
+            searchTags={searchTags}
+            createTag={createTag}
+            updateTag={updateTag}
+            deleteTagFromAllTasks={deleteTagFromAllTasks}
+          />
+        )}
+      </>
     )
   }
 
@@ -543,11 +555,11 @@ export function FullTaskItem({
         
         {/* Left icons after task name: Subtask count, description, checklist, tag, shared */}
         <div ref={leftIconsAfterRef} className="flex shrink-0 items-center gap-2">
-          {/* Subtask count: Small indicator showing total linked subtasks when present */}
-          {hasSubtasks && subtaskCount > 0 && (
+          {/* Subtask count: Badge shows only incomplete subtasks (completed ones are excluded) */}
+          {hasSubtasks && incompleteSubtaskCount > 0 && (
             <span className="flex shrink-0 items-center gap-0.5 text-secondary text-bonsai-slate-600">
               <TasksIcon className="w-4 h-4 md:w-5 md:h-5" />
-              <span className="text-xs md:text-sm">{subtaskCount}</span>
+              <span className="text-xs md:text-sm">{incompleteSubtaskCount}</span>
             </span>
           )}
           {/* Description icon: Shows tooltip with description on hover when there is visible text */}
@@ -571,42 +583,47 @@ export function FullTaskItem({
               </span>
             </span>
           )}
-          {/* Tags: Clickable pills to open tag modal - only show when task has tags (defensive: tags may be undefined from some fetch paths) */}
-          {(task.tags ?? []).length > 0 && (
+          {/* Tags: Always show control when editable so TagModal has a trigger and first tags can be added */}
+          {onUpdateTask && (
             <button
               ref={tagButtonRef}
               type="button"
+              data-task-interactive
               onClick={(e) => {
                 e.stopPropagation()
-                if (onUpdateTask) {
-                  setIsTagModalOpen(true)
-                }
+                setIsTagModalOpen(true)
               }}
               className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-left hover:bg-bonsai-slate-100 transition-colors"
-              aria-label="Manage tags"
-              disabled={!onUpdateTask}
+              aria-label={(task.tags ?? []).length > 0 ? 'Manage tags' : 'Add tags'}
               title="Add or edit tags"
             >
-              {(task.tags ?? []).slice(0, 3).map((t) => (
-                <span
-                  key={t.id}
-                  className={`rounded px-2 py-0.5 text-xs font-medium ${
-                    t.color === 'mint'
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : t.color === 'blue'
-                        ? 'bg-blue-100 text-blue-800'
-                        : t.color === 'lavender'
-                          ? 'bg-violet-100 text-violet-800'
-                          : t.color === 'yellow'
-                            ? 'bg-amber-100 text-amber-800'
-                            : t.color === 'periwinkle'
-                              ? 'bg-indigo-100 text-indigo-800'
-                              : 'bg-bonsai-slate-100 text-bonsai-slate-700'
-                  }`}
-                >
-                  {t.name}
+              {(task.tags ?? []).length > 0 ? (
+                (task.tags ?? []).slice(0, 3).map((t) => (
+                  <span
+                    key={t.id}
+                    className={`rounded px-2 py-0.5 text-xs font-medium ${
+                      t.color === 'mint'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : t.color === 'blue'
+                          ? 'bg-blue-100 text-blue-800'
+                          : t.color === 'lavender'
+                            ? 'bg-violet-100 text-violet-800'
+                            : t.color === 'yellow'
+                              ? 'bg-amber-100 text-amber-800'
+                              : t.color === 'periwinkle'
+                                ? 'bg-indigo-100 text-indigo-800'
+                                : 'bg-bonsai-slate-100 text-bonsai-slate-700'
+                    }`}
+                  >
+                    {t.name}
+                  </span>
+                ))
+              ) : (
+                <span className="flex items-center gap-1 text-bonsai-slate-500">
+                  <TagIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" aria-hidden />
+                  <span className="text-secondary hidden md:inline">Add tags</span>
                 </span>
-              ))}
+              )}
             </button>
           )}
           {/* Shared icon */}
@@ -667,14 +684,14 @@ export function FullTaskItem({
           (() => {
             /* Tooltip content: For recurring, show frequency; otherwise start/due dates */
             const recurrenceLabel = isRecurring ? formatRecurrenceForTooltip(parseRecurrencePattern(task.recurrence_pattern)) : ''
-            const startFormatted = formatDateForTooltip(task.start_date)
-            const dueFormatted = formatDateForTooltip(task.due_date)
+            const startFormatted = formatDateTooltipLong(task.start_date, timeZone)
+            const dueFormatted = formatDateTooltipLong(task.due_date, timeZone)
             const dateTooltipContent = recurrenceLabel ? (
               <div className="text-center text-secondary text-bonsai-slate-800">{recurrenceLabel}</div>
             ) : startFormatted || dueFormatted ? (
               <div className="text-center text-secondary text-bonsai-slate-800">
                 {startFormatted && (
-                  <div>{isPastStartDate(task.start_date) ? 'Started' : 'Starts'} {startFormatted}</div>
+                  <div>{isPastStartDate(task.start_date, timeZone) ? 'Started' : 'Starts'} {startFormatted}</div>
                 )}
                 {dueFormatted && <div>Due on {dueFormatted}</div>}
               </div>
@@ -725,27 +742,23 @@ export function FullTaskItem({
           data-task-interactive
           onClick={(e) => {
             e.stopPropagation()
-            /* Open priority picker when flag is clicked (or trophy if goal-linked) */
-            if (onUpdateTask && !task.goal_id) {
-              setIsPriorityModalOpen(true)
-            }
+            /* Open priority picker; goal-linked tasks use trophy icon but priority is still editable (DB no longer forces High). */
+            if (onUpdateTask) setIsPriorityModalOpen(true)
           }}
           className={`flex items-center gap-1.5 rounded p-1 text-sm transition-colors hover:bg-bonsai-slate-100 ${
             task.goal_id
               ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
               : getPriorityFlagClasses(priority)
           }`}
-          aria-label={task.goal_id ? 'Goal-linked task' : 'Edit priority'}
-          disabled={!onUpdateTask || !!task.goal_id}
+          aria-label={task.goal_id ? 'Edit priority (linked to goal)' : 'Edit priority'}
+          disabled={!onUpdateTask}
         >
           {task.goal_id ? (
             <TrophyIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" />
           ) : (
             <FlagIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" />
           )}
-          {!task.goal_id && (
-            <span className="shrink-0 text-sm text-bonsai-slate-600">{getPriorityLabel(priority)}</span>
-          )}
+          <span className="shrink-0 text-sm text-bonsai-slate-600">{getPriorityLabel(priority)}</span>
         </button>
       </div>
 

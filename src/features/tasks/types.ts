@@ -141,6 +141,8 @@ export interface TaskFilters {
   tag?: string | 'all'
   search?: string
   dueDateFilter?: 'overdue' | 'today' | 'upcoming' | 'no-date' | 'all'
+  /** When set with dueDateFilter, start/end of "today" use this IANA zone (matches Settings) */
+  timeZone?: string
   parent_id?: string | null
   /** When true, fetch all tasks (including subtasks) for dependency linking */
   includeAllTasks?: boolean

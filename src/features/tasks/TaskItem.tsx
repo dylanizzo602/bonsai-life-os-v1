@@ -4,6 +4,7 @@ import { Checkbox } from '../../components/Checkbox'
 import { Button } from '../../components/Button'
 import { SubtaskList } from './SubtaskList'
 import { getDueStatus, formatStartDueDisplay } from './utils/date'
+import { useUserTimeZone } from '../settings/useUserTimeZone'
 import type { Task } from './types'
 
 interface TaskItemProps {
@@ -41,12 +42,13 @@ export function TaskItem({
   onDeleteTask,
   onToggleSubtaskComplete,
 }: TaskItemProps) {
+  const timeZone = useUserTimeZone()
   const [showSubtasks, setShowSubtasks] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
   /* Due date display: use shared helpers so "Due Today" / "Due Tomorrow" and colors match other task views */
-  const dueDateDisplay = formatStartDueDisplay(undefined, task.due_date)
-  const dueStatus = getDueStatus(task.due_date)
+  const dueDateDisplay = formatStartDueDisplay(undefined, task.due_date, timeZone)
+  const dueStatus = getDueStatus(task.due_date, timeZone)
   const dueDateInfo =
     dueDateDisplay != null
       ? {

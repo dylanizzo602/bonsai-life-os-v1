@@ -39,6 +39,7 @@ export function GoalDetailPage({ goalId, onBack }: GoalDetailPageProps) {
     historyLoading,
     updateGoal,
     deleteGoal,
+    recalculateProgress,
   } = useGoal(goalId)
 
   const {
@@ -96,26 +97,26 @@ export function GoalDetailPage({ goalId, onBack }: GoalDetailPageProps) {
     [goal, updateMilestone]
   )
 
-  /* Wrapped task update: sync milestone completion and refetch goal */
+  /* Wrapped task update: sync milestone row, then recompute goal % from full task tree + milestones */
   const wrappedUpdateTask = useCallback(
     async (id: string, input: Parameters<typeof updateTask>[1]) => {
       const t = await updateTask(id, input)
       await syncMilestoneForTask(id, t.status === 'completed')
-      refetch()
+      await recalculateProgress()
       return t
     },
-    [updateTask, syncMilestoneForTask, refetch]
+    [updateTask, syncMilestoneForTask, recalculateProgress]
   )
 
-  /* Wrapped toggle complete: sync milestone completion and refetch goal */
+  /* Wrapped toggle complete: same as update for progress aggregation */
   const wrappedToggleComplete = useCallback(
     async (id: string, completed: boolean) => {
       const t = await toggleComplete(id, completed)
       await syncMilestoneForTask(id, completed)
-      refetch()
+      await recalculateProgress()
       return t
     },
-    [toggleComplete, syncMilestoneForTask, refetch]
+    [toggleComplete, syncMilestoneForTask, recalculateProgress]
   )
 
   /* Format dates for display */

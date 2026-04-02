@@ -6,6 +6,7 @@ import { DashboardWidget } from './DashboardWidget'
 import { useTasks } from '../../tasks/hooks/useTasks'
 import { getTodaysLineupOrderedIds, saveTodaysLineupTaskIds } from '../../../lib/todaysLineup'
 import { formatStartDueDisplay } from '../../tasks/utils/date'
+import { useUserTimeZone } from '../../settings/useUserTimeZone'
 import type { Task } from '../../tasks/types'
 import { Button } from '../../../components/Button'
 import { Modal } from '../../../components/Modal'
@@ -22,6 +23,7 @@ export interface LineUpWidgetProps {
  * When tasks prop is provided, uses it so edits from this widget update the same list (fixes lineup not updating after edit).
  */
 export function LineUpWidget({ tasks: tasksProp, onOpenEditTask }: LineUpWidgetProps) {
+  const timeZone = useUserTimeZone()
   /* Tasks source: prefer tasks passed from parent, fall back to tasks from useTasks hook */
   const { tasks: tasksFromHook, getTasks } = useTasks()
   const tasks = tasksProp ?? tasksFromHook
@@ -60,9 +62,10 @@ export function LineUpWidget({ tasks: tasksProp, onOpenEditTask }: LineUpWidgetP
   }, [])
 
   /* Format due date for compact task display */
-  const formatDue = useCallback((iso: string | null | undefined) => {
-    return formatStartDueDisplay(iso, null)
-  }, [])
+  const formatDue = useCallback(
+    (iso: string | null | undefined) => formatStartDueDisplay(iso, null, timeZone),
+    [timeZone],
+  )
 
   /* Map full Task[] to TaskSearchSelect options for modal search */
   const getTasksForSearch = useCallback(async () => {

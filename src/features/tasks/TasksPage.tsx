@@ -33,7 +33,10 @@ import {
   loadTodaysLineupTaskIds,
   saveTodaysLineupTaskIds,
 } from '../../lib/todaysLineup'
-import { habitReminderInstantForLocalDay } from '../../lib/supabase/reminders'
+import { isHabitEligibleForTodoReminder, resolveHabitRemindAt } from '../habits/habitReminderEligibility'
+import { habitReminderEffectiveInstant } from './utils/date'
+import { useUserTimeZone } from '../settings/useUserTimeZone'
+import { isoInstantToLocalCalendarYMD } from '../../lib/localCalendarDate'
 
 /**
  * Dropdown content for Add new task: "Add new reminder" option; click opens reminder modal.
@@ -64,7 +67,7 @@ const PRIORITY_ORDER: Record<Task['priority'], number> = {
 const AVAILABLE_DEFAULT_FILTER_CONDITIONS: FilterCondition[] = [
   { id: 'av-status', field: 'status', operator: 'is_not', value: 'Complete' },
   { id: 'av-deps', field: 'dependencies', operator: 'doesnt_have', value: 'Waiting on' },
-  /* Exclude tasks with no priority from Available view */
+  /* Unprioritized tasks (priority "none") stay out of Available unless the user opens Filters and switches to Custom without this rule */
   { id: 'av-priority', field: 'priority', operator: 'is_not', value: 'none' },
   { id: 'av-start', field: 'start_date', operator: 'is', value: 'Now & earlier' },
 ]
@@ -528,6 +531,8 @@ function sortRemindersWithSortBy(reminders: Reminder[], sortBy: SortByEntry[]): 
  * Toolbar: view buttons (Today's Lineup, Available, All, Custom), Filter, Sort, Search, Add. Task list with Archive/Trash at bottom.
  */
 export function TasksPage() {
+  /* Same zone as Settings / task dates — habit reminder availability uses wall time + occurrence */
+  const timeZone = useUserTimeZone()
   const {
     tasks,
     loading,
@@ -579,17 +584,15 @@ export function TasksPage() {
   const { fetchTags } = useTags()
   const [availableTagNames, setAvailableTagNames] = useState<string[]>([])
 
-  /* Habit reminders: one row per habit with add_to_todos and a linked reminder; current occurrence = reminder.remind_at (recurring like recurring task). */
+  /* Habit reminders: add_to_todos + (linked reminder, reminder_time, or desired/minimum action); occurrence = linked remind_at or synthesized today. */
   const habitReminders = useMemo(() => {
     return habitsWithStreaks
-      .filter((h) => h.add_to_todos && h.reminder_id)
+      .filter((h) => isHabitEligibleForTodoReminder(h))
       .map((habit) => {
-        const linked = reminders.find((r) => r.id === habit.reminder_id!)
-        const remindAt =
-          linked?.remind_at ??
-          (habit.reminder_time
-            ? habitReminderInstantForLocalDay(todayYMD, habit.reminder_time)
-            : null)
+        const linked = habit.reminder_id
+          ? reminders.find((r) => r.id === habit.reminder_id) ?? null
+          : null
+        const remindAt = resolveHabitRemindAt(habit, linked, todayYMD)
         return { habit, remindAt }
       })
   }, [habitsWithStreaks, reminders, todayYMD])
@@ -884,14 +887,21 @@ export function TasksPage() {
           const statusOrder = (s: Task['status']) => (s === 'in_progress' ? 1 : s === 'active' ? 0 : -1)
           return statusOrder(b.status) - statusOrder(a.status)
         })
-        /* Available view: show only incomplete reminders; treat remind_at as start date so exclude future reminders. */
+        /* Available view: incomplete reminders/habits only when effective start/due instant is now or earlier (matches task "Now & earlier" on start). */
         const nowMs = Date.now()
         remindersFiltered = remindersFiltered.filter(
           (r) => !r.completed && (r.remind_at == null || new Date(r.remind_at).getTime() <= nowMs),
         )
-        habitRemindersFiltered = habitReminders.filter(
-          ({ remindAt }) => remindAt == null || new Date(remindAt).getTime() <= nowMs,
-        )
+        habitRemindersFiltered = habitReminders.filter(({ habit, remindAt }) => {
+          if (remindAt == null) return true
+          const effectiveIso = habitReminderEffectiveInstant(
+            remindAt,
+            habit.reminder_time ?? null,
+            timeZone,
+          )
+          const ms = effectiveIso != null ? new Date(effectiveIso).getTime() : new Date(remindAt).getTime()
+          return ms <= nowMs
+        })
         break
       }
       case 'all': {
@@ -953,10 +963,13 @@ export function TasksPage() {
             })
             /* Apply same start_date/due_date/task_name conditions to habit reminders (remindAt = start and due). */
             habitRemindersFiltered = habitReminders.filter(({ habit, remindAt }) => {
+              const effectiveRemindAt =
+                habitReminderEffectiveInstant(remindAt, habit.reminder_time ?? null, timeZone) ??
+                remindAt
               const syntheticReminder: Reminder = {
                 id: '',
                 name: habit.name,
-                remind_at: remindAt,
+                remind_at: effectiveRemindAt,
                 completed: false,
                 deleted: false,
                 recurrence_pattern: null,
@@ -1023,6 +1036,7 @@ export function TasksPage() {
     reminders,
     habitsWithStreaks,
     habitReminders,
+    timeZone,
     showArchived,
     showDeleted,
     viewMode,
@@ -1420,13 +1434,14 @@ export function TasksPage() {
         habitReminders={filteredHabitReminders}
         hideCompletedSubtasks={viewMode === 'available' || viewMode === 'all'}
         onHabitMarkComplete={async (habit, remindAt) => {
-          const occurrenceDate = remindAt ? remindAt.slice(0, 10) : todayYMD
+          /* Occurrence day must match advanceReminderToNextOccurrenceIfDueOn (local calendar, not UTC substring). */
+          const occurrenceDate = isoInstantToLocalCalendarYMD(remindAt) ?? todayYMD
           await setHabitEntry(habit.id, occurrenceDate, 'completed')
           await refetchHabits()
           await refetchReminders()
         }}
         onHabitSkip={async (habit, remindAt) => {
-          const occurrenceDate = remindAt ? remindAt.slice(0, 10) : todayYMD
+          const occurrenceDate = isoInstantToLocalCalendarYMD(remindAt) ?? todayYMD
           await setHabitEntry(habit.id, occurrenceDate, 'skipped')
           await refetchHabits()
           await refetchReminders()

@@ -24,11 +24,22 @@ export interface DatePickerModalProps {
   hasChecklists?: boolean
 }
 
-/** Parse ISO string to date input value (YYYY-MM-DD) */
+/** True when ISO encodes a real clock time (not date-only / not UTC midnight placeholder). */
+function hasExplicitWallTimeInIso(iso: string): boolean {
+  const timeMatch = iso.match(/T(\d{2}):(\d{2})/)
+  return !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
+}
+
+/** Parse ISO string to date input value (YYYY-MM-DD). Uses civil date from string for date-only / midnight UTC so picker matches task list. */
 function toDateInputValue(iso: string | null): string {
   if (!iso) return ''
+  if (!iso.includes('T') || !hasExplicitWallTimeInIso(iso)) {
+    const ymd = iso.slice(0, 10)
+    return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : ''
+  }
   const d = new Date(iso)
-  return d.toISOString().slice(0, 10)
+  if (isNaN(d.getTime())) return ''
+  return toYMD(d)
 }
 
 /** Parse ISO string to time input value (HH:mm).
@@ -77,10 +88,15 @@ function parseDateInput(str: string): string | null {
   if (s === 'today') return todayYMD()
   if (s === 'tomorrow') return toYMD(addDays(new Date(), 1))
   if (s === 'yesterday') return toYMD(addDays(new Date(), -1))
-  /* YYYY-MM-DD */
+  /* YYYY-MM-DD — normalize without Date() so UTC midnight parsing does not shift the calendar day */
   if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) {
-    const d = new Date(s)
-    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
+    const parts = s.split('-')
+    const y = parseInt(parts[0] ?? '0', 10)
+    const mo = parseInt(parts[1] ?? '0', 10)
+    const day = parseInt(parts[2] ?? '0', 10)
+    if (!isNaN(y) && !isNaN(mo) && !isNaN(day)) {
+      return `${y}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    }
   }
   /* M/D/YYYY or M/D/YY (1/2/26, 01/02/2026) */
   const mdy4 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
