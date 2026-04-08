@@ -146,101 +146,7 @@ export function useGoal(goalId: string) {
     fetchGoal()
   }, [fetchGoal])
 
-  /* Create a milestone */
-  const handleCreateMilestone = useCallback(
-    async (input: CreateMilestoneInput) => {
-      try {
-        setError(null)
-        const newMilestone = await createMilestone(input)
-        /* Refetch goal to get updated milestones and progress */
-        await fetchGoal()
-        return newMilestone
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : 'Failed to create milestone'
-        setError(errorMessage)
-        throw err
-      }
-    },
-    [goalId, fetchGoal],
-  )
-
-  /* Update a milestone */
-  const handleUpdateMilestone = useCallback(
-    async (id: string, input: UpdateMilestoneInput) => {
-      try {
-        setError(null)
-        const updatedMilestone = await updateMilestone(id, input)
-        /* Refetch goal to get updated milestones and progress */
-        await fetchGoal()
-        return updatedMilestone
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : 'Failed to update milestone'
-        setError(errorMessage)
-        throw err
-      }
-    },
-    [goalId, fetchGoal],
-  )
-
-  /* Delete a milestone */
-  const handleDeleteMilestone = useCallback(
-    async (id: string) => {
-      try {
-        setError(null)
-        await deleteMilestone(id)
-        /* Refetch goal to get updated milestones and progress */
-        await fetchGoal()
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : 'Failed to delete milestone'
-        setError(errorMessage)
-        throw err
-      }
-    },
-    [goalId, fetchGoal],
-  )
-
-  /* Link habit to goal */
-  const handleLinkHabit = useCallback(
-    async (habitId: string) => {
-      if (!goalId) return
-      try {
-        setError(null)
-        await linkHabitToGoal(goalId, habitId)
-        /* Refetch goal to get updated linked habits */
-        await fetchGoal()
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : 'Failed to link habit'
-        setError(errorMessage)
-        throw err
-      }
-    },
-    [goalId, fetchGoal],
-  )
-
-  /* Unlink habit from goal */
-  const handleUnlinkHabit = useCallback(
-    async (habitId: string) => {
-      if (!goalId) return
-      try {
-        setError(null)
-        await unlinkHabitFromGoal(goalId, habitId)
-        /* Refetch goal to get updated linked habits */
-        await fetchGoal()
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : 'Failed to unlink habit'
-        setError(errorMessage)
-        throw err
-      }
-    },
-    [goalId, fetchGoal],
-  )
-
-  /* Fetch goal history */
+  /* Goal history list (declared before milestone handlers so they can refresh the timeline) */
   const [history, setHistory] = useState<GoalHistory[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
@@ -261,10 +167,107 @@ export function useGoal(goalId: string) {
     }
   }, [goalId])
 
-  /* Fetch history when goalId changes */
   useEffect(() => {
     fetchHistory()
   }, [fetchHistory])
+
+  /* Create a milestone */
+  const handleCreateMilestone = useCallback(
+    async (input: CreateMilestoneInput) => {
+      try {
+        setError(null)
+        const newMilestone = await createMilestone(input)
+        /* Refetch goal and history so timeline shows the new milestone entry */
+        await fetchGoal()
+        await fetchHistory()
+        return newMilestone
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : 'Failed to create milestone'
+        setError(errorMessage)
+        throw err
+      }
+    },
+    [fetchGoal, fetchHistory],
+  )
+
+  /* Update a milestone */
+  const handleUpdateMilestone = useCallback(
+    async (id: string, input: UpdateMilestoneInput) => {
+      try {
+        setError(null)
+        const updatedMilestone = await updateMilestone(id, input)
+        /* Refetch goal and history so milestone diffs and progress appear in the timeline */
+        await fetchGoal()
+        await fetchHistory()
+        return updatedMilestone
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : 'Failed to update milestone'
+        setError(errorMessage)
+        throw err
+      }
+    },
+    [goalId, fetchGoal],
+  )
+
+  /* Delete a milestone */
+  const handleDeleteMilestone = useCallback(
+    async (id: string) => {
+      try {
+        setError(null)
+        await deleteMilestone(id)
+        await fetchGoal()
+        await fetchHistory()
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : 'Failed to delete milestone'
+        setError(errorMessage)
+        throw err
+      }
+    },
+    [fetchGoal, fetchHistory],
+  )
+
+  /* Link habit to goal */
+  const handleLinkHabit = useCallback(
+    async (habitId: string) => {
+      if (!goalId) return
+      try {
+        setError(null)
+        await linkHabitToGoal(goalId, habitId)
+        /* Refetch goal to get updated linked habits */
+        await fetchGoal()
+        await fetchHistory()
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : 'Failed to link habit'
+        setError(errorMessage)
+        throw err
+      }
+    },
+    [goalId, fetchGoal, fetchHistory],
+  )
+
+  /* Unlink habit from goal */
+  const handleUnlinkHabit = useCallback(
+    async (habitId: string) => {
+      if (!goalId) return
+      try {
+        setError(null)
+        await unlinkHabitFromGoal(goalId, habitId)
+        /* Refetch goal to get updated linked habits */
+        await fetchGoal()
+        await fetchHistory()
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : 'Failed to unlink habit'
+        setError(errorMessage)
+        throw err
+      }
+    },
+    [goalId, fetchGoal, fetchHistory],
+  )
 
   const handleUpdateGoal = useCallback(
     async (id: string, input: UpdateGoalInput) => {
@@ -274,6 +277,7 @@ export function useGoal(goalId: string) {
         const updatedGoal = await updateGoal(id, input)
         /* Refetch full goal details so milestones, linked habits, and computed_progress stay in sync */
         await fetchGoal()
+        await fetchHistory()
         return updatedGoal
       } catch (err) {
         const errorMessage =
@@ -282,7 +286,7 @@ export function useGoal(goalId: string) {
         throw err
       }
     },
-    [fetchGoal],
+    [fetchGoal, fetchHistory],
   )
 
   /* Delete goal: calls Supabase deleteGoal; caller should navigate back after success */
@@ -308,13 +312,14 @@ export function useGoal(goalId: string) {
       setError(null)
       await calculateGoalProgress(goalId)
       await fetchGoal()
+      await fetchHistory()
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : 'Failed to recalculate progress'
       setError(errorMessage)
       throw err
     }
-  }, [goalId, fetchGoal])
+  }, [goalId, fetchGoal, fetchHistory])
 
   return {
     goal,

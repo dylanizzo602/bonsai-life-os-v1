@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AddButton } from '../../components/AddButton'
 import {
-  BellIcon,
   FilterIcon,
   SortIcon,
   SearchIcon,
@@ -16,8 +15,6 @@ import {
 import { AddEditTaskModal } from './AddEditTaskModal'
 import { TaskList } from './TaskList'
 import { useTasks } from './hooks/useTasks'
-import { AddEditReminderModal } from '../reminders'
-import { useReminders } from '../reminders/hooks/useReminders'
 import { useHabits } from '../habits/hooks/useHabits'
 import { getDependenciesForTaskIds } from '../../lib/supabase/tasks'
 import { getSavedViews, createSavedView, updateSavedView, deleteSavedView } from '../../lib/supabase/savedViews'
@@ -25,7 +22,6 @@ import { useTags } from './hooks/useTags'
 import { FilterModal } from './modals/FilterModal'
 import { SortModal } from './modals/SortModal'
 import type { Task } from './types'
-import type { Reminder } from '../reminders/types'
 import type { SortByEntry } from './types'
 import type { FilterCondition } from './modals/FilterModal'
 import type { SavedView } from '../../lib/supabase/savedViews'
@@ -33,26 +29,13 @@ import {
   loadTodaysLineupTaskIds,
   saveTodaysLineupTaskIds,
 } from '../../lib/todaysLineup'
-import { isHabitEligibleForTodoReminder, resolveHabitRemindAt } from '../habits/habitReminderEligibility'
+import type { HabitWithStreaks } from '../habits/types'
 import { habitReminderEffectiveInstant } from './utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
 import { isoInstantToLocalCalendarYMD } from '../../lib/localCalendarDate'
 
-/**
- * Dropdown content for Add new task: "Add new reminder" option; click opens reminder modal.
- */
-function AddTaskDropdownContent({ onAddReminder }: { onAddReminder: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onAddReminder}
-      className="flex flex-nowrap items-center justify-end gap-2 rounded px-2 py-1 text-body font-medium text-bonsai-brown-700 hover:bg-bonsai-slate-100 whitespace-nowrap w-full"
-    >
-      <BellIcon className="w-4 h-4 shrink-0 md:w-5 md:h-5 text-bonsai-brown-700" />
-      Add new reminder
-    </button>
-  )
-}
+/** Minimal row shape for filter/sort of habit reminders (same date fields as legacy reminders). */
+type ScheduleLikeRow = { name: string; remind_at: string | null }
 
 /** Priority order for sort: higher index = higher priority (urgent last so it sorts first when desc) */
 const PRIORITY_ORDER: Record<Task['priority'], number> = {
@@ -414,8 +397,8 @@ function evaluateFilterCondition(
   return true
 }
 
-/** Evaluate one filter condition against a reminder. remind_at is treated as both start_date and due_date. */
-function evaluateFilterConditionForReminder(c: FilterCondition, r: Reminder): boolean {
+/** Evaluate one filter condition against a schedule-like row (habit reminder synthetic). remind_at is treated as both start_date and due_date. */
+function evaluateFilterConditionForReminder(c: FilterCondition, r: ScheduleLikeRow): boolean {
   const val = (c.value ?? '').trim()
   const valLower = val.toLowerCase()
   const name = (r.name ?? '').toLowerCase()
@@ -507,18 +490,39 @@ function sortTasksWithSortBy(tasks: Task[], sortBy: SortByEntry[]): Task[] {
   })
 }
 
-/* Shared helper: apply sortBy configuration to a reminder list (start/due map to remind_at) */
-function sortRemindersWithSortBy(reminders: Reminder[], sortBy: SortByEntry[]): Reminder[] {
-  return [...reminders].sort((a, b) => {
+/** Linked habit task row: real task row + habit streak data */
+type HabitReminderRow = {
+  habit: HabitWithStreaks
+  task: Task
+  remindAt: string | null
+}
+
+/* Sort habit rows by the same fields as tasks (due/start → task due; task_name → linked task title). */
+function sortHabitReminderItemsWithSortBy(
+  items: HabitReminderRow[],
+  sortBy: SortByEntry[],
+  timeZone: string,
+): HabitReminderRow[] {
+  return [...items].sort((a, b) => {
+    const aIso =
+      a.task.due_date ??
+      habitReminderEffectiveInstant(a.remindAt, a.habit.reminder_time ?? null, timeZone) ??
+      a.remindAt ??
+      ''
+    const bIso =
+      b.task.due_date ??
+      habitReminderEffectiveInstant(b.remindAt, b.habit.reminder_time ?? null, timeZone) ??
+      b.remindAt ??
+      ''
     for (const { field, direction } of sortBy) {
       if (field !== 'start_date' && field !== 'due_date' && field !== 'task_name') continue
       let cmp = 0
       if (field === 'start_date' || field === 'due_date') {
-        const av = a.remind_at ? new Date(a.remind_at).getTime() : Number.MAX_SAFE_INTEGER
-        const bv = b.remind_at ? new Date(b.remind_at).getTime() : Number.MAX_SAFE_INTEGER
+        const av = aIso ? new Date(aIso as string).getTime() : Number.MAX_SAFE_INTEGER
+        const bv = bIso ? new Date(bIso as string).getTime() : Number.MAX_SAFE_INTEGER
         cmp = av - bv
       } else if (field === 'task_name') {
-        cmp = (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
+        cmp = (a.task.title ?? '').localeCompare(b.task.title ?? '', undefined, { sensitivity: 'base' })
       }
       if (cmp !== 0) return direction === 'asc' ? cmp : -cmp
     }
@@ -552,17 +556,6 @@ export function TasksPage() {
     onRemoveDependency,
   } = useTasks()
 
-  const {
-    reminders,
-    loading: remindersLoading,
-    error: remindersError,
-    refetch: refetchReminders,
-    createReminder: createReminderBase,
-    updateReminder: updateReminderBase,
-    deleteReminder: deleteReminderBase,
-    toggleComplete: toggleReminderComplete,
-  } = useReminders()
-
   /* Habit reminders: habits with add_to_todos, for Tasks list (streak + Complete/Skip + notification time) */
   const {
     habitsWithStreaks,
@@ -584,41 +577,25 @@ export function TasksPage() {
   const { fetchTags } = useTags()
   const [availableTagNames, setAvailableTagNames] = useState<string[]>([])
 
-  /* Habit reminders: add_to_todos + (linked reminder, reminder_time, or desired/minimum action); occurrence = linked remind_at or synthesized today. */
-  const habitReminders = useMemo(() => {
-    return habitsWithStreaks
-      .filter((h) => isHabitEligibleForTodoReminder(h))
-      .map((habit) => {
-        const linked = habit.reminder_id
-          ? reminders.find((r) => r.id === habit.reminder_id) ?? null
-          : null
-        const remindAt = resolveHabitRemindAt(habit, linked, todayYMD)
-        return { habit, remindAt }
+  /* Habit rows: linked tasks (habit_id) joined with streak data */
+  const habitReminders: HabitReminderRow[] = useMemo(() => {
+    return tasks
+      .filter(
+        (t) =>
+          t.habit_id != null &&
+          t.status !== 'deleted' &&
+          t.status !== 'archived',
+      )
+      .map((task) => {
+        const habit = habitsWithStreaks.find((h) => h.id === task.habit_id)
+        if (!habit) return null
+        return { habit, task, remindAt: task.due_date }
       })
-  }, [habitsWithStreaks, reminders, todayYMD])
-
-  /* Wrapper to refetch reminders after create/update to ensure list stays in sync */
-  const createReminder = async (input: import('../reminders/types').CreateReminderInput) => {
-    const result = await createReminderBase(input)
-    await refetchReminders()
-    return result
-  }
-
-  const updateReminder = async (id: string, input: import('../reminders/types').UpdateReminderInput) => {
-    const result = await updateReminderBase(id, input)
-    await refetchReminders()
-    return result
-  }
-
-  const deleteReminder = async (id: string) => {
-    await deleteReminderBase(id)
-    await refetchReminders()
-  }
+      .filter((x): x is HabitReminderRow => x != null)
+  }, [tasks, habitsWithStreaks])
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editTask, setEditTask] = useState<Task | null>(null)
-  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false)
-  const [editReminder, setEditReminder] = useState<Reminder | null>(null)
  
   /* View mode: lineup | available | all | custom. Available is default so you immediately see what you can work on (it can still hide everything if nothing qualifies). */
   const [viewMode, setViewMode] = useState<'lineup' | 'available' | 'all' | 'custom'>('available')
@@ -812,17 +789,7 @@ export function TasksPage() {
   }, [selectedSavedViewId])
 
   /* Filter pipeline: Archive/Trash first, then by view, then by filter (custom), then by search, then by sort. */
-  const { filteredTasks, filteredReminders, filteredHabitReminders, availableTaskIds } = useMemo(() => {
-    /* Reminders: hide soft-deleted; exclude reminders that are linked to habits (we show those as recurring HabitReminderItem instead). */
-    const habitReminderIds = new Set(
-      habitsWithStreaks.map((h) => h.reminder_id).filter((id): id is string => id != null)
-    )
-    let remindersFiltered = reminders.filter((r) => {
-      if (r.deleted ?? false) return false
-      if (habitReminderIds.has(r.id)) return false
-      return true
-    })
-
+  const { filteredTasks, filteredHabitReminders, availableTaskIds } = useMemo(() => {
     /* Habit reminders filtered by view and (for available/custom) by start/due date; set in each view branch. */
     let habitRemindersFiltered: typeof habitReminders = habitReminders
 
@@ -831,7 +798,6 @@ export function TasksPage() {
       const list = tasks.filter((t) => t.status === 'archived')
       return {
         filteredTasks: list,
-        filteredReminders: [],
         filteredHabitReminders: [],
         availableTaskIds: new Set<string>(),
       }
@@ -840,22 +806,20 @@ export function TasksPage() {
       const list = tasks.filter((t) => t.status === 'deleted')
       return {
         filteredTasks: list,
-        filteredReminders: [],
         filteredHabitReminders: [],
         availableTaskIds: new Set<string>(),
       }
     }
 
-    /* Base tasks: exclude deleted; Trash view above is the only place deleted tasks appear. */
-    let baseTasks = tasks.filter((t) => t.status !== 'deleted')
+    /* Base tasks: exclude deleted and habit-linked rows (those render as habit rows). */
+    let baseTasks = tasks.filter((t) => t.status !== 'deleted' && !t.habit_id)
 
     /* By view: lineup, available, all, or custom base list. */
     let viewTasks: Task[]
     switch (viewMode) {
       case 'lineup':
         viewTasks = baseTasks.filter((t) => lineUpTaskIds.has(t.id))
-        /* Today's Lineup shows only tasks in the lineup; no reminders or habit reminders */
-        remindersFiltered = []
+        /* Today's Lineup shows only tasks in the lineup; no habit reminders */
         habitRemindersFiltered = []
         break
       case 'available': {
@@ -887,19 +851,17 @@ export function TasksPage() {
           const statusOrder = (s: Task['status']) => (s === 'in_progress' ? 1 : s === 'active' ? 0 : -1)
           return statusOrder(b.status) - statusOrder(a.status)
         })
-        /* Available view: incomplete reminders/habits only when effective start/due instant is now or earlier (matches task "Now & earlier" on start). */
+        /* Available view: habit rows only when effective start/due instant is now or earlier (matches task "Now & earlier" on start). */
         const nowMs = Date.now()
-        remindersFiltered = remindersFiltered.filter(
-          (r) => !r.completed && (r.remind_at == null || new Date(r.remind_at).getTime() <= nowMs),
-        )
-        habitRemindersFiltered = habitReminders.filter(({ habit, remindAt }) => {
-          if (remindAt == null) return true
+        habitRemindersFiltered = habitReminders.filter(({ habit, task, remindAt }) => {
+          const due = task.due_date ?? remindAt
+          if (due == null) return true
           const effectiveIso = habitReminderEffectiveInstant(
-            remindAt,
+            due,
             habit.reminder_time ?? null,
             timeZone,
           )
-          const ms = effectiveIso != null ? new Date(effectiveIso).getTime() : new Date(remindAt).getTime()
+          const ms = effectiveIso != null ? new Date(effectiveIso).getTime() : new Date(due).getTime()
           return ms <= nowMs
         })
         break
@@ -918,14 +880,16 @@ export function TasksPage() {
           }
           return result
         })
-        /* All Tasks view: show only incomplete reminders (align with "status is not complete"). */
-        remindersFiltered = remindersFiltered.filter((r) => !r.completed)
         habitRemindersFiltered = habitReminders
         /* All Tasks view sort: use user-defined sort when present, otherwise fall back to All default sort (due date then start date) so behavior matches Sort modal semantics */
         {
           const effectiveSortBy = sortBy.length > 0 ? sortBy : ALL_DEFAULT_SORT
           viewTasks = sortTasksWithSortBy(viewTasks, effectiveSortBy)
-          remindersFiltered = sortRemindersWithSortBy(remindersFiltered, effectiveSortBy)
+          habitRemindersFiltered = sortHabitReminderItemsWithSortBy(
+            habitRemindersFiltered,
+            effectiveSortBy,
+            timeZone,
+          )
         }
         break
       }
@@ -945,42 +909,29 @@ export function TasksPage() {
             }
             return result
           })
-          /* Apply filter conditions to reminders: start_date and due_date both use remind_at; task_name applies */
+          /* Apply filter conditions to habit rows: start_date and due_date both use remind_at; task_name applies */
           const reminderRelevantConditions = filterConditions.filter(
             (c) => c.field === 'start_date' || c.field === 'due_date' || c.field === 'task_name',
           )
           if (reminderRelevantConditions.length > 0) {
-            remindersFiltered = remindersFiltered.filter((r) => {
-              let result = false
-              for (let i = 0; i < reminderRelevantConditions.length; i++) {
-                const c = reminderRelevantConditions[i]
-                const match = evaluateFilterConditionForReminder(c, r)
-                const combine = i === 0 ? undefined : (c.combineWithPrevious ?? 'and')
-                if (i === 0) result = match
-                else result = combine === 'or' ? result || match : result && match
-              }
-              return result
-            })
             /* Apply same start_date/due_date/task_name conditions to habit reminders (remindAt = start and due). */
-            habitRemindersFiltered = habitReminders.filter(({ habit, remindAt }) => {
+            habitRemindersFiltered = habitReminders.filter(({ habit, task, remindAt }) => {
               const effectiveRemindAt =
-                habitReminderEffectiveInstant(remindAt, habit.reminder_time ?? null, timeZone) ??
+                habitReminderEffectiveInstant(
+                  task.due_date ?? remindAt,
+                  habit.reminder_time ?? null,
+                  timeZone,
+                ) ??
+                task.due_date ??
                 remindAt
-              const syntheticReminder: Reminder = {
-                id: '',
-                name: habit.name,
+              const syntheticRow: ScheduleLikeRow = {
+                name: task.title,
                 remind_at: effectiveRemindAt,
-                completed: false,
-                deleted: false,
-                recurrence_pattern: null,
-                user_id: null,
-                created_at: '',
-                updated_at: '',
               }
               let result = false
               for (let i = 0; i < reminderRelevantConditions.length; i++) {
                 const c = reminderRelevantConditions[i]
-                const match = evaluateFilterConditionForReminder(c, syntheticReminder)
+                const match = evaluateFilterConditionForReminder(c, syntheticRow)
                 const combine = i === 0 ? undefined : (c.combineWithPrevious ?? 'and')
                 if (i === 0) result = match
                 else result = combine === 'or' ? result || match : result && match
@@ -992,7 +943,7 @@ export function TasksPage() {
         /* Apply user sort when in custom and sortBy has entries (shared helper for consistency with All view). */
         if (sortBy.length > 0) {
           viewTasks = sortTasksWithSortBy(viewTasks, sortBy)
-          remindersFiltered = sortRemindersWithSortBy(remindersFiltered, sortBy)
+          habitRemindersFiltered = sortHabitReminderItemsWithSortBy(habitRemindersFiltered, sortBy, timeZone)
         }
         break
     }
@@ -1008,7 +959,7 @@ export function TasksPage() {
       }).map((t) => t.id),
     )
 
-    /* By search: client-side match on task title/description and reminder name. */
+    /* By search: client-side match on task title/description and habit name. */
     const q = searchQuery.trim().toLowerCase()
     if (q) {
       viewTasks = viewTasks.filter(
@@ -1016,25 +967,20 @@ export function TasksPage() {
           (t.title ?? '').toLowerCase().includes(q) ||
           (t.description ?? '').toLowerCase().includes(q),
       )
-      /* Search affects reminders and habit reminders: filter by name/title */
-      remindersFiltered = remindersFiltered.filter((r) =>
-        (r.name ?? '').toLowerCase().includes(q),
-      )
-      habitRemindersFiltered = habitRemindersFiltered.filter(({ habit }) =>
-        (habit.name ?? '').toLowerCase().includes(q),
+      habitRemindersFiltered = habitRemindersFiltered.filter(
+        ({ habit, task }) =>
+          (habit.name ?? '').toLowerCase().includes(q) ||
+          (task.title ?? '').toLowerCase().includes(q),
       )
     }
 
     return {
       filteredTasks: viewTasks,
-      filteredReminders: remindersFiltered,
       filteredHabitReminders: habitRemindersFiltered,
       availableTaskIds,
     }
   }, [
     tasks,
-    reminders,
-    habitsWithStreaks,
     habitReminders,
     timeZone,
     showArchived,
@@ -1048,7 +994,7 @@ export function TasksPage() {
     searchQuery,
   ])
 
-  /* Effective sort for the current view: used by TaskList to decide how to interleave tasks and reminders */
+  /* Effective sort for the current view: used by TaskList to interleave tasks and habit reminders */
   const effectiveSortByForList: SortByEntry[] = useMemo(() => {
     if (viewMode === 'all') {
       return sortBy.length > 0 ? sortBy : ALL_DEFAULT_SORT
@@ -1075,21 +1021,6 @@ export function TasksPage() {
   const closeModal = () => {
     setIsModalOpen(false)
     setEditTask(null)
-  }
-
-  const openAddReminder = () => {
-    setEditReminder(null)
-    setIsReminderModalOpen(true)
-  }
-
-  const openEditReminder = (reminder: Reminder) => {
-    setEditReminder(reminder)
-    setIsReminderModalOpen(true)
-  }
-
-  const closeReminderModal = () => {
-    setIsReminderModalOpen(false)
-    setEditReminder(null)
   }
 
   return (
@@ -1325,7 +1256,7 @@ export function TasksPage() {
           <AddButton
             className="self-end sm:self-auto"
             aria-label="Add new task"
-            dropdownContent={<AddTaskDropdownContent onAddReminder={openAddReminder} />}
+            hideChevron
             onClick={openAdd}
           >
             Add new task
@@ -1391,7 +1322,7 @@ export function TasksPage() {
         defaultSortLabel={undefined}
       />
 
-      {/* Task list: tasks and reminders; Archive/Trash at bottom rendered inside TaskList */}
+      {/* Task list: tasks and habit reminders; Archive/Trash at bottom rendered inside TaskList */}
       <TaskList
         tasks={filteredTasks}
         availableTaskIds={availableTaskIds}
@@ -1428,32 +1359,29 @@ export function TasksPage() {
             await updateTask(task.id, { status: 'deleted' })
           }
         }}
-        reminders={filteredReminders}
-        remindersLoading={remindersLoading}
-        remindersError={remindersError}
         habitReminders={filteredHabitReminders}
         hideCompletedSubtasks={viewMode === 'available' || viewMode === 'all'}
-        onHabitMarkComplete={async (habit, remindAt) => {
-          /* Occurrence day must match advanceReminderToNextOccurrenceIfDueOn (local calendar, not UTC substring). */
-          const occurrenceDate = isoInstantToLocalCalendarYMD(remindAt) ?? todayYMD
+        onHabitTargetComplete={async (habit, task, remindAt) => {
+          const occurrenceDate =
+            isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
           await setHabitEntry(habit.id, occurrenceDate, 'completed')
           await refetchHabits()
-          await refetchReminders()
+          await refetch()
         }}
-        onHabitSkip={async (habit, remindAt) => {
-          const occurrenceDate = isoInstantToLocalCalendarYMD(remindAt) ?? todayYMD
+        onHabitMinimum={async (habit, task, remindAt) => {
+          const occurrenceDate =
+            isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
+          await setHabitEntry(habit.id, occurrenceDate, 'minimum')
+          await refetchHabits()
+          await refetch()
+        }}
+        onHabitSkip={async (habit, task, remindAt) => {
+          const occurrenceDate =
+            isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
           await setHabitEntry(habit.id, occurrenceDate, 'skipped')
           await refetchHabits()
-          await refetchReminders()
+          await refetch()
         }}
-        onToggleReminderComplete={toggleReminderComplete}
-        onEditReminder={openEditReminder}
-        onUpdateReminder={updateReminder}
-        onCreateReminder={createReminder}
-        onMarkDeletedReminder={async (reminder) => {
-          await updateReminder(reminder.id, { deleted: true })
-        }}
-        onDeleteReminder={deleteReminder}
         onShowArchived={() => {
           setShowArchived(true)
           setShowDeleted(false)
@@ -1512,13 +1440,6 @@ export function TasksPage() {
         onRemoveFromLineUp={removeFromLineUp}
       />
 
-      <AddEditReminderModal
-        isOpen={isReminderModalOpen}
-        onClose={closeReminderModal}
-        onCreateReminder={createReminder}
-        onUpdateReminder={updateReminder}
-        reminder={editReminder}
-      />
     </div>
   )
 }

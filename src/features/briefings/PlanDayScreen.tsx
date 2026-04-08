@@ -21,6 +21,8 @@ interface PlanDayScreenProps {
   onAddToLineUp: (taskId: string) => void
   /** Remove task from Today's Lineup */
   onRemoveFromLineUp: (taskId: string) => void
+  /** Open full task editor (same modal as Tasks section) */
+  onEditTask: (task: Task) => void
   /** Go back to the previous step */
   onBack?: () => void
   /** Go to next step */
@@ -39,6 +41,7 @@ export function PlanDayScreen({
   calendarError,
   onAddToLineUp,
   onRemoveFromLineUp,
+  onEditTask,
   onBack,
   onNext,
 }: PlanDayScreenProps) {
@@ -173,8 +176,14 @@ export function PlanDayScreen({
                   key={task.id}
                   className="flex flex-col gap-2 rounded-lg border border-bonsai-slate-200 p-3 sm:flex-row sm:items-start sm:justify-between"
                 >
+                  {/* Task row: tap/click opens AddEditTaskModal (same as overdue step) */}
                   <div className="flex-1 min-w-0">
-                    <CompactTaskItem task={task} />
+                    <CompactTaskItem
+                      task={task}
+                      onClick={() => onEditTask(task)}
+                      isBlocked={false}
+                      isBlocking={false}
+                    />
                   </div>
                   <div className="sm:ml-3">
                     <Button

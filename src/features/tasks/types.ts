@@ -64,6 +64,8 @@ export interface Task {
   id: string
   user_id: string | null
   parent_id: string | null
+  /** When set, this task is the linked row for a habit (one task per habit) */
+  habit_id: string | null
   goal_id: string | null
   title: string
   description: string | null
@@ -86,6 +88,7 @@ export interface CreateTaskInput {
   title: string
   user_id?: string | null
   parent_id?: string | null
+  habit_id?: string | null
   goal_id?: string | null
   description?: string | null
   start_date?: string | null

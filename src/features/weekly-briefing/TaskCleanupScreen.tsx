@@ -62,7 +62,12 @@ export function TaskCleanupScreen({
                 key={task.id}
                 className="flex flex-col gap-2 rounded-lg border border-bonsai-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="min-w-0 flex-1">
+                {/* Title + description: click opens the same task modal as "Set due date & priority" */}
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 text-left rounded-md focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:ring-offset-2"
+                  onClick={() => onEditTask(task)}
+                >
                   <p className="text-body font-medium text-bonsai-brown-700 truncate">
                     {task.title}
                   </p>
@@ -80,7 +85,7 @@ export function TaskCleanupScreen({
                       )
                     })()
                   )}
-                </div>
+                </button>
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <Button
                     type="button"

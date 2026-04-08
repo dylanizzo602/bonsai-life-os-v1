@@ -201,7 +201,7 @@ export function TimeEstimateModal({
       if (e.key === 'Escape') {
         onClose()
       }
-      /* Prevent space and Enter from bubbling to parent (e.g., FullTaskItem onClick) */
+      /* Prevent space and Enter from bubbling to parent (e.g., TaskListItem onClick) */
       if ((e.key === ' ' || e.key === 'Enter') && popoverRef.current?.contains(e.target as Node)) {
         e.stopPropagation()
         /* Allow space to work normally in input fields */
@@ -272,7 +272,7 @@ export function TimeEstimateModal({
         }}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
-          /* Prevent space and Enter from bubbling to parent (e.g., FullTaskItem onClick) */
+          /* Prevent space and Enter from bubbling to parent (e.g., TaskListItem onClick) */
           if (e.key === ' ' || e.key === 'Enter') {
             /* Allow space/Enter to work normally in input fields */
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLButtonElement) {

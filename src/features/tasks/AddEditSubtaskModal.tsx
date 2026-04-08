@@ -714,10 +714,14 @@ export function AddEditSubtaskModal({
                                 onChange={(e) => setEditingChecklistTitle(e.target.value)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
+                                    e.preventDefault()
                                     updateChecklistTitle(c.id, editingChecklistTitle)
                                     setEditingChecklistId(null)
                                   }
-                                  if (e.key === 'Escape') setEditingChecklistId(null)
+                                  if (e.key === 'Escape') {
+                                    e.stopPropagation()
+                                    setEditingChecklistId(null)
+                                  }
                                 }}
                                 autoFocus
                               />
@@ -781,10 +785,14 @@ export function AddEditSubtaskModal({
                                   onChange={(e) => setEditingItemTitle(e.target.value)}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
+                                      e.preventDefault()
                                       updateItemTitle(item.id, editingItemTitle)
                                       setEditingItemId(null)
                                     }
-                                    if (e.key === 'Escape') setEditingItemId(null)
+                                    if (e.key === 'Escape') {
+                                      e.stopPropagation()
+                                      setEditingItemId(null)
+                                    }
                                   }}
                                   autoFocus
                                 />

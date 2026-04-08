@@ -20,28 +20,31 @@ export type HabitColorId =
   | 'red'
   | 'grey'
 
-/** Main habit entity: name, frequency, optional reminder, color, desired/minimum action text */
+/** Main habit entity: name, frequency, optional reminder, color, target/minimum action text */
 export interface Habit {
   id: string
   user_id: string | null
   name: string
   description: string | null
-  /** Full/ideal action description (e.g. "Run 3 miles") */
+  /** Target / full action description (e.g. "Run 3 miles") */
   desired_action: string | null
-  /** Minimum viable action (e.g. "Put on running shoes") – maps to Habits 1.1 minimum status */
+  /** Minimum viable action (e.g. "Put on running shoes") */
   minimum_action: string | null
   sort_order: number
   frequency: HabitFrequency
   frequency_target: number | null
   add_to_todos: boolean
   reminder_time: string | null
+  /** Legacy: linked row in reminders table; scheduling uses todo_remind_at */
   reminder_id: string | null
+  /** Next scheduled instant for habit todo / linked task due alignment */
+  todo_remind_at: string | null
   color: HabitColorId
   created_at: string
   updated_at: string
 }
 
-/** Habit entry: one per habit per day; status completed, minimum (1.1 yellow), or skipped (no row = open) */
+/** Habit entry: one per habit per day; status completed, minimum, or skipped (no row = open) */
 export interface HabitEntry {
   id: string
   habit_id: string
@@ -80,24 +83,14 @@ export interface UpdateHabitInput {
   color?: HabitColorId
 }
 
-/** Habit with computed streak info for UI (1.0) */
+/** Habit with integer streak (days or consecutive complete weeks) and streak dates for shading */
 export interface HabitWithStreaks extends Habit {
   currentStreak: number
   longestStreak: number
   /** Dates (YYYY-MM-DD) in current streak, oldest first; for cell shading */
   currentStreakDates: string[]
-}
-
-/** Habit with weighted streak for 1.1 (green=1, yellow=0.1; red ends streak) */
-export interface HabitWithStreaksV1 extends Habit {
-  currentStreak: number
-  longestStreak: number
-  /** Dates in current weighted streak, oldest first */
-  currentStreakDates: string[]
-}
-
-/** Habit with strict streak for 1.2 (only completed counts; no skips/partial) */
-export interface HabitWithStreaksV2 extends Habit {
-  currentStreak: number
-  longestStreak: number
+  /** Entries in current streak logged at target (completed) */
+  currentStreakTargetCount: number
+  /** Entries in current streak logged at minimum */
+  currentStreakMinimumCount: number
 }

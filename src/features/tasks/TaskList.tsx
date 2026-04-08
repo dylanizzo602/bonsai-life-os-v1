@@ -1,20 +1,16 @@
 /* TaskList component: Main task management interface with task list and CRUD */
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { FullTaskItem } from './FullTaskItem'
-import { CompactTaskItem } from './CompactTaskItem'
+import { TaskListItem, useTaskListLayout } from './TaskListItem'
 import { SubtaskList } from './SubtaskList'
-import { ReminderItem } from '../reminders/ReminderItem'
 import { HabitReminderItem } from '../habits/HabitReminderItem'
 import type { HabitWithStreaks } from '../habits/types'
 import { TaskContextPopover } from './modals/TaskContextPopover'
-import { ReminderContextPopover } from '../reminders/ReminderContextPopover'
 import {
   getTaskChecklists,
   getTaskChecklistItems,
   toggleChecklistItemComplete,
 } from '../../lib/supabase/tasks'
 import type { Task, TaskFilters, SortByEntry } from './types'
-import type { Reminder } from '../reminders/types'
 
 export interface TaskListProps {
   /** Tasks from useTasks */
@@ -62,24 +58,6 @@ export interface TaskListProps {
   onArchiveTask?: (task: Task) => void | Promise<void>
   /** Optional: Mark task as deleted (soft delete; sets status to deleted) */
   onMarkDeletedTask?: (task: Task) => void | Promise<void>
-  /** Reminders to display alongside tasks */
-  reminders?: Reminder[]
-  /** Reminders loading state */
-  remindersLoading?: boolean
-  /** Reminders error message */
-  remindersError?: string | null
-  /** Toggle reminder completion */
-  onToggleReminderComplete?: (id: string, completed: boolean) => void
-  /** Open edit modal for a reminder */
-  onEditReminder?: (reminder: Reminder) => void
-  /** Update a reminder (e.g. for inline rename) */
-  onUpdateReminder?: (id: string, input: import('../reminders/types').UpdateReminderInput) => Promise<Reminder>
-  /** Create a new reminder (e.g. for Duplicate from context menu) */
-  onCreateReminder?: (input: import('../reminders/types').CreateReminderInput) => Promise<Reminder>
-  /** Delete a reminder */
-  /** Mark reminder as deleted (soft delete) */
-  onMarkDeletedReminder?: (reminder: Reminder) => void | Promise<void>
-  onDeleteReminder?: (id: string) => Promise<void>
   /** Show only archived tasks (Archive at bottom of list) */
   onShowArchived?: () => void
   /** Show only deleted tasks (Trash at bottom of list) */
@@ -94,15 +72,14 @@ export interface TaskListProps {
   lineUpTaskIds?: Set<string>
   onAddToLineUp?: (taskId: string) => void
   onRemoveFromLineUp?: (taskId: string) => void
-  /** Habit reminders (habits with add_to_todos) to show with streak, Complete/Skip, notification time */
-  habitReminders?: Array<{ habit: HabitWithStreaks; remindAt: string | null }>
-  /** Complete habit for the occurrence at remindAt; then advance reminder to next occurrence */
-  onHabitMarkComplete?: (habit: HabitWithStreaks, remindAt: string | null) => void
-  /** Skip habit for the occurrence at remindAt; then advance reminder to next occurrence */
-  onHabitSkip?: (habit: HabitWithStreaks, remindAt: string | null) => void
+  /** Linked habit tasks (streak + target/minimum/skip) */
+  habitReminders?: Array<{ habit: HabitWithStreaks; task: Task; remindAt: string | null }>
+  onHabitTargetComplete?: (habit: HabitWithStreaks, task: Task, remindAt: string | null) => void
+  onHabitMinimum?: (habit: HabitWithStreaks, task: Task, remindAt: string | null) => void
+  onHabitSkip?: (habit: HabitWithStreaks, task: Task, remindAt: string | null) => void
   /** When true, hide completed/closed subtasks to match the current view filters (e.g. Available/All views) */
   hideCompletedSubtasks?: boolean
-  /** Current view mode for the list (used to control how tasks and reminders are interleaved) */
+  /** Current view mode for the list (used to control how tasks and habit reminders are interleaved) */
   viewMode: 'lineup' | 'available' | 'all' | 'custom'
   /** Effective sort applied in the parent for this view (used to decide when to interleave by due date) */
   effectiveSortBy: SortByEntry[]
@@ -125,7 +102,7 @@ export function TaskList({
   onCreateTask,
   onArchiveTask,
   onMarkDeletedTask,
-  /* Rest kept for interface; used when SubtaskList/FullTaskItem need them */
+  /* Rest kept for interface; used when SubtaskList / TaskListItem need them */
   updateTask,
   deleteTask,
   toggleComplete,
@@ -135,15 +112,6 @@ export function TaskList({
   getTaskDependencies,
   onAddDependency,
   onRemoveDependency,
-  reminders = [],
-  remindersLoading = false,
-  remindersError = null,
-  onToggleReminderComplete,
-  onEditReminder,
-  onUpdateReminder,
-  onCreateReminder,
-  onMarkDeletedReminder,
-  onDeleteReminder,
   onShowArchived,
   onShowDeleted,
   showArchived = false,
@@ -153,20 +121,21 @@ export function TaskList({
   onAddToLineUp,
   onRemoveFromLineUp,
   habitReminders = [],
-  onHabitMarkComplete,
+  onHabitTargetComplete,
+  onHabitMinimum,
   onHabitSkip,
   hideCompletedSubtasks = false,
   viewMode,
   effectiveSortBy,
 }: TaskListProps) {
+  /* Viewport bucket for habit row density (matches TaskListItem breakpoints) */
+  const taskListViewport = useTaskListLayout()
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
-  /* Context menu state: which task or reminder is open and at what position */
+  /* Context menu state: which task is open and at what position */
   const [contextTask, setContextTask] = useState<Task | null>(null)
-  const [contextReminder, setContextReminder] = useState<Reminder | null>(null)
   const [contextPosition, setContextPosition] = useState({ x: 0, y: 0 })
-  /* Inline rename state: task or reminder id being edited in place (Rename from context menu) */
+  /* Inline rename state: task id being edited in place (Rename from context menu) */
   const [editingNameTaskId, setEditingNameTaskId] = useState<string | null>(null)
-  const [editingNameReminderId, setEditingNameReminderId] = useState<string | null>(null)
   /** Task id that just expanded for adding a subtask (used to focus add-subtask input) */
   const [justExpandedForSubtask, setJustExpandedForSubtask] = useState<string | null>(null)
   const [_enrichmentLoading, setEnrichmentLoading] = useState(false)
@@ -293,16 +262,15 @@ export function TaskList({
     })
   }
 
-  /* Combine tasks, reminders, and habit reminders into a single list; interleave when sort can apply across item types */
+  /* Combine tasks and habit reminders; interleave when sort can apply across item types */
   const combinedItems = useMemo(() => {
     const items: Array<{
-      type: 'task' | 'reminder' | 'habit_reminder'
+      type: 'task' | 'habit_reminder'
       id: string
       created_at: string
       sourceIndex: number
       task?: Task
-      reminder?: Reminder
-      habitReminder?: { habit: HabitWithStreaks; remindAt: string | null }
+      habitReminder?: { habit: HabitWithStreaks; task: Task; remindAt: string | null }
     }> = []
 
     /* Stable ordering: keep the original insertion order as a tie-breaker so task ordering from TasksPage is preserved. */
@@ -319,35 +287,24 @@ export function TaskList({
       })
     })
 
-    /* Add reminders */
-    reminders.forEach((reminder) => {
-      items.push({
-        type: 'reminder',
-        id: reminder.id,
-        created_at: reminder.created_at || new Date().toISOString(),
-        sourceIndex: sourceIndex++,
-        reminder,
-      })
-    })
-
     /* Add habit reminders (streak + Complete/Skip + notification time) */
-    habitReminders.forEach(({ habit, remindAt }) => {
+    habitReminders.forEach(({ habit, task, remindAt }) => {
       items.push({
         type: 'habit_reminder',
         id: `habit-${habit.id}`,
         created_at: habit.created_at,
         sourceIndex: sourceIndex++,
-        habitReminder: { habit, remindAt },
+        habitReminder: { habit, task, remindAt },
       })
     })
 
-    /* Interleaving sort: if the active sort includes fields that apply to tasks and reminders, sort the combined list accordingly. */
+    /* Interleaving sort: if the active sort includes fields that apply to tasks and habit rows, sort the combined list accordingly. */
     const canInterleave =
       (viewMode === 'available' || viewMode === 'all' || viewMode === 'custom') &&
       effectiveSortBy.some((s) => s.field === 'due_date' || s.field === 'start_date' || s.field === 'task_name')
 
     if (canInterleave) {
-      /* Shared sort keys: map task/reminder/habit reminder to comparable values for date or name sorts. */
+      /* Shared sort keys: map task/habit reminder to comparable values for date or name sorts. */
       const getTimestampForField = (
         item: (typeof items)[number],
         field: 'start_date' | 'due_date',
@@ -356,21 +313,16 @@ export function TaskList({
           const iso = field === 'due_date' ? item.task.due_date : item.task.start_date
           return iso ? new Date(iso).getTime() : Number.MAX_SAFE_INTEGER
         }
-        if (item.type === 'reminder' && item.reminder) {
-          return item.reminder.remind_at ? new Date(item.reminder.remind_at).getTime() : Number.MAX_SAFE_INTEGER
-        }
         if (item.type === 'habit_reminder' && item.habitReminder) {
-          return item.habitReminder.remindAt
-            ? new Date(item.habitReminder.remindAt).getTime()
-            : Number.MAX_SAFE_INTEGER
+          const due = item.habitReminder.task.due_date ?? item.habitReminder.remindAt
+          return due ? new Date(due).getTime() : Number.MAX_SAFE_INTEGER
         }
         return Number.MAX_SAFE_INTEGER
       }
 
       const getName = (item: (typeof items)[number]) => {
         if (item.type === 'task' && item.task) return item.task.title ?? ''
-        if (item.type === 'reminder' && item.reminder) return item.reminder.name ?? ''
-        if (item.type === 'habit_reminder' && item.habitReminder) return item.habitReminder.habit.name ?? ''
+        if (item.type === 'habit_reminder' && item.habitReminder) return item.habitReminder.task.title ?? ''
         return ''
       }
 
@@ -392,7 +344,7 @@ export function TaskList({
     }
 
     return items
-  }, [tasks, reminders, habitReminders, viewMode, effectiveSortBy])
+  }, [tasks, habitReminders, viewMode, effectiveSortBy])
 
   return (
     <div className="space-y-6">
@@ -402,77 +354,51 @@ export function TaskList({
           {error}
         </div>
       )}
-      {remindersError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-          {remindersError}
-        </div>
-      )}
 
       {/* Loading state */}
-      {(loading || remindersLoading) && (
+      {loading && (
         <div className="text-center py-8 text-bonsai-slate-500">Loading...</div>
       )}
 
       {/* Empty state */}
-      {!loading && !remindersLoading && tasks.length === 0 && reminders.length === 0 && habitReminders.length === 0 && (
+      {!loading && tasks.length === 0 && habitReminders.length === 0 && (
         <div className="text-center py-12">
-          <p className="text-bonsai-slate-600 text-lg">No tasks or reminders found</p>
+          <p className="text-bonsai-slate-600 text-lg">No tasks found</p>
           <p className="text-bonsai-slate-500 text-sm mt-2">
-            Create your first task or reminder to get started
+            Create your first task to get started
           </p>
         </div>
       )}
 
-      {/* Combined list: Tasks and reminders together, visible on all breakpoints */}
-      {!loading && !remindersLoading && combinedItems.length > 0 && (
-        <>
-          {/* Desktop (lg+): Full task items with expandable subtasks, reminders as ReminderItem, habit reminders as HabitReminderItem */}
-          <div className="hidden lg:block space-y-4">
-            {combinedItems.map((item) => {
-              if (item.type === 'habit_reminder' && item.habitReminder && onHabitMarkComplete && onHabitSkip) {
-                const { habit, remindAt } = item.habitReminder
-                return (
-                  <HabitReminderItem
-                    key={item.id}
-                    habit={habit}
-                    remindAt={remindAt}
-                    reminderTime={habit.reminder_time}
-                    onMarkComplete={() => onHabitMarkComplete(habit, remindAt)}
-                    onSkip={() => onHabitSkip(habit, remindAt)}
-                  />
-                )
-              }
-              if (item.type === 'reminder' && item.reminder) {
-                const reminder = item.reminder
-                return (
-                  <ReminderItem
-                    key={item.id}
-                    reminder={reminder}
-                    onToggleComplete={onToggleReminderComplete || (() => {})}
-                    onEdit={onEditReminder || (() => {})}
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      setContextReminder(reminder)
-                      setContextPosition({ x: e.clientX, y: e.clientY })
-                    }}
-                    inlineEditName={
-                      editingNameReminderId === reminder.id && onUpdateReminder
-                        ? {
-                            value: reminder.name,
-                            onSave: async (newName) => {
-                              await onUpdateReminder(reminder.id, { name: newName })
-                              setEditingNameReminderId(null)
-                            },
-                            onCancel: () => setEditingNameReminderId(null),
-                          }
-                        : undefined
-                    }
-                    onUpdateReminder={onUpdateReminder}
-                  />
-                )
-              }
-              if (item.type === 'task' && item.task) {
-                const task = item.task
+      {/* Combined list: tasks and habit reminders; TaskListItem picks layout from viewport internally */}
+      {!loading && combinedItems.length > 0 && (
+        <div className="space-y-2 lg:space-y-4">
+          {combinedItems.map((item) => {
+            if (
+              item.type === 'habit_reminder' &&
+              item.habitReminder &&
+              onHabitTargetComplete &&
+              onHabitMinimum &&
+              onHabitSkip
+            ) {
+              const { habit, task, remindAt } = item.habitReminder
+              return (
+                <HabitReminderItem
+                  key={item.id}
+                  habit={habit}
+                  task={task}
+                  remindAt={remindAt}
+                  reminderTime={habit.reminder_time}
+                  onTargetComplete={() => onHabitTargetComplete(habit, task, remindAt)}
+                  onMinimum={() => onHabitMinimum(habit, task, remindAt)}
+                  onSkip={() => onHabitSkip(habit, task, remindAt)}
+                  density={taskListViewport === 'desktop' ? undefined : 'compact'}
+                  showStreakBreakdown={false}
+                />
+              )
+            }
+            if (item.type === 'task' && item.task) {
+              const task = item.task
               const enrichment = taskEnrichment[task.id] ?? {
                 hasSubtasks: false,
                 subtaskCount: 0,
@@ -487,7 +413,8 @@ export function TaskList({
               const totalTimeWithSubtasks = (task.time_estimate ?? 0) + (enrichment.subtaskTimeTotal ?? 0)
               return (
                 <div key={task.id} className="space-y-2">
-                  <FullTaskItem
+                  <TaskListItem
+                    layout="responsive"
                     task={task}
                     onClick={() => editingNameTaskId !== task.id && onOpenEditModal?.(task)}
                     onContextMenu={(e) => {
@@ -541,8 +468,8 @@ export function TaskList({
                         const checklists = await getTaskChecklists(taskId)
                         for (const c of checklists) {
                           const items = await getTaskChecklistItems(c.id)
-                          for (const item of items) {
-                            if (!item.completed) await toggleChecklistItemComplete(item.id, true)
+                          for (const checklistItem of items) {
+                            if (!checklistItem.completed) await toggleChecklistItemComplete(checklistItem.id, true)
                           }
                         }
                         await toggleComplete(taskId, true)
@@ -568,7 +495,7 @@ export function TaskList({
                     onDependenciesChanged={loadEnrichment}
                   />
                   {isExpanded && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
-                    <div className="ml-8 pl-4 border-l-2 border-bonsai-slate-200">
+                    <div className="ml-4 pl-3 border-l-2 border-bonsai-slate-200 lg:ml-8 lg:pl-4">
                       <SubtaskList
                         taskId={task.id}
                         fetchSubtasks={fetchSubtasks}
@@ -589,291 +516,10 @@ export function TaskList({
                   )}
                 </div>
               )
-              }
-              return null
-            })}
-          </div>
-          {/* Mobile (< md): compact task items; reminders as ReminderItem; habit reminders as HabitReminderItem (compact density) */}
-          <div className="md:hidden space-y-2">
-            {combinedItems.map((item) => {
-              if (item.type === 'habit_reminder' && item.habitReminder && onHabitMarkComplete && onHabitSkip) {
-                const { habit, remindAt } = item.habitReminder
-                return (
-                  <HabitReminderItem
-                    key={item.id}
-                    habit={habit}
-                    remindAt={remindAt}
-                    reminderTime={habit.reminder_time}
-                    onMarkComplete={() => onHabitMarkComplete(habit, remindAt)}
-                    onSkip={() => onHabitSkip(habit, remindAt)}
-                    density="compact"
-                  />
-                )
-              }
-              if (item.type === 'reminder' && item.reminder) {
-                const reminder = item.reminder
-                return (
-                  <ReminderItem
-                    key={item.id}
-                    reminder={reminder}
-                    onToggleComplete={onToggleReminderComplete || (() => {})}
-                    onEdit={onEditReminder || (() => {})}
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      setContextReminder(reminder)
-                      setContextPosition({ x: e.clientX, y: e.clientY })
-                    }}
-                    inlineEditName={
-                      editingNameReminderId === reminder.id && onUpdateReminder
-                        ? {
-                            value: reminder.name,
-                            onSave: async (newName) => {
-                              await onUpdateReminder(reminder.id, { name: newName })
-                              setEditingNameReminderId(null)
-                            },
-                            onCancel: () => setEditingNameReminderId(null),
-                          }
-                        : undefined
-                    }
-                    onUpdateReminder={onUpdateReminder}
-                  />
-                )
-              }
-              if (item.type === 'task' && item.task) {
-                const task = item.task
-              const enrichment = taskEnrichment[task.id] ?? {
-                hasSubtasks: false,
-                subtaskCount: 0,
-                incompleteSubtaskCount: 0,
-                subtaskTimeTotal: 0,
-                isBlocked: false,
-                isBlocking: false,
-                blockingCount: 0,
-                blockedByCount: 0,
-              }
-              const isExpanded = expandedTasks.has(task.id)
-              return (
-                <div key={task.id} className="space-y-2">
-                  <CompactTaskItem
-                    task={task}
-                    hasSubtasks={enrichment.hasSubtasks}
-                    incompleteSubtaskCount={enrichment.incompleteSubtaskCount}
-                    expanded={isExpanded}
-                    onToggleExpand={() => toggleExpand(task.id)}
-                    onClick={() => editingNameTaskId !== task.id && onOpenEditModal?.(task)}
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      setContextTask(task)
-                      setContextPosition({ x: e.clientX, y: e.clientY })
-                    }}
-                    inlineEditTitle={
-                      editingNameTaskId === task.id
-                        ? {
-                            value: task.title,
-                            onSave: async (newTitle) => {
-                              await updateTask(task.id, { title: newTitle })
-                              setEditingNameTaskId(null)
-                              refetch?.()
-                            },
-                            onCancel: () => setEditingNameTaskId(null),
-                          }
-                        : undefined
-                    }
-                    isBlocked={enrichment.isBlocked}
-                    isBlocking={enrichment.isBlocking}
-                    onUpdateTask={async (taskId, input) => {
-                      await updateTask(taskId, input)
-                    }}
-                  />
-                  {isExpanded && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
-                    <div className="ml-4 pl-3 border-l-2 border-bonsai-slate-200">
-                      <SubtaskList
-                        taskId={task.id}
-                        fetchSubtasks={fetchSubtasks}
-                        onCreateSubtask={(taskId, title) => createSubtask(taskId, { title })}
-                        onUpdateTask={updateTask}
-                        onDeleteTask={deleteTask}
-                        onToggleComplete={toggleComplete}
-                        getTasks={getTasks}
-                        getTaskDependencies={getTaskDependencies}
-                        onAddDependency={onAddDependency}
-                        onRemoveDependency={onRemoveDependency}
-                        hideCompletedSubtasks={hideCompletedSubtasks}
-                        onSubtasksChanged={loadEnrichment}
-                      />
-                    </div>
-                  )}
-                </div>
-              )
-              }
-              return null
-            })}
-          </div>
-          {/* Tablet (md to lg): tablet task items; reminders as ReminderItem; habit reminders as HabitReminderItem (compact density) */}
-          <div className="hidden md:block lg:hidden space-y-2">
-            {combinedItems.map((item) => {
-              if (item.type === 'habit_reminder' && item.habitReminder && onHabitMarkComplete && onHabitSkip) {
-                const { habit, remindAt } = item.habitReminder
-                return (
-                  <HabitReminderItem
-                    key={item.id}
-                    habit={habit}
-                    remindAt={remindAt}
-                    reminderTime={habit.reminder_time}
-                    onMarkComplete={() => onHabitMarkComplete(habit, remindAt)}
-                    onSkip={() => onHabitSkip(habit, remindAt)}
-                    density="compact"
-                  />
-                )
-              }
-              if (item.type === 'reminder' && item.reminder) {
-                const reminder = item.reminder
-                return (
-                  <ReminderItem
-                    key={item.id}
-                    reminder={reminder}
-                    onToggleComplete={onToggleReminderComplete || (() => {})}
-                    onEdit={onEditReminder || (() => {})}
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      setContextReminder(reminder)
-                      setContextPosition({ x: e.clientX, y: e.clientY })
-                    }}
-                    inlineEditName={
-                      editingNameReminderId === reminder.id && onUpdateReminder
-                        ? {
-                            value: reminder.name,
-                            onSave: async (newName) => {
-                              await onUpdateReminder(reminder.id, { name: newName })
-                              setEditingNameReminderId(null)
-                            },
-                            onCancel: () => setEditingNameReminderId(null),
-                          }
-                        : undefined
-                    }
-                    onUpdateReminder={onUpdateReminder}
-                  />
-                )
-              }
-              if (item.type === 'task' && item.task) {
-                const task = item.task
-              const enrichment = taskEnrichment[task.id] ?? {
-                hasSubtasks: false,
-                subtaskCount: 0,
-                incompleteSubtaskCount: 0,
-                subtaskTimeTotal: 0,
-                isBlocked: false,
-                isBlocking: false,
-                blockingCount: 0,
-                blockedByCount: 0,
-              }
-              const isExpanded = expandedTasks.has(task.id)
-              const totalTimeWithSubtasks = (task.time_estimate ?? 0) + (enrichment.subtaskTimeTotal ?? 0)
-              return (
-                <div key={task.id} className="space-y-2">
-                  <FullTaskItem
-                    tablet={true}
-                    task={task}
-                    onClick={() => editingNameTaskId !== task.id && onOpenEditModal?.(task)}
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      setContextTask(task)
-                      setContextPosition({ x: e.clientX, y: e.clientY })
-                    }}
-                    inlineEditTitle={
-                      editingNameTaskId === task.id
-                        ? {
-                            value: task.title,
-                            onSave: async (newTitle) => {
-                              await updateTask(task.id, { title: newTitle })
-                              setEditingNameTaskId(null)
-                              refetch?.()
-                            },
-                            onCancel: () => setEditingNameTaskId(null),
-                          }
-                        : undefined
-                    }
-                    hasSubtasks={enrichment.hasSubtasks}
-                    incompleteSubtaskCount={enrichment.incompleteSubtaskCount}
-                    checklistSummary={enrichment.checklistSummary}
-                    totalTimeWithSubtasks={totalTimeWithSubtasks}
-                    isBlocked={enrichment.isBlocked}
-                    isBlocking={enrichment.isBlocking}
-                    blockingCount={enrichment.blockingCount}
-                    blockedByCount={enrichment.blockedByCount}
-                    onTagsUpdated={refetch}
-                    onUpdateStatus={async (taskId, status) => {
-                      try {
-                        if (status === 'completed') {
-                          await toggleComplete(taskId, true)
-                        } else {
-                          await updateTask(taskId, { status })
-                        }
-                      } catch (error) {
-                        console.error('Failed to update task status:', error)
-                        throw error
-                      }
-                    }}
-                    onCompleteTaskAndResolveAll={async (taskId) => {
-                      try {
-                        const subtasks = await fetchSubtasks(taskId)
-                        for (const st of subtasks) {
-                          if (st.status !== 'completed') await toggleComplete(st.id, true)
-                        }
-                        const checklists = await getTaskChecklists(taskId)
-                        for (const c of checklists) {
-                          const items = await getTaskChecklistItems(c.id)
-                          for (const item of items) {
-                            if (!item.completed) await toggleChecklistItemComplete(item.id, true)
-                          }
-                        }
-                        await toggleComplete(taskId, true)
-                        refetch?.()
-                        await loadEnrichment()
-                      } catch (error) {
-                        console.error('Failed to complete task and resolve items:', error)
-                        throw error
-                      }
-                    }}
-                    onUpdateTask={async (taskId, input) => {
-                      try {
-                        await updateTask(taskId, input)
-                      } catch (error) {
-                        console.error('Failed to update task:', error)
-                        throw error
-                      }
-                    }}
-                    getTasks={getTasks}
-                    getTaskDependencies={getTaskDependencies}
-                    onAddDependency={onAddDependency}
-                    onRemoveDependency={onRemoveDependency}
-                    onDependenciesChanged={loadEnrichment}
-                  />
-                  {isExpanded && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
-                    <div className="ml-4 pl-3 border-l-2 border-bonsai-slate-200">
-                      <SubtaskList
-                        taskId={task.id}
-                        fetchSubtasks={fetchSubtasks}
-                        onCreateSubtask={(taskId, title) => createSubtask(taskId, { title })}
-                        onUpdateTask={updateTask}
-                        onDeleteTask={deleteTask}
-                        onToggleComplete={toggleComplete}
-                        getTasks={getTasks}
-                        getTaskDependencies={getTaskDependencies}
-                        onAddDependency={onAddDependency}
-                        onRemoveDependency={onRemoveDependency}
-                        hideCompletedSubtasks={hideCompletedSubtasks}
-                        onSubtasksChanged={loadEnrichment}
-                      />
-                    </div>
-                  )}
-                </div>
-              )
-              }
-              return null
-            })}
-          </div>
-        </>
+            }
+            return null
+          })}
+        </div>
       )}
 
       {/* Task context popover: Right-click on a task shows Rename, Duplicate, Archive, Delete */}
@@ -906,31 +552,6 @@ export function TaskList({
           lineUpTaskIds={lineUpTaskIds}
           onAddToLineUp={onAddToLineUp}
           onRemoveFromLineUp={onRemoveFromLineUp}
-        />
-      )}
-
-      {/* Reminder context popover: Right-click on a reminder shows Rename, Duplicate, Delete */}
-      {contextReminder && (
-        <ReminderContextPopover
-          isOpen={true}
-          onClose={() => setContextReminder(null)}
-          x={contextPosition.x}
-          y={contextPosition.y}
-          reminder={contextReminder}
-          onRename={(r) => {
-            setContextReminder(null)
-            setEditingNameReminderId(r.id)
-          }}
-          onDuplicate={async (r) => {
-            if (onCreateReminder) await onCreateReminder({ name: `${r.name} (copy)`, remind_at: r.remind_at ?? undefined })
-          }}
-          onMarkDeleted={onMarkDeletedReminder}
-          onDelete={async (r) => {
-            if (onDeleteReminder) {
-              await onDeleteReminder(r.id)
-              setContextReminder(null)
-            }
-          }}
         />
       )}
 

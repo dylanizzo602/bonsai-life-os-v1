@@ -1,6 +1,7 @@
 /* LookBackScreen: Weekly briefing step 1 – look back on last week (tasks completed + habit streaks) */
 
 import { Button } from '../../components/Button'
+import { HabitStreakSummary } from '../habits/HabitStreakSummary'
 import type { HabitWithStreaks } from '../habits/types'
 
 interface LookBackScreenProps {
@@ -33,10 +34,6 @@ export function LookBackScreen({
     </p>
   )
 
-  /* Section: Habit streaks list (name + current streak, same pattern as HabitTable) */
-  const streakLabel = (habit: HabitWithStreaks) =>
-    `🔥 ${habit.currentStreak}${habit.frequency === 'weekly' ? ' wk' : ''}`
-
   return (
     <div className="flex min-h-[50vh] flex-col justify-between">
       <div>
@@ -59,14 +56,9 @@ export function LookBackScreen({
           ) : (
             <ul className="space-y-2">
               {habitsWithStreaks.map((habit) => (
-                <li
-                  key={habit.id}
-                  className="flex items-center justify-between text-body text-bonsai-slate-700"
-                >
-                  <span>{habit.name}</span>
-                  <span className="text-secondary font-medium text-bonsai-slate-600" role="img" aria-label="streak">
-                    {streakLabel(habit)}
-                  </span>
+                <li key={habit.id} className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between text-body text-bonsai-slate-700 border-b border-bonsai-slate-100 pb-3 last:border-0 last:pb-0">
+                  <span className="font-medium">{habit.name}</span>
+                  <HabitStreakSummary habit={habit} showLongest={false} variant="compact" />
                 </li>
               ))}
             </ul>

@@ -117,7 +117,7 @@ export function AddEditHabitModal({
         setMinimumAction('')
         setFrequency('daily')
         setFrequencyTarget(1)
-        setAddToTodos(false)
+        setAddToTodos(true)
         setReminderTime('09:00')
         setColor('green')
       }

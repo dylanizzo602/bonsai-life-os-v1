@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react'
 import { DashboardWidget } from './DashboardWidget'
+import { HabitStreakSummary } from '../../habits/HabitStreakSummary'
 import { useHabits } from '../../habits/hooks/useHabits'
 function shuffle<T>(arr: T[]): T[] {
   const out = [...arr]
@@ -49,9 +50,9 @@ export function HabitsWidget({ onViewAll }: HabitsWidgetProps) {
               className="rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50/50 px-4 py-3"
             >
               <p className="text-body font-medium text-bonsai-brown-700">{habit.name}</p>
-              <p className="text-secondary text-bonsai-slate-600 mt-1" role="img" aria-label="streak">
-                🔥 {habit.currentStreak}
-              </p>
+              <div className="mt-2">
+                <HabitStreakSummary habit={habit} showLongest={false} variant="default" />
+              </div>
             </div>
           ))}
         </div>

@@ -1,4 +1,4 @@
-/* DateRangeBar: Prev / date range text / Next for habit week navigation. Used by HabitTable and HabitTableV1. */
+/* DateRangeBar: Prev / date range text / Next for habit week navigation. Used by HabitTable. */
 
 import { ChevronLeftIcon, ChevronRightIcon } from '../../components/icons'
 

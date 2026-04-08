@@ -1241,20 +1241,230 @@ export function AddEditTaskModal({
                   <ul className="space-y-3">
                     {draftChecklists.map((cl) => (
                       <li key={cl.id} className="rounded-lg border border-bonsai-slate-200 p-2">
-                        <p className="text-sm font-medium text-bonsai-slate-700 mb-2">
-                          {cl.title}
-                        </p>
+                        {/* Draft checklist title: inline rename/delete (local state only until task is saved) */}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2 flex-1">
+                            {editingChecklistId === cl.id ? (
+                              <Input
+                                className="border-bonsai-slate-300 flex-1 text-sm font-medium"
+                                value={editingChecklistTitle}
+                                onChange={(e) => setEditingChecklistTitle(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    const next = editingChecklistTitle.trim()
+                                    if (next) {
+                                      setDraftChecklists((prev) =>
+                                        prev.map((d) =>
+                                          d.id === cl.id ? { ...d, title: next } : d,
+                                        ),
+                                      )
+                                    }
+                                    setEditingChecklistId(null)
+                                  }
+                                  if (e.key === 'Escape') {
+                                    e.stopPropagation()
+                                    setEditingChecklistId(null)
+                                  }
+                                }}
+                                autoFocus
+                              />
+                            ) : (
+                              <p className="text-sm font-medium text-bonsai-slate-700 flex-1">
+                                {cl.title}
+                              </p>
+                            )}
+                            <span className="text-xs text-bonsai-slate-500 shrink-0">
+                              {cl.items.filter((i) => i.completed).length}/{cl.items.length}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                if (editingChecklistId === cl.id) {
+                                  const next = editingChecklistTitle.trim()
+                                  if (next) {
+                                    setDraftChecklists((prev) =>
+                                      prev.map((d) =>
+                                        d.id === cl.id ? { ...d, title: next } : d,
+                                      ),
+                                    )
+                                  }
+                                  setEditingChecklistId(null)
+                                } else {
+                                  setEditingChecklistId(cl.id)
+                                  setEditingChecklistTitle(cl.title)
+                                }
+                              }}
+                            >
+                              {editingChecklistId === cl.id ? 'Save' : 'Rename'}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setDraftChecklists((prev) => prev.filter((d) => d.id !== cl.id))
+                                setDraftChecklistItemTitles((prev) => {
+                                  const next = { ...prev }
+                                  delete next[cl.id]
+                                  return next
+                                })
+                                setPendingDraftPasteLines((prev) => {
+                                  const next = { ...prev }
+                                  delete next[cl.id]
+                                  return next
+                                })
+                                if (editingChecklistId === cl.id) {
+                                  setEditingChecklistId(null)
+                                  setEditingChecklistTitle('')
+                                }
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </div>
                         {cl.items.length > 0 && (
                           <ul className="space-y-1 mb-2">
-                            {cl.items.map((item) => (
-                              <li key={item.id} className="flex items-center gap-2">
-                                <Checkbox checked={item.completed} readOnly />
-                                <span className="text-sm text-bonsai-slate-700 flex-1">
-                                  {item.title}
-                                </span>
-                              </li>
-                            ))}
+                            {cl.items
+                              .filter((item) =>
+                                showCompletedChecklistItems ? true : !item.completed,
+                              )
+                              .map((item) => (
+                                <li key={item.id} className="flex items-center gap-2">
+                                  <Checkbox
+                                    checked={item.completed}
+                                    onChange={(e) =>
+                                      setDraftChecklists((prev) =>
+                                        prev.map((d) =>
+                                          d.id !== cl.id
+                                            ? d
+                                            : {
+                                                ...d,
+                                                items: d.items.map((i) =>
+                                                  i.id === item.id
+                                                    ? { ...i, completed: e.target.checked }
+                                                    : i,
+                                                ),
+                                              },
+                                        ),
+                                      )
+                                    }
+                                  />
+                                  {editingItemId === item.id ? (
+                                    <Input
+                                      className="border-bonsai-slate-300 flex-1 text-sm"
+                                      value={editingItemTitle}
+                                      onChange={(e) => setEditingItemTitle(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          e.preventDefault()
+                                          const next = editingItemTitle.trim()
+                                          if (next) {
+                                            setDraftChecklists((prev) =>
+                                              prev.map((d) =>
+                                                d.id !== cl.id
+                                                  ? d
+                                                  : {
+                                                      ...d,
+                                                      items: d.items.map((i) =>
+                                                        i.id === item.id ? { ...i, title: next } : i,
+                                                      ),
+                                                    },
+                                              ),
+                                            )
+                                          }
+                                          setEditingItemId(null)
+                                        }
+                                        if (e.key === 'Escape') {
+                                          e.stopPropagation()
+                                          setEditingItemId(null)
+                                        }
+                                      }}
+                                      autoFocus
+                                    />
+                                  ) : (
+                                    <span
+                                      className={
+                                        item.completed
+                                          ? 'text-sm text-bonsai-slate-500 line-through flex-1'
+                                          : 'text-sm text-bonsai-slate-700 flex-1'
+                                      }
+                                    >
+                                      {item.title}
+                                    </span>
+                                  )}
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      if (editingItemId === item.id) {
+                                        const next = editingItemTitle.trim()
+                                        if (next) {
+                                          setDraftChecklists((prev) =>
+                                            prev.map((d) =>
+                                              d.id !== cl.id
+                                                ? d
+                                                : {
+                                                    ...d,
+                                                    items: d.items.map((i) =>
+                                                      i.id === item.id ? { ...i, title: next } : i,
+                                                    ),
+                                                  },
+                                            ),
+                                          )
+                                        }
+                                        setEditingItemId(null)
+                                      } else {
+                                        setEditingItemId(item.id)
+                                        setEditingItemTitle(item.title)
+                                      }
+                                    }}
+                                  >
+                                    {editingItemId === item.id ? 'Save' : 'Rename'}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      setDraftChecklists((prev) =>
+                                        prev.map((d) =>
+                                          d.id !== cl.id
+                                            ? d
+                                            : {
+                                                ...d,
+                                                items: d.items.filter((i) => i.id !== item.id),
+                                              },
+                                        ),
+                                      )
+                                      if (editingItemId === item.id) setEditingItemId(null)
+                                    }}
+                                  >
+                                    Delete
+                                  </Button>
+                                </li>
+                              ))}
                           </ul>
+                        )}
+                        {/* Draft: show/hide completed rows when any item is completed */}
+                        {cl.items.some((i) => i.completed) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowCompletedChecklistItems((prev) => !prev)
+                            }
+                            className="mb-1 text-xs font-medium text-bonsai-slate-600 hover:text-bonsai-slate-800"
+                          >
+                            {showCompletedChecklistItems
+                              ? 'Hide closed items'
+                              : 'Show closed items'}
+                          </button>
                         )}
                         <div className="flex flex-col gap-2">
                           <div className="flex gap-2">
@@ -1308,6 +1518,7 @@ export function AddEditTaskModal({
                               }}
                             />
                             <Button
+                              type="button"
                               variant="ghost"
                               size="sm"
                               onClick={() => {
@@ -1518,10 +1729,14 @@ export function AddEditTaskModal({
                                 onChange={(e) => setEditingChecklistTitle(e.target.value)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
+                                    e.preventDefault()
                                     updateChecklistTitle(c.id, editingChecklistTitle)
                                     setEditingChecklistId(null)
                                   }
-                                  if (e.key === 'Escape') setEditingChecklistId(null)
+                                  if (e.key === 'Escape') {
+                                    e.stopPropagation()
+                                    setEditingChecklistId(null)
+                                  }
                                 }}
                                 autoFocus
                               />
@@ -1586,10 +1801,12 @@ export function AddEditTaskModal({
                                     onChange={(e) => setEditingItemTitle(e.target.value)}
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter') {
+                                        e.preventDefault()
                                         updateItemTitle(item.id, editingItemTitle)
                                         setEditingItemId(null)
                                       }
                                       if (e.key === 'Escape') {
+                                        e.stopPropagation()
                                         setEditingItemId(null)
                                       }
                                     }}

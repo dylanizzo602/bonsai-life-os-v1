@@ -1,7 +1,6 @@
-/* TabletTaskItem component: Reusable tablet task display with consistent icon layout.
-* Tablet task items never use hover tooltips; icons are display-only for touch and small screens. */
+/* TaskListItemTablet: Two-row stacked task row for tablet viewports (md–lg) */
 
-import { useState, useRef, type RefObject } from 'react'
+import { useState, useRef, Fragment } from 'react'
 import {
   ChecklistIcon,
   CalendarIcon,
@@ -22,12 +21,15 @@ import { Tooltip } from '../../components/Tooltip'
 import { TimeEstimateTooltip } from './modals/TimeEstimateTooltip'
 import { StatusPickerModal } from './modals/StatusPickerModal'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
+import { TagModal } from './modals/TagModal'
+import { useTags } from './hooks/useTags'
 import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
 import { getDueStatus, formatStartDueDisplay } from './utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
-import type { Task, TaskPriority, TaskStatus, UpdateTaskInput } from './types'
+import type { TaskListItemProps } from './taskListItemTypes'
+import type { TaskPriority, TaskStatus } from './types'
 
-/** Human-readable priority label (matches FullTaskItem) */
+/** Human-readable priority label (matches desktop row) */
 function getPriorityLabel(priority: TaskPriority): string {
   const map: Record<TaskPriority, string> = {
     none: 'None',
@@ -41,59 +43,6 @@ function getPriorityLabel(priority: TaskPriority): string {
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
 type DisplayStatus = 'open' | 'in_progress' | 'complete'
-
-export interface TabletTaskItemProps {
-  /** Task data to display */
-  task: Task
-  /** Whether this task has subtasks (shows chevron and allows expand/collapse) */
-  hasSubtasks?: boolean
-  /** Number of subtasks not yet completed (shown next to subtasks icon; completed excluded) */
-  incompleteSubtaskCount?: number
-  /** Checklist completed/total when task has checklists */
-  checklistSummary?: { completed: number; total: number }
-  /** Total time in minutes (task estimate + sum of subtask estimates) for tooltip display */
-  totalTimeWithSubtasks?: number | null
-  /** Task is blocked by another (show blocked icon) */
-  isBlocked?: boolean
-  /** Task is blocking another (show warning icon) */
-  isBlocking?: boolean
-  /** Number of tasks this task is blocking (display only; no tooltips in tablet view) */
-  blockingCount?: number
-  /** Number of tasks blocking this task (display only; no tooltips in tablet view) */
-  blockedByCount?: number
-  /** Task is shared with another user (show shared icon) */
-  isShared?: boolean
-  /** Optional click handler for the entire item */
-  onClick?: () => void
-  /** Optional right-click context menu (e.g. show task options popover) */
-  onContextMenu?: (e: React.MouseEvent) => void
-  /** When set, show inline text input to edit task title (Rename from context menu) */
-  inlineEditTitle?: {
-    value: string
-    onSave: (newTitle: string) => void | Promise<void>
-    onCancel: () => void
-  }
-  /** Optional remove handler (shows × button) */
-  onRemove?: () => void
-  /** Optional handler for dependency icon click */
-  onDependencyClick?: () => void
-  /** Format date for display (e.g. Jan 22 at 12pm) */
-  formatDueDate?: (iso: string | null | undefined) => string | null
-  /** Optional status update handler (used to complete/reopen tasks, including recurring) */
-  onUpdateStatus?: (taskId: string, status: TaskStatus) => Promise<void>
-  /** Optional task update handler (priority picker; matches desktop FullTaskItem behavior) */
-  onUpdateTask?: (taskId: string, input: UpdateTaskInput) => Promise<void>
-  /** Whether subtasks section is expanded (for tablet expand/collapse) */
-  expanded?: boolean
-  /** Toggle expand/collapse when chevron is tapped */
-  onToggleExpand?: () => void
-  /** Called when expanding to add a first subtask (optional; focuses add input) */
-  onExpandForSubtask?: () => void
-  /** Ref for the tag control (parent positions TagModal below this button) */
-  tagButtonRef?: RefObject<HTMLButtonElement | null>
-  /** Open tag popover; parent mounts TagModal beside this row */
-  onManageTags?: () => void
-}
 
 /** Map TaskStatus to display status for the status circle */
 function getDisplayStatus(status: TaskStatus): DisplayStatus {
@@ -179,14 +128,9 @@ function getPriorityFlagClasses(priority: TaskPriority): string {
 }
 
 /**
- * Tablet task item component with standardized two-row layout.
- * No hover tooltips; safe for tablet and mobile breakpoints.
- * Top row: status circle and task name.
- * Bottom row: all icons and metadata in same order as FullTaskItem:
- * dependency icons, description, checklist, tags, shared, time estimate, date/time, priority.
- * Used in modals, dependency sections, and task lists on tablet/mobile.
+ * Tablet task row: two-row layout with tag modal mounted beside the row (same save path as desktop).
  */
-export function TabletTaskItem({
+export function TaskListItemTabletLayout({
   task,
   checklistSummary,
   totalTimeWithSubtasks,
@@ -204,13 +148,20 @@ export function TabletTaskItem({
   onDependencyClick,
   formatDueDate: _formatDueDate,
   onUpdateStatus,
+  onTagsUpdated,
   expanded = false,
   onToggleExpand,
   onExpandForSubtask,
   onUpdateTask,
-  tagButtonRef,
-  onManageTags,
-}: TabletTaskItemProps) {
+}: TaskListItemProps) {
+  /* Tag button ref and tag CRUD: TagModal is owned here so the tablet row stays self-contained */
+  const tagButtonRef = useRef<HTMLButtonElement>(null)
+  const [isTagModalOpen, setIsTagModalOpen] = useState(false)
+  const { searchTags, createTag, updateTag, deleteTagFromAllTasks, setTagsForTask } = useTags(
+    task.user_id ?? null,
+  )
+  const onManageTags = onUpdateTask ? () => setIsTagModalOpen(true) : undefined
+
   const timeZone = useUserTimeZone()
   const displayStatus = getDisplayStatus(task.status)
   /* Date display: single line for start/due (Starts Jan 1, Due Jan 3 at 5pm, Jan 1 - Jan 3 at 5pm, etc.) */
@@ -231,6 +182,7 @@ export function TabletTaskItem({
   const priorityButtonRef = useRef<HTMLButtonElement>(null)
 
   return (
+    <Fragment>
     <div
       className="tablet-task-item rounded-lg border border-dashed border-bonsai-slate-200 bg-white px-3 py-2 shadow-sm"
       role={onClick ? 'button' : undefined}
@@ -369,7 +321,7 @@ export function TabletTaskItem({
             </span>
           </span>
         )}
-        {/* Tags: Tappable when parent provides TagModal + ref (same save path as desktop FullTaskItem) */}
+        {/* Tags: tappable when task updates are allowed; opens TagModal sibling below */}
         {onUpdateTask && onManageTags && (
           <button
             ref={tagButtonRef}
@@ -525,7 +477,7 @@ export function TabletTaskItem({
           }}
         />
       )}
-      {/* Priority picker popover: same modal and update path as desktop FullTaskItem */}
+      {/* Priority picker popover: same modal and update path as desktop row */}
       {onUpdateTask && (
         <PriorityPickerModal
           isOpen={isPriorityModalOpen}
@@ -542,5 +494,31 @@ export function TabletTaskItem({
         />
       )}
     </div>
+    {/* Tag modal: positioned from tag button ref (same pattern as desktop TaskListItem) */}
+    {onUpdateTask && (
+      <TagModal
+        isOpen={isTagModalOpen}
+        onClose={() => setIsTagModalOpen(false)}
+        value={task.tags ?? []}
+        onSave={async (tags) => {
+          try {
+            await setTagsForTask(
+              task.id,
+              tags.map((t) => t.id),
+            )
+            onTagsUpdated?.()
+          } catch (err) {
+            console.error('Failed to update tags:', err)
+          }
+        }}
+        triggerRef={tagButtonRef}
+        taskId={task.id}
+        searchTags={searchTags}
+        createTag={createTag}
+        updateTag={updateTag}
+        deleteTagFromAllTasks={deleteTagFromAllTasks}
+      />
+    )}
+    </Fragment>
   )
 }

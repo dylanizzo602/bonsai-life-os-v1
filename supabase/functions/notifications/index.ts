@@ -1,4 +1,4 @@
-/* Notifications edge function: scan overdue tasks and due reminders/habit reminders and send mobile push notifications */
+/* Notifications edge function: scan overdue tasks and due habit todo reminders; send mobile push notifications */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -237,60 +237,32 @@ serve(async (req) => {
 
     /* Overdue tasks: instant before "now" (UTC). For calendar-day parity with the app, users can set
      * `time_zone` in auth user_metadata; a future improvement is to filter per-user using that zone. */
+    /* Overdue non-habit tasks only — habit-linked rows use habit reminder flow below */
     const { data: taskRows, error: taskError } = await supabase
       .from('tasks')
       .select('id, user_id, title, due_date, status')
       .in('status', ['active', 'in_progress'])
+      .is('habit_id', null)
       .lt('due_date', now.toISOString())
 
     if (taskError) {
       console.error('Error querying overdue tasks:', taskError)
     }
 
-    const { data: reminderRows, error: reminderError } = await supabase
-      .from('reminders')
-      .select('id, user_id, name, remind_at, completed, deleted')
-      .lte('remind_at', now.toISOString())
-      .eq('completed', false)
-      .eq('deleted', false)
+    const { data: habitTaskRows, error: habitTaskError } = await supabase
+      .from('tasks')
+      .select('id, user_id, title, due_date, habit_id')
+      .in('status', ['active', 'in_progress'])
+      .not('habit_id', 'is', null)
+      .lte('due_date', now.toISOString())
 
-    if (reminderError) {
-      console.error('Error querying due reminders:', reminderError)
-    }
-
-    const { data: habitRows, error: habitError } = await supabase
-      .from('habits')
-      .select('id, user_id, name, reminder_id')
-      .not('reminder_id', 'is', null)
-
-    if (habitError) {
-      console.error('Error querying habits with reminders:', habitError)
-    }
-
-    const habitReminderIds = ((habitRows ?? []) as { reminder_id: string | null }[])
-      .map((h) => h.reminder_id)
-      .filter((id): id is string => !!id)
-
-    let habitReminderRows: any[] = []
-    if (habitReminderIds.length > 0) {
-      const { data: hr, error: hrError } = await supabase
-        .from('reminders')
-        .select('id, user_id, name, remind_at, completed, deleted')
-        .in('id', habitReminderIds)
-        .lte('remind_at', now.toISOString())
-        .eq('completed', false)
-        .eq('deleted', false)
-      if (hrError) {
-        console.error('Error querying habit reminders:', hrError)
-      } else {
-        habitReminderRows = hr ?? []
-      }
+    if (habitTaskError) {
+      console.error('Error querying habit-linked tasks for reminders:', habitTaskError)
     }
 
     const allUserIds = new Set<string>()
     for (const t of taskRows ?? []) allUserIds.add((t as any).user_id)
-    for (const r of reminderRows ?? []) allUserIds.add((r as any).user_id)
-    for (const h of habitRows ?? []) allUserIds.add((h as any).user_id)
+    for (const h of habitTaskRows ?? []) allUserIds.add((h as any).user_id)
 
     const userIdList = Array.from(allUserIds)
     const prefsByUser = await loadPreferencesByUserIds(supabase, userIdList)
@@ -358,81 +330,21 @@ serve(async (req) => {
       }
     }
 
-    for (const reminder of (reminderRows ?? []) as {
+    for (const row of (habitTaskRows ?? []) as {
       id: string
       user_id: string
-      name: string
-      remind_at: string | null
+      title: string
+      due_date: string | null
+      habit_id: string
     }[]) {
-      const userId = reminder.user_id
-      const prefs = prefsByUser[userId] ?? {}
-      const basePayload = {
-        kind: 'reminder',
-        reminder_id: reminder.id,
-        name: reminder.name,
-        remind_at: reminder.remind_at,
-      }
-
-      for (const channel of ['push_mobile'] as NotificationChannel[]) {
-        if (!isEnabled(prefs, 'reminder_due', channel)) continue
-        const already = await hasExistingNotification(
-          supabase,
-          userId,
-          'reminder_due',
-          channel,
-          'reminder',
-          reminder.id,
-        )
-        if (already) continue
-
-        try {
-          await sendPush({
-            userId,
-            title: 'Reminder due',
-            body: reminder.name,
-            data: basePayload,
-            channels: [channel],
-          })
-          await recordNotification({
-            supabase,
-            userId,
-            type: 'reminder_due',
-            channel,
-            sourceType: 'reminder',
-            sourceId: reminder.id,
-            payload: basePayload,
-            status: 'sent',
-          })
-        } catch (err) {
-          console.error('Error sending reminder push:', err)
-          await recordNotification({
-            supabase,
-            userId,
-            type: 'reminder_due',
-            channel,
-            sourceType: 'reminder',
-            sourceId: reminder.id,
-            payload: basePayload,
-            status: 'error',
-            errorMessage: (err as Error).message,
-          })
-        }
-      }
-    }
-
-    for (const reminder of habitReminderRows as {
-      id: string
-      user_id: string
-      name: string
-      remind_at: string | null
-    }[]) {
-      const userId = reminder.user_id
+      const userId = row.user_id
       const prefs = prefsByUser[userId] ?? {}
       const basePayload = {
         kind: 'habit_reminder',
-        reminder_id: reminder.id,
-        name: reminder.name,
-        remind_at: reminder.remind_at,
+        habit_id: row.habit_id,
+        task_id: row.id,
+        name: row.title,
+        remind_at: row.due_date,
       }
 
       for (const channel of ['push_mobile'] as NotificationChannel[]) {
@@ -442,8 +354,8 @@ serve(async (req) => {
           userId,
           'habit_reminder_due',
           channel,
-          'habit_reminder',
-          reminder.id,
+          'habit',
+          row.habit_id,
         )
         if (already) continue
 
@@ -451,7 +363,7 @@ serve(async (req) => {
           await sendPush({
             userId,
             title: 'Habit reminder',
-            body: reminder.name,
+            body: row.title,
             data: basePayload,
             channels: [channel],
           })
@@ -460,8 +372,8 @@ serve(async (req) => {
             userId,
             type: 'habit_reminder_due',
             channel,
-            sourceType: 'habit_reminder',
-            sourceId: reminder.id,
+            sourceType: 'habit',
+            sourceId: row.habit_id,
             payload: basePayload,
             status: 'sent',
           })
@@ -472,8 +384,8 @@ serve(async (req) => {
             userId,
             type: 'habit_reminder_due',
             channel,
-            sourceType: 'habit_reminder',
-            sourceId: reminder.id,
+            sourceType: 'habit',
+            sourceId: row.habit_id,
             payload: basePayload,
             status: 'error',
             errorMessage: (err as Error).message,
@@ -487,8 +399,7 @@ serve(async (req) => {
         JSON.stringify({
           now: now.toISOString(),
           overdueTasks: (taskRows ?? []).length,
-          dueReminders: (reminderRows ?? []).length,
-          dueHabitReminders: habitReminderRows.length,
+          dueHabitTodoReminders: (habitTaskRows ?? []).length,
         }),
         {
           headers: { 'Content-Type': 'application/json' },

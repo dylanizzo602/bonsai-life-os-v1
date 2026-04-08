@@ -18,6 +18,153 @@ import {
   getTaskMilestoneProgressPercentFromTree,
 } from '../../features/goals/utils/milestoneProgress'
 
+/* Format a milestone numeric field for human-readable goal history lines */
+function formatMilestoneQuantity(n: number | null | undefined): string {
+  if (n === null || n === undefined || Number.isNaN(Number(n))) return '—'
+  const num = Number(n)
+  if (Number.isInteger(num)) return String(num)
+  const rounded = Math.round(num * 1000) / 1000
+  return String(rounded)
+}
+
+/* Compare milestone numeric DB fields (may be string or number) */
+function milestoneNumericEqual(
+  a: number | null | undefined,
+  b: number | null | undefined,
+): boolean {
+  if (a === null || a === undefined) return b === null || b === undefined
+  if (b === null || b === undefined) return false
+  return Number(a) === Number(b)
+}
+
+/**
+ * True when the milestone row changed only by completing (incomplete → complete).
+ * In that case we log a single `milestone_completed` entry with detail, not a generic update.
+ */
+function isOnlyCompletionTransition(prev: GoalMilestone, next: GoalMilestone): boolean {
+  if (prev.completed || !next.completed) return false
+  return (
+    prev.title === next.title &&
+    prev.task_id === next.task_id &&
+    prev.type === next.type &&
+    milestoneNumericEqual(prev.start_value, next.start_value) &&
+    milestoneNumericEqual(prev.target_value, next.target_value) &&
+    (prev.unit ?? '') === (next.unit ?? '') &&
+    milestoneNumericEqual(prev.current_value, next.current_value) &&
+    prev.sort_order === next.sort_order
+  )
+}
+
+/* Human-readable line when a milestone is newly marked complete (no other edits). */
+function describeMilestoneCompletedAlone(m: GoalMilestone): string {
+  if (m.type === 'task') {
+    return `Milestone "${m.title}" completed — linked task done`
+  }
+  if (m.type === 'number') {
+    return `Milestone "${m.title}" marked complete`
+  }
+  return `Milestone "${m.title}" checked off`
+}
+
+/**
+ * Build a detailed update description and metadata for milestone edits (excluding false→true completion-only).
+ */
+async function describeMilestoneChanges(
+  prev: GoalMilestone,
+  next: GoalMilestone,
+): Promise<{ description: string; metadata: Record<string, unknown> }> {
+  const parts: string[] = []
+  const metadata: Record<string, unknown> = {
+    milestone_id: next.id,
+    milestone_type: next.type,
+    milestone_title: next.title,
+  }
+
+  /* Title rename */
+  if (prev.title !== next.title) {
+    parts.push(`renamed "${prev.title}" → "${next.title}"`)
+    metadata.previous_title = prev.title
+    metadata.next_title = next.title
+  }
+
+  /* Linked task change (task milestones) */
+  if (prev.task_id !== next.task_id) {
+    const ids = [prev.task_id, next.task_id].filter(Boolean) as string[]
+    const tasks = ids.length > 0 ? await getTasksByIds(ids) : []
+    const titles = new Map(tasks.map((t) => [t.id, t.title]))
+    const prevLabel = prev.task_id ? titles.get(prev.task_id) ?? 'Task' : 'None'
+    const nextLabel = next.task_id ? titles.get(next.task_id) ?? 'Task' : 'None'
+    parts.push(`linked task "${prevLabel}" → "${nextLabel}"`)
+    metadata.previous_task_id = prev.task_id
+    metadata.next_task_id = next.task_id
+  }
+
+  /* Number milestone: current value and deltas */
+  if (!milestoneNumericEqual(prev.current_value, next.current_value)) {
+    const unit = (next.unit ?? '').trim()
+    const suffix = unit ? ` ${unit}` : ''
+    const pv = formatMilestoneQuantity(prev.current_value as number | null)
+    const nv = formatMilestoneQuantity(next.current_value as number | null)
+    let deltaStr = ''
+    if (prev.current_value != null && next.current_value != null) {
+      const delta = Number(next.current_value) - Number(prev.current_value)
+      if (!Number.isNaN(delta) && delta !== 0) {
+        const sign = delta > 0 ? '+' : ''
+        deltaStr = ` (${sign}${formatMilestoneQuantity(delta)}${suffix})`
+      }
+    }
+    parts.push(`value ${pv} → ${nv}${suffix}${deltaStr}`)
+    metadata.previous_current_value = prev.current_value
+    metadata.next_current_value = next.current_value
+    metadata.unit = next.unit
+    if (
+      prev.current_value != null &&
+      next.current_value != null &&
+      !Number.isNaN(Number(next.current_value) - Number(prev.current_value))
+    ) {
+      metadata.delta = Number(next.current_value) - Number(prev.current_value)
+    }
+  }
+
+  if (!milestoneNumericEqual(prev.start_value, next.start_value)) {
+    parts.push(
+      `start ${formatMilestoneQuantity(prev.start_value as number | null)} → ${formatMilestoneQuantity(next.start_value as number | null)}`,
+    )
+    metadata.previous_start_value = prev.start_value
+    metadata.next_start_value = next.start_value
+  }
+
+  if (!milestoneNumericEqual(prev.target_value, next.target_value)) {
+    parts.push(
+      `target ${formatMilestoneQuantity(prev.target_value as number | null)} → ${formatMilestoneQuantity(next.target_value as number | null)}`,
+    )
+    metadata.previous_target_value = prev.target_value
+    metadata.next_target_value = next.target_value
+  }
+
+  if ((prev.unit ?? '') !== (next.unit ?? '')) {
+    parts.push(`unit "${prev.unit ?? '—'}" → "${next.unit ?? '—'}"`)
+    metadata.previous_unit = prev.unit
+    metadata.next_unit = next.unit
+  }
+
+  /* Reopened (was complete, now not) */
+  if (prev.completed && !next.completed) {
+    parts.push('marked incomplete')
+    metadata.completed_transition = 'reopened'
+  }
+
+  if (prev.sort_order !== next.sort_order) {
+    parts.push(`order ${prev.sort_order} → ${next.sort_order}`)
+    metadata.previous_sort_order = prev.sort_order
+    metadata.next_sort_order = next.sort_order
+  }
+
+  const detail = parts.length > 0 ? parts.join(' · ') : 'details updated'
+  const description = `Milestone "${next.title}": ${detail}`
+  return { description, metadata }
+}
+
 /**
  * Fetch all goals ordered by created_at descending.
  * Returns both active and inactive goals; UI decides how to categorize.
@@ -299,11 +446,23 @@ export async function createMilestone(input: CreateMilestoneInput): Promise<Goal
   const milestone = data as GoalMilestone
 
   /* Add history entry */
+  /* History: record milestone type and starting numbers when relevant */
+  const createdMeta: Record<string, unknown> = {
+    milestone_id: milestone.id,
+    milestone_type: input.type,
+    milestone_title: input.title,
+  }
+  if (input.type === 'number') {
+    createdMeta.start_value = input.start_value ?? null
+    createdMeta.target_value = input.target_value ?? null
+    createdMeta.current_value = input.current_value ?? null
+    createdMeta.unit = input.unit ?? null
+  }
   await addHistoryEntry(
     input.goal_id,
     'milestone_created',
-    `Milestone "${input.title}" created`,
-    { milestone_id: milestone.id, milestone_type: input.type },
+    `Milestone "${input.title}" added (${input.type}${input.type === 'number' && input.target_value != null ? ` · target ${formatMilestoneQuantity(input.target_value)}${input.unit ? ` ${input.unit}` : ''}` : ''})`,
+    createdMeta,
   )
 
   /* Recalculate and update goal progress */
@@ -313,16 +472,16 @@ export async function createMilestone(input: CreateMilestoneInput): Promise<Goal
 }
 
 /**
- * Update a milestone. Adds history entry and recalculates goal progress.
+ * Update a milestone. Adds timestamped history with field-level detail and recalculates goal progress.
  */
 export async function updateMilestone(
   id: string,
   input: UpdateMilestoneInput,
 ): Promise<GoalMilestone> {
-  /* Fetch existing milestone to get goal_id */
+  /* Load full milestone so we can diff before/after for history */
   const { data: existing, error: fetchError } = await supabase
     .from('goal_milestones')
-    .select('goal_id, title, completed')
+    .select('*')
     .eq('id', id)
     .single()
 
@@ -331,8 +490,8 @@ export async function updateMilestone(
     throw fetchError ?? new Error('Milestone not found')
   }
 
-  const milestone = existing as GoalMilestone
-  const wasCompleted = milestone.completed
+  const prev = existing as GoalMilestone
+  const wasCompleted = prev.completed
   const isNowCompleted = input.completed ?? wasCompleted
 
   const updateData: Record<string, unknown> = {}
@@ -344,6 +503,11 @@ export async function updateMilestone(
   if (input.current_value !== undefined) updateData.current_value = input.current_value
   if (input.completed !== undefined) updateData.completed = input.completed
   if (input.sort_order !== undefined) updateData.sort_order = input.sort_order
+
+  /* No-op updates: skip DB write and history */
+  if (Object.keys(updateData).length === 0) {
+    return prev
+  }
 
   const { data, error } = await supabase
     .from('goal_milestones')
@@ -357,40 +521,57 @@ export async function updateMilestone(
     throw error
   }
 
-  const updated = data as GoalMilestone
+  const next = data as GoalMilestone
 
-  /* Add history entry */
-  await addHistoryEntry(
-    milestone.goal_id,
-    'milestone_updated',
-    `Milestone "${updated.title}" updated`,
-    { milestone_id: id },
-  )
+  /* History: completion-only edits get one rich line; otherwise log field-level updates */
+  const onlyCompleted = isOnlyCompletionTransition(prev, next)
 
-  /* If milestone was just completed, add completion history entry */
-  if (!wasCompleted && isNowCompleted) {
+  if (onlyCompleted) {
     await addHistoryEntry(
-      milestone.goal_id,
+      next.goal_id,
       'milestone_completed',
-      `Milestone "${updated.title}" completed`,
-      { milestone_id: id },
+      describeMilestoneCompletedAlone(next),
+      {
+        milestone_id: next.id,
+        milestone_type: next.type,
+        milestone_title: next.title,
+        event: 'completed',
+      },
     )
+  } else {
+    const { description, metadata } = await describeMilestoneChanges(prev, next)
+    await addHistoryEntry(next.goal_id, 'milestone_updated', description, metadata)
+
+    /* Separate completion line when other fields also changed */
+    if (!wasCompleted && isNowCompleted) {
+      await addHistoryEntry(
+        next.goal_id,
+        'milestone_completed',
+        `Milestone "${next.title}" marked complete`,
+        {
+          milestone_id: next.id,
+          milestone_type: next.type,
+          milestone_title: next.title,
+          event: 'completed',
+        },
+      )
+    }
   }
 
   /* Recalculate and update goal progress */
-  await recalculateGoalProgress(milestone.goal_id)
+  await recalculateGoalProgress(next.goal_id)
 
-  return updated
+  return next
 }
 
 /**
  * Delete a milestone, add history entry, and recalculate goal progress.
  */
 export async function deleteMilestone(id: string): Promise<void> {
-  /* Fetch milestone to get goal_id and title before deletion */
+  /* Fetch full milestone for goal_id, title, and type in history */
   const { data: existing, error: fetchError } = await supabase
     .from('goal_milestones')
-    .select('goal_id, title')
+    .select('*')
     .eq('id', id)
     .single()
 
@@ -408,12 +589,17 @@ export async function deleteMilestone(id: string): Promise<void> {
     throw error
   }
 
-  /* Add history entry */
+  /* History: record removal with milestone context */
   await addHistoryEntry(
     milestone.goal_id,
     'milestone_updated',
-    `Milestone "${milestone.title}" deleted`,
-    { milestone_id: id },
+    `Milestone "${milestone.title}" removed (${milestone.type})`,
+    {
+      milestone_id: id,
+      milestone_type: milestone.type,
+      milestone_title: milestone.title,
+      event: 'deleted',
+    },
   )
 
   /* Recalculate and update goal progress */

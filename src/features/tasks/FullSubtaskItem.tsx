@@ -1,6 +1,6 @@
-/* FullSubtaskItem component: Desktop full-width subtask row with left/right metadata */
+/* FullSubtaskItem component: Subtask row using the stacked tablet layout on all viewports */
 
-import { FullTaskItem } from './FullTaskItem'
+import { TaskListItem } from './TaskListItem'
 import type { Task, TaskStatus, UpdateTaskInput } from './types'
 
 export interface FullSubtaskItemProps {
@@ -42,9 +42,7 @@ export interface FullSubtaskItemProps {
 }
 
 /**
- * Full-width subtask item component.
- * Wraps FullTaskItem with subtask-specific defaults (no subtasks, no expand).
- * Subtasks are displayed with the same container and styling as parent tasks.
+ * Subtask row: same stacked layout as tablet so subtasks stay readable under parent tasks.
  */
 export function FullSubtaskItem({
   subtask,
@@ -65,7 +63,8 @@ export function FullSubtaskItem({
   onDependenciesChanged,
 }: FullSubtaskItemProps) {
   return (
-    <FullTaskItem
+    <TaskListItem
+      layout="tablet"
       task={subtask}
       onClick={onClick}
       hasSubtasks={false}
@@ -83,7 +82,6 @@ export function FullSubtaskItem({
       onAddDependency={onAddDependency}
       onRemoveDependency={onRemoveDependency}
       onDependenciesChanged={onDependenciesChanged}
-      tablet={true}
     />
   )
 }

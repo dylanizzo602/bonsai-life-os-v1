@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DateTime } from 'luxon'
 import { useTasks } from '../tasks/hooks/useTasks'
-import { useReminders } from '../reminders/hooks/useReminders'
 import { useHabits } from '../habits/hooks/useHabits'
 import { useInbox } from '../home/hooks/useInbox'
 import { getDependenciesForTaskIds } from '../../lib/supabase/tasks'
@@ -24,17 +23,14 @@ import { ReflectionQuestionScreen } from './ReflectionQuestionScreen'
 import { CompletionScreen } from './CompletionScreen'
 import { OverviewScreen } from './OverviewScreen'
 import { AddEditTaskModal } from '../tasks/AddEditTaskModal'
-import { AddEditReminderModal } from '../reminders'
-import type { Reminder } from '../reminders/types'
 import type { InboxItem } from '../home/types'
 import { useAuth } from '../auth/AuthContext'
 import { useCalendarAgenda } from './hooks/useCalendarAgenda'
 import { getDueStatus } from '../tasks/utils/date'
-import { useUserTimeZone } from '../settings/useUserTimeZone'
 import { getAvailableTasksFromList } from '../tasks/utils/available'
-import { isHabitEligibleForTodoReminder, resolveHabitRemindAt } from '../habits/habitReminderEligibility'
 import { isoInstantToLocalCalendarYMD } from '../../lib/localCalendarDate'
 import { useViewportWidth } from '../../hooks/useViewportWidth'
+import { useUserTimeZone } from '../settings/useUserTimeZone'
 import { HabitTable } from '../habits/HabitTable'
 import { AddEditHabitModal } from '../habits/AddEditHabitModal'
 
@@ -120,7 +116,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
   /* Auth: current user for calendar settings (ICS URLs stored in user metadata) */
   const { user } = useAuth()
 
-  /* Tasks and reminders: fetch all top-level tasks and all reminders */
+  /* Tasks: fetch all top-level tasks */
   const {
     tasks,
     loading: tasksLoading,
@@ -136,13 +132,6 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     onAddDependency,
     onRemoveDependency,
   } = useTasks()
-  const {
-    reminders,
-    loading: remindersLoading,
-    refetch: refetchReminders,
-    updateReminder,
-    toggleComplete: toggleReminderComplete,
-  } = useReminders()
 
   /* Habits: overdue step + habit table on "did everything" reflection step */
   const {
@@ -267,49 +256,36 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     countToday: calendarEventCount,
   } = useCalendarAgenda({ urlsBySource: calendarUrlsBySource })
 
-  /* Overdue tasks and reminders (for step 1) */
+  /* Overdue tasks (exclude habit-linked rows — those use overdue habit list) */
   const overdueTasks = useMemo(
     () =>
       tasks.filter(
         (t) =>
+          !t.habit_id &&
           t.due_date &&
           !['completed', 'archived', 'deleted'].includes(t.status) &&
           getDueStatus(t.due_date, timeZone) === 'overdue',
       ),
     [tasks, timeZone],
   )
-  const overdueReminders = useMemo(
-    () =>
-      reminders.filter(
-        (r) =>
-          !r.deleted &&
-          !r.completed &&
-          r.remind_at &&
-          getDueStatus(r.remind_at, timeZone) === 'overdue',
-      ),
-    [reminders, timeZone],
-  )
 
-  /* Overdue habit reminders: habits with add_to_todos and a linked reminder/reminder_time whose occurrence is before today */
-  const overdueHabitReminders = useMemo(
-    () => {
-      const items: { habit: HabitWithStreaks; remindAt: string | null }[] = habitsWithStreaks
-        .filter((h) => isHabitEligibleForTodoReminder(h))
-        .map((habit) => {
-          const linked = habit.reminder_id
-            ? reminders.find((r) => r.id === habit.reminder_id) ?? null
-            : null
-          const remindAt = resolveHabitRemindAt(habit, linked, todayYMD)
-          return { habit, remindAt }
-        })
-
-      return items.filter(
-        ({ remindAt }) =>
-          !!remindAt && getDueStatus(remindAt, timeZone) === 'overdue',
+  /* Overdue linked habit tasks */
+  const overdueHabitReminders = useMemo(() => {
+    return tasks
+      .filter(
+        (t) =>
+          !!t.habit_id &&
+          !!t.due_date &&
+          !['completed', 'archived', 'deleted'].includes(t.status) &&
+          getDueStatus(t.due_date, timeZone) === 'overdue',
       )
-    },
-    [habitsWithStreaks, reminders, todayYMD, timeZone],
-  )
+      .map((task) => {
+        const habit = habitsWithStreaks.find((h) => h.id === task.habit_id)
+        if (!habit) return null
+        return { habit, task, remindAt: task.due_date }
+      })
+      .filter((x): x is { habit: HabitWithStreaks; task: Task; remindAt: string | null } => x != null)
+  }, [tasks, habitsWithStreaks, timeZone])
 
   /* Available tasks: use shared helper so semantics match Available view and Upcoming widgets */
   const availableTasks = useMemo(
@@ -317,9 +293,8 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     [tasks, blockedTaskIds],
   )
 
-  /* Edit task/reminder modals (used on overdue step and inbox review convert-to-task) */
+  /* Edit task modal (used on overdue step and inbox review convert-to-task) */
   const [editTask, setEditTask] = useState<Task | null>(null)
-  const [editReminder, setEditReminder] = useState<Reminder | null>(null)
   const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [initialTitle, setInitialTitle] = useState<string>('')
   const [inboxItemToRemoveOnCreate, setInboxItemToRemoveOnCreate] = useState<InboxItem | null>(
@@ -452,25 +427,29 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
       {step === 1 && (
         <OverdueScreen
           overdueTasks={overdueTasks}
-          overdueReminders={overdueReminders}
           overdueHabitReminders={overdueHabitReminders}
-          loading={tasksLoading || remindersLoading}
+          loading={tasksLoading}
           onEditTask={openEditTask}
-          onEditReminder={setEditReminder}
-          onUpdateReminder={updateReminder}
-          onToggleReminderComplete={toggleReminderComplete}
-          onHabitMarkComplete={async (habit, remindAt) => {
-            /* Local calendar day must match reminder dismiss logic (not UTC prefix on ISO strings). */
-            const occurrenceDate = isoInstantToLocalCalendarYMD(remindAt) ?? todayYMD
+          onHabitTargetComplete={async (habit, task, remindAt) => {
+            const occurrenceDate =
+              isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
             await setHabitEntry(habit.id, occurrenceDate, 'completed')
             await refetchHabits()
-            await refetchReminders()
+            await refetchTasks()
           }}
-          onHabitSkip={async (habit, remindAt) => {
-            const occurrenceDate = isoInstantToLocalCalendarYMD(remindAt) ?? todayYMD
+          onHabitMinimum={async (habit, task, remindAt) => {
+            const occurrenceDate =
+              isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
+            await setHabitEntry(habit.id, occurrenceDate, 'minimum')
+            await refetchHabits()
+            await refetchTasks()
+          }}
+          onHabitSkip={async (habit, task, remindAt) => {
+            const occurrenceDate =
+              isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
             await setHabitEntry(habit.id, occurrenceDate, 'skipped')
             await refetchHabits()
-            await refetchReminders()
+            await refetchTasks()
           }}
           onBack={goToPreviousStep}
           onNext={() => setStep(2)}
@@ -496,6 +475,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
            calendarEvents={calendarEventsToday}
            calendarLoading={calendarLoading}
            calendarError={calendarError}
+          onEditTask={openEditTask}
           onAddToLineUp={addToLineUp}
           onRemoveFromLineUp={removeFromLineUp}
           onBack={goToPreviousStep}
@@ -518,19 +498,21 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
                       </p>
                     )
                   : (
-                      <div className="flex justify-center w-full overflow-x-auto">
-                        <HabitTable
-                          habits={habitsWithStreaks}
-                          entriesByHabit={entriesByHabit}
-                          dateRange={dateRange}
-                          todayYMD={todayYMD}
-                          onCycleEntry={cycleEntry}
-                          onEditHabit={(habit) => setHabitBeingEdited(habit)}
-                          isDesktop={isDesktop}
-                          dateRangeText={formatDateRange(dateRange.start, dateRange.end)}
-                          onPrevRange={isDesktop ? goToPrevWeek : goToPrevRange}
-                          onNextRange={isDesktop ? goToNextWeek : goToNextRange}
-                        />
+                      <div className="relative z-10 flex w-full min-w-0 justify-center isolate">
+                        <div className="flex w-full justify-center overflow-x-auto">
+                          <HabitTable
+                            habits={habitsWithStreaks}
+                            entriesByHabit={entriesByHabit}
+                            dateRange={dateRange}
+                            todayYMD={todayYMD}
+                            onCycleEntry={cycleEntry}
+                            onEditHabit={(habit) => setHabitBeingEdited(habit)}
+                            isDesktop={isDesktop}
+                            dateRangeText={formatDateRange(dateRange.start, dateRange.end)}
+                            onPrevRange={isDesktop ? goToPrevWeek : goToPrevRange}
+                            onNextRange={isDesktop ? goToNextWeek : goToNextRange}
+                          />
+                        </div>
                       </div>
                     )
               : undefined
@@ -582,20 +564,6 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
         onAddDependency={onAddDependency}
         onRemoveDependency={onRemoveDependency}
       />
-
-      {/* Edit reminder modal (overdue step) */}
-      {editReminder && (
-        <AddEditReminderModal
-          isOpen={true}
-          onClose={() => {
-            setEditReminder(null)
-            refetchReminders()
-          }}
-          reminder={editReminder}
-          onUpdateReminder={updateReminder}
-          onRemindersChanged={refetchReminders}
-        />
-      )}
 
       {/* Edit habit from briefing habit table (did-everything step) */}
       <AddEditHabitModal

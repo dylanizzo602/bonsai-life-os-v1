@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { Button } from '../../components/Button'
 import { PlusIcon } from '../../components/icons'
+import { HabitStreakSummary } from '../habits/HabitStreakSummary'
 import { useHabits } from '../habits/hooks/useHabits'
 import { Select } from '../../components/Select'
 
@@ -125,9 +126,8 @@ export function HabitLinkSection({
                 <div className="flex-1">
                   <h4 className="font-medium text-bonsai-brown-700">{link.habit.name}</h4>
                   {habit && (
-                    <div className="flex items-center gap-4 mt-1 text-secondary text-bonsai-slate-600">
-                      <span>Current streak: {habit.currentStreak} days</span>
-                      <span>Longest streak: {habit.longestStreak} days</span>
+                    <div className="mt-2">
+                      <HabitStreakSummary habit={habit} showLongest variant="compact" />
                     </div>
                   )}
                 </div>

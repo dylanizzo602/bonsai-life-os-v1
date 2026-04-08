@@ -9,25 +9,14 @@ import {
   getEntriesForHabits,
 } from '../../../lib/supabase/habits'
 import {
-  getStreaks,
-  getCurrentStreakDates,
-  getStreaksWeekly,
-  getCurrentStreakDatesWeekly,
-  getStreaksStrict,
-  getStreaksWeeklyStrict,
-} from '../../../lib/streaks'
-import {
-  getStreaksWeighted,
-  getCurrentStreakDatesWeighted,
-  getStreaksWeeklyWeighted,
-  getCurrentStreakDatesWeeklyWeighted,
-} from '../../../lib/streaks-v1'
+  getHabitStreaks,
+  getHabitCurrentStreakDates,
+  countTargetVsMinimumInCurrentStreak,
+} from '../../../lib/habitStreaks'
 import type {
   Habit,
   HabitEntry,
   HabitWithStreaks,
-  HabitWithStreaksV1,
-  HabitWithStreaksV2,
   CreateHabitInput,
   UpdateHabitInput,
 } from '../types'
@@ -65,26 +54,9 @@ function nextThreeDaysRange(): DateRange {
   return { start, end }
 }
 
-/** Mobile/tablet: show at most 7 days at a time (ending today); navigate by arrows */
-function sevenDaysEndingToday(today: string): DateRange {
-  return {
-    start: addDays(today, -6),
-    end: today,
-  }
-}
-
-/** Cycle for 1.0: empty -> completed -> skipped -> empty; minimum (from 1.1) -> skipped -> empty */
+/** Cell cycle: empty → completed (target) → minimum → skipped → empty */
 function getNextStatus(
-  current: 'completed' | 'skipped' | 'minimum' | null
-): 'completed' | 'skipped' | null {
-  if (current === null || current === undefined) return 'completed'
-  if (current === 'completed' || current === 'minimum') return 'skipped'
-  return null
-}
-
-/** Cycle for 1.1: empty -> completed (green) -> minimum (yellow) -> skipped (red) -> empty */
-function getNextStatusV1(
-  current: 'completed' | 'skipped' | 'minimum' | null
+  current: 'completed' | 'skipped' | 'minimum' | null,
 ): 'completed' | 'skipped' | 'minimum' | null {
   if (current === null || current === undefined) return 'completed'
   if (current === 'completed') return 'minimum'
@@ -93,15 +65,15 @@ function getNextStatusV1(
 }
 
 /**
- * Custom hook for habits: list, CRUD, entry cycle (complete/skip/open), and streak derivation.
- * Exposes dateRange for the visible calendar; parent can set it (desktop week vs 3 days).
+ * Custom hook for habits: list, CRUD, entry cycle, and streak derivation.
+ * Exposes dateRange for the visible calendar; parent can set it (default: calendar week Sun–Sat).
  */
 export function useHabits(initialDateRange?: DateRange) {
   const [habits, setHabits] = useState<Habit[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState<DateRange>(
-    () => initialDateRange ?? weekRangeForDate(todayYMD())
+    () => initialDateRange ?? weekRangeForDate(todayYMD()),
   )
 
   /* Fetch habits and entries (wide range for streak calc, then filter to dateRange for table) */
@@ -113,10 +85,7 @@ export function useHabits(initialDateRange?: DateRange) {
       const ids = habitsList.map((h) => h.id)
       const wideStart = addDays(todayYMD(), -730)
       const wideEnd = addDays(todayYMD(), 7)
-      const entriesWide =
-        ids.length > 0
-          ? await getEntriesForHabits(ids, wideStart, wideEnd)
-          : {}
+      const entriesWide = ids.length > 0 ? await getEntriesForHabits(ids, wideStart, wideEnd) : {}
       setHabits(habitsList)
       setEntriesByHabit(entriesWide)
     } catch (err) {
@@ -130,8 +99,6 @@ export function useHabits(initialDateRange?: DateRange) {
   const [entriesByHabit, setEntriesByHabit] = useState<Record<string, HabitEntry[]>>({})
   const entriesByHabitRef = useRef(entriesByHabit)
   entriesByHabitRef.current = entriesByHabit
-  const habitsRef = useRef(habits)
-  habitsRef.current = habits
 
   /* Initial fetch */
   useEffect(() => {
@@ -152,7 +119,7 @@ export function useHabits(initialDateRange?: DateRange) {
             const byDate = new Map(existing.map((e) => [e.entry_date, e]))
             inRange.forEach((e) => byDate.set(e.entry_date, e))
             merged[id] = [...byDate.values()].sort((a, b) =>
-              a.entry_date.localeCompare(b.entry_date)
+              a.entry_date.localeCompare(b.entry_date),
             )
           }
           return merged
@@ -163,10 +130,10 @@ export function useHabits(initialDateRange?: DateRange) {
       })
   }, [dateRange.start, dateRange.end, habits.length])
 
-  /* Today in YYYY-MM-DD: state so we can update at midnight for Habits 1.2 checklist reset */
+  /* Today in YYYY-MM-DD: state so we can update at midnight */
   const [today, setToday] = useState(() => todayYMD())
 
-  /* At local midnight, update today so Habits 1.2 checkboxes show the new day */
+  /* At local midnight, update today */
   useEffect(() => {
     const now = new Date()
     const nextMidnight = new Date(now)
@@ -179,73 +146,37 @@ export function useHabits(initialDateRange?: DateRange) {
     return () => clearTimeout(timeoutId)
   }, [today])
 
-  /* Mobile/tablet: 7 days ending today (max 7 dates at a time) */
-  const sevenDaysRange = useMemo(() => sevenDaysEndingToday(today), [today])
+  /* Mobile/tablet: week containing today (Sun–Sat), same as desktop */
+  const calendarWeekRangeForToday = useMemo(() => weekRangeForDate(today), [today])
 
-  /* Derive habits with current/longest streak and streak dates; weekly habits use week-based streak and selected days only */
+  /* Integer streaks: daily consecutive done days; weekly = consecutive complete weeks */
   const habitsWithStreaks = useMemo((): HabitWithStreaks[] => {
     return habits.map((habit) => {
       const entries = entriesByHabit[habit.id] ?? []
       const streakEntries = entries.map((e) => ({ date: e.entry_date, status: e.status }))
-      /* Weekly mask: frequency_target is a day-of-week bitmask (1..127) when weekly */
-      const weeklyMask = typeof habit.frequency_target === 'number' ? habit.frequency_target : 0
-      const isWeekly = habit.frequency === 'weekly' && weeklyMask >= 1 && weeklyMask <= 127
-      const mask = isWeekly ? weeklyMask : 0
-      const { currentStreak, longestStreak } = isWeekly
-        ? getStreaksWeekly(streakEntries, today, mask)
-        : getStreaks(streakEntries, today)
-      const currentStreakDates = isWeekly
-        ? getCurrentStreakDatesWeekly(streakEntries, today, mask)
-        : getCurrentStreakDates(streakEntries, today)
+      const { currentStreak, longestStreak } = getHabitStreaks(
+        streakEntries,
+        today,
+        habit.frequency,
+        habit.frequency_target,
+      )
+      const currentStreakDates = getHabitCurrentStreakDates(
+        streakEntries,
+        today,
+        habit.frequency,
+        habit.frequency_target,
+      )
+      const { targetCount, minimumCount } = countTargetVsMinimumInCurrentStreak(
+        streakEntries,
+        currentStreakDates,
+      )
       return {
         ...habit,
         currentStreak,
         longestStreak,
         currentStreakDates,
-      }
-    })
-  }, [habits, entriesByHabit, today])
-
-  /* 1.1: Weighted streaks (green=1, yellow=0.1; red ends streak) */
-  const habitsWithStreaksV1 = useMemo((): HabitWithStreaksV1[] => {
-    return habits.map((habit) => {
-      const entries = entriesByHabit[habit.id] ?? []
-      const streakEntries = entries.map((e) => ({ date: e.entry_date, status: e.status }))
-      /* Weekly mask: frequency_target is a day-of-week bitmask (1..127) when weekly */
-      const weeklyMask = typeof habit.frequency_target === 'number' ? habit.frequency_target : 0
-      const isWeekly = habit.frequency === 'weekly' && weeklyMask >= 1 && weeklyMask <= 127
-      const mask = isWeekly ? weeklyMask : 0
-      const { currentStreak, longestStreak } = isWeekly
-        ? getStreaksWeeklyWeighted(streakEntries, today, mask)
-        : getStreaksWeighted(streakEntries, today)
-      const currentStreakDates = isWeekly
-        ? getCurrentStreakDatesWeeklyWeighted(streakEntries, today, mask)
-        : getCurrentStreakDatesWeighted(streakEntries, today)
-      return {
-        ...habit,
-        currentStreak,
-        longestStreak,
-        currentStreakDates,
-      }
-    })
-  }, [habits, entriesByHabit, today])
-
-  /* 1.2: Strict streaks (only completed counts; no skips/partial) */
-  const habitsWithStreaksV2 = useMemo((): HabitWithStreaksV2[] => {
-    return habits.map((habit) => {
-      const entries = entriesByHabit[habit.id] ?? []
-      const streakEntries = entries.map((e) => ({ date: e.entry_date, status: e.status }))
-      /* Weekly mask: frequency_target is a day-of-week bitmask (1..127) when weekly */
-      const weeklyMask = typeof habit.frequency_target === 'number' ? habit.frequency_target : 0
-      const isWeekly = habit.frequency === 'weekly' && weeklyMask >= 1 && weeklyMask <= 127
-      const mask = isWeekly ? weeklyMask : 0
-      const { currentStreak, longestStreak } = isWeekly
-        ? getStreaksWeeklyStrict(streakEntries, today, mask)
-        : getStreaksStrict(streakEntries, today)
-      return {
-        ...habit,
-        currentStreak,
-        longestStreak,
+        currentStreakTargetCount: targetCount,
+        currentStreakMinimumCount: minimumCount,
       }
     })
   }, [habits, entriesByHabit, today])
@@ -255,39 +186,36 @@ export function useHabits(initialDateRange?: DateRange) {
     const out: Record<string, HabitEntry[]> = {}
     for (const [habitId, entries] of Object.entries(entriesByHabit)) {
       out[habitId] = entries.filter(
-        (e) => e.entry_date >= dateRange.start && e.entry_date <= dateRange.end
+        (e) => e.entry_date >= dateRange.start && e.entry_date <= dateRange.end,
       )
     }
     return out
   }, [entriesByHabit, dateRange])
 
-  const createHabitHandler = useCallback(
-    async (input: CreateHabitInput) => {
-      try {
-        setError(null)
-        const newHabit = await createHabit(input)
-        setHabits((prev) => [...prev, newHabit].sort((a, b) => a.sort_order - b.sort_order))
-        const ids = [newHabit.id]
-        const wideStart = addDays(todayYMD(), -730)
-        const wideEnd = addDays(todayYMD(), 7)
-        const byHabit = await getEntriesForHabits(ids, wideStart, wideEnd)
-        setEntriesByHabit((prev) => ({ ...prev, [newHabit.id]: byHabit[newHabit.id] ?? [] }))
-        return newHabit
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to create habit'
-        setError(msg)
-        throw err
-      }
-    },
-    []
-  )
+  const createHabitHandler = useCallback(async (input: CreateHabitInput) => {
+    try {
+      setError(null)
+      const newHabit = await createHabit(input)
+      setHabits((prev) => [...prev, newHabit].sort((a, b) => a.sort_order - b.sort_order))
+      const ids = [newHabit.id]
+      const wideStart = addDays(todayYMD(), -730)
+      const wideEnd = addDays(todayYMD(), 7)
+      const byHabit = await getEntriesForHabits(ids, wideStart, wideEnd)
+      setEntriesByHabit((prev) => ({ ...prev, [newHabit.id]: byHabit[newHabit.id] ?? [] }))
+      return newHabit
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create habit'
+      setError(msg)
+      throw err
+    }
+  }, [])
 
   const updateHabitHandler = useCallback(async (id: string, input: UpdateHabitInput) => {
     try {
       setError(null)
       const updated = await updateHabit(id, input)
       setHabits((prev) =>
-        prev.map((h) => (h.id === id ? updated : h)).sort((a, b) => a.sort_order - b.sort_order)
+        prev.map((h) => (h.id === id ? updated : h)).sort((a, b) => a.sort_order - b.sort_order),
       )
       return updated
     } catch (err) {
@@ -314,13 +242,12 @@ export function useHabits(initialDateRange?: DateRange) {
     }
   }, [])
 
-  /* Cycle cell: complete -> skipped -> open (1.0); minimum from 1.1 shows as yellow and cycles to skipped). */
+  /* Cycle cell: completed → minimum → skipped → empty */
   const cycleEntry = useCallback(async (habitId: string, entryDate: string) => {
     const entries = entriesByHabitRef.current[habitId] ?? []
     const e = entries.find((x) => x.entry_date === entryDate)
     const currentStatus: 'completed' | 'skipped' | 'minimum' | null = e ? e.status : null
-    const nextRaw = getNextStatus(currentStatus)
-    const next = nextRaw === null ? null : nextRaw
+    const next = getNextStatus(currentStatus)
     setError(null)
     setEntriesByHabit((prev) => {
       const ents = prev[habitId] ?? []
@@ -336,7 +263,9 @@ export function useHabits(initialDateRange?: DateRange) {
         status: next,
         created_at: existing?.created_at ?? new Date().toISOString(),
       }
-      const merged = withoutDate.concat(newEntry).sort((a, b) => a.entry_date.localeCompare(b.entry_date))
+      const merged = withoutDate
+        .concat(newEntry)
+        .sort((a, b) => a.entry_date.localeCompare(b.entry_date))
       return { ...prev, [habitId]: merged }
     })
     try {
@@ -347,56 +276,16 @@ export function useHabits(initialDateRange?: DateRange) {
       fetchHabitsAndEntries()
       throw err
     }
-  }, [])
+  }, [fetchHabitsAndEntries])
 
-  /* 1.1: 4-state cycle (completed -> minimum -> skipped -> empty) */
-  const cycleEntryV1 = useCallback(
-    async (habitId: string, entryDate: string) => {
-      const entries = entriesByHabitRef.current[habitId] ?? []
-      const e = entries.find((x) => x.entry_date === entryDate)
-      const currentStatus: 'completed' | 'skipped' | 'minimum' | null = e ? e.status : null
-      const next = getNextStatusV1(currentStatus)
-      setError(null)
-      setEntriesByHabit((prev) => {
-        const ents = prev[habitId] ?? []
-        const withoutDate = ents.filter((x) => x.entry_date !== entryDate)
-        if (next === null) {
-          return { ...prev, [habitId]: withoutDate }
-        }
-        const existing = ents.find((x) => x.entry_date === entryDate)
-        const newEntry: HabitEntry = {
-          id: existing?.id ?? '',
-          habit_id: habitId,
-          entry_date: entryDate,
-          status: next,
-          created_at: existing?.created_at ?? new Date().toISOString(),
-        }
-        const merged = withoutDate
-          .concat(newEntry)
-          .sort((a, b) => a.entry_date.localeCompare(b.entry_date))
-        return { ...prev, [habitId]: merged }
-      })
-      try {
-        await setEntryApi(habitId, entryDate, next)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to update entry'
-        setError(msg)
-        fetchHabitsAndEntries()
-        throw err
-      }
-    },
-    []
-  )
-
-  /* setEntry(habitId, date, status) for 1.2 checkbox and direct API; when status is completed/minimum, dismiss habit reminder */
+  /* Direct set for Tasks row / API */
   const setEntry = useCallback(
     async (
       habitId: string,
       entryDate: string,
-      status: 'completed' | 'skipped' | 'minimum' | null
+      status: 'completed' | 'skipped' | 'minimum' | null,
     ) => {
       setError(null)
-      const reminderId = habits.find((h) => h.id === habitId)?.reminder_id ?? null
       setEntriesByHabit((prev) => {
         const entries = prev[habitId] ?? []
         const withoutDate = entries.filter((e) => e.entry_date !== entryDate)
@@ -415,7 +304,7 @@ export function useHabits(initialDateRange?: DateRange) {
         return { ...prev, [habitId]: next }
       })
       try {
-        await setEntryApi(habitId, entryDate, status, reminderId)
+        await setEntryApi(habitId, entryDate, status)
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to update entry'
         setError(msg)
@@ -423,7 +312,7 @@ export function useHabits(initialDateRange?: DateRange) {
         throw err
       }
     },
-    [habits]
+    [fetchHabitsAndEntries],
   )
 
   const goToPrevWeek = useCallback(() => {
@@ -440,7 +329,7 @@ export function useHabits(initialDateRange?: DateRange) {
     }))
   }, [])
 
-  /* Move date range backward/forward by the current range length (e.g. 3 days on mobile, 7 on desktop) */
+  /* Move date range backward/forward by the current range length */
   const goToPrevRange = useCallback(() => {
     setDateRange((prev) => {
       const start = new Date(prev.start + 'T12:00:00')
@@ -472,27 +361,24 @@ export function useHabits(initialDateRange?: DateRange) {
   return {
     habits,
     habitsWithStreaks,
-    habitsWithStreaksV1,
-    habitsWithStreaksV2,
     entriesByHabit: entriesInRange,
     loading,
     error,
     dateRange,
     setDateRange,
     todayYMD: today,
-    sevenDaysRange,
+    calendarWeekRangeForToday,
     refetch: fetchHabitsAndEntries,
     createHabit: createHabitHandler,
     updateHabit: updateHabitHandler,
     deleteHabit: deleteHabitHandler,
     setEntry,
     cycleEntry,
-    cycleEntryV1,
     goToPrevWeek,
     goToNextWeek,
     goToPrevRange,
     goToNextRange,
-    nextThreeDaysRange,
+    nextThreeDaysRange: () => nextThreeDaysRange(),
     setWeekToToday,
   }
 }

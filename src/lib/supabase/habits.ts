@@ -1,48 +1,26 @@
-/* Habit data access layer: Supabase CRUD for habits, entries, and reminder wiring */
+/* Habit data access layer: Supabase CRUD for habits, entries, and todo reminder scheduling */
 import { supabase } from './client'
+import { upsertLinkedTaskForHabit } from '../habitLinkedTask'
 import {
-  createReminder,
-  updateReminder,
-  deleteReminder,
-  advanceReminderToNextOccurrenceIfDueOn,
+  advanceTodoRemindAtIfDueOn,
+  computeInitialTodoRemindAt,
+  shouldScheduleHabitTodo,
   habitReminderInstantForLocalToday,
-} from './reminders'
-import { serializeRecurrencePattern } from '../recurrence'
-import type { RecurrencePattern } from '../recurrence'
+} from '../habitTodoSchedule'
 import type {
   Habit,
   HabitEntry,
   CreateHabitInput,
   UpdateHabitInput,
-  HabitFrequency,
 } from '../../features/habits/types'
 
-/** Day codes for recurrence byDay (Sunday = 0 … Saturday = 6); habit frequency_target bitmask uses same order (1=Sun … 64=Sat) */
-const RECURRENCE_DAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const
-
-/** Build recurrence pattern JSON from habit frequency for reminders. Weekly habits get byDay from frequency_target bitmask. */
-function recurrenceForHabitFrequency(
-  frequency: HabitFrequency,
-  frequencyTarget: number | null
-): string | null {
-  const pattern: RecurrencePattern = { freq: 'day', interval: 1 }
-  if (frequency === 'daily' || frequency === 'times_per_day') {
-    pattern.freq = 'day'
-    pattern.interval = 1
-  } else if (frequency === 'weekly') {
-    pattern.freq = 'week'
-    pattern.interval = 1
-    if (frequencyTarget != null && frequencyTarget >= 1 && frequencyTarget <= 127) {
-      pattern.byDay = [0, 1, 2, 3, 4, 5, 6]
-        .filter((i) => (frequencyTarget & (1 << i)) !== 0)
-        .map((i) => RECURRENCE_DAY_CODES[i])
-      if (pattern.byDay.length === 0) pattern.byDay = ['MO']
-    }
-  } else if (frequency === 'every_x_days' && frequencyTarget != null && frequencyTarget > 0) {
-    pattern.freq = 'day'
-    pattern.interval = frequencyTarget
-  }
-  return serializeRecurrencePattern(pattern)
+/** Local calendar YYYY-MM-DD for "today" in the browser */
+function todayLocalYMD(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 /**
@@ -64,22 +42,29 @@ export async function getHabits(): Promise<Habit[]> {
 }
 
 /**
- * Create a new habit. If add_to_todos and reminder_time are set, creates a recurring reminder and stores reminder_id.
+ * Create a new habit. If add_to_todos and scheduling inputs exist, sets todo_remind_at.
  */
 export async function createHabit(input: CreateHabitInput): Promise<Habit> {
-  let reminderId: string | null = null
-  if (input.add_to_todos && input.reminder_time) {
-    const recurrence = recurrenceForHabitFrequency(
-      input.frequency ?? 'daily',
-      input.frequency_target ?? null
-    )
-    const remindAt = habitReminderInstantForLocalToday(input.reminder_time)
-    const reminder = await createReminder({
-      name: input.name,
-      remind_at: remindAt,
-      recurrence_pattern: recurrence,
+  const addToTodos = input.add_to_todos ?? true
+  let todoRemindAt: string | null = null
+  if (
+    addToTodos &&
+    shouldScheduleHabitTodo({
+      add_to_todos: true,
+      reminder_time: input.reminder_time ?? null,
+      desired_action: input.desired_action ?? null,
+      minimum_action: input.minimum_action ?? null,
     })
-    reminderId = reminder.id
+  ) {
+    todoRemindAt =
+      computeInitialTodoRemindAt(
+        {
+          reminder_time: input.reminder_time ?? null,
+          desired_action: input.desired_action ?? null,
+          minimum_action: input.minimum_action ?? null,
+        },
+        todayLocalYMD(),
+      ) ?? habitReminderInstantForLocalToday(input.reminder_time ?? '09:00:00')
   }
 
   const insertData: Record<string, unknown> = {
@@ -90,10 +75,20 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
     sort_order: input.sort_order ?? 0,
     frequency: input.frequency ?? 'daily',
     frequency_target: input.frequency_target ?? null,
-    add_to_todos: input.add_to_todos ?? false,
+    add_to_todos: addToTodos,
     reminder_time: input.reminder_time ?? null,
-    reminder_id: reminderId,
+    reminder_id: null,
+    todo_remind_at: todoRemindAt,
     color: input.color ?? 'green',
+  }
+
+  if (input.user_id) {
+    insertData.user_id = input.user_id
+  } else {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (user) insertData.user_id = user.id
   }
 
   const { data, error } = await supabase
@@ -107,11 +102,17 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
     throw error
   }
 
-  return data as Habit
+  const created = data as Habit
+  try {
+    await upsertLinkedTaskForHabit(created)
+  } catch (e) {
+    console.error('Error syncing linked task for habit:', e)
+  }
+  return created
 }
 
 /**
- * Update an existing habit. Creates/updates/deletes linked reminder when add_to_todos or reminder_time change.
+ * Update an existing habit. Recomputes todo_remind_at when add_to_todos or schedule fields change.
  */
 export async function updateHabit(id: string, input: UpdateHabitInput): Promise<Habit> {
   const { data: existing, error: fetchError } = await supabase
@@ -128,34 +129,39 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
   const habit = existing as Habit
   const addToTodos = input.add_to_todos ?? habit.add_to_todos
   const reminderTime = input.reminder_time ?? habit.reminder_time
-  const frequency = input.frequency ?? habit.frequency
-  const frequencyTarget = input.frequency_target ?? habit.frequency_target
+  const desiredAction = input.desired_action !== undefined ? input.desired_action : habit.desired_action
+  const minimumAction = input.minimum_action !== undefined ? input.minimum_action : habit.minimum_action
 
-  if (habit.reminder_id && (!addToTodos || !reminderTime)) {
-    await deleteReminder(habit.reminder_id)
+  const synthetic: Pick<Habit, 'add_to_todos' | 'reminder_time' | 'desired_action' | 'minimum_action'> = {
+    add_to_todos: addToTodos,
+    reminder_time: reminderTime,
+    desired_action: desiredAction,
+    minimum_action: minimumAction,
   }
 
-  let reminderId: string | null = habit.reminder_id
-  if (addToTodos && reminderTime) {
-    const recurrence = recurrenceForHabitFrequency(frequency, frequencyTarget)
-    const remindAt = habitReminderInstantForLocalToday(reminderTime)
-    if (reminderId) {
-      await updateReminder(reminderId, {
-        name: input.name ?? habit.name,
-        remind_at: remindAt,
-        recurrence_pattern: recurrence,
-      })
-    } else {
-      const reminder = await createReminder({
-        name: input.name ?? habit.name,
-        user_id: habit.user_id,
-        remind_at: remindAt,
-        recurrence_pattern: recurrence,
-      })
-      reminderId = reminder.id
-    }
-  } else {
-    reminderId = null
+  /* Only recompute next due when schedule-related fields change; otherwise keep todo_remind_at (e.g. name-only edit). */
+  const scheduleAffectingChanged =
+    input.add_to_todos !== undefined ||
+    input.reminder_time !== undefined ||
+    input.frequency !== undefined ||
+    input.frequency_target !== undefined ||
+    input.desired_action !== undefined ||
+    input.minimum_action !== undefined
+
+  let todoRemindAt: string | null = habit.todo_remind_at ?? null
+
+  if (!addToTodos || !shouldScheduleHabitTodo(synthetic)) {
+    todoRemindAt = null
+  } else if (scheduleAffectingChanged || !todoRemindAt) {
+    const initial = computeInitialTodoRemindAt(
+      {
+        reminder_time: reminderTime,
+        desired_action: desiredAction,
+        minimum_action: minimumAction,
+      },
+      todayLocalYMD(),
+    )
+    todoRemindAt = initial ?? habitReminderInstantForLocalToday(reminderTime ?? '09:00:00')
   }
 
   const updateData: Record<string, unknown> = {}
@@ -170,7 +176,7 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
   if (input.reminder_time !== undefined) updateData.reminder_time = input.reminder_time
   if (input.reminder_id !== undefined) updateData.reminder_id = input.reminder_id
   if (input.color !== undefined) updateData.color = input.color
-  updateData.reminder_id = reminderId
+  updateData.todo_remind_at = todoRemindAt
 
   const { data, error } = await supabase
     .from('habits')
@@ -184,18 +190,19 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
     throw error
   }
 
-  return data as Habit
+  const updatedHabit = data as Habit
+  try {
+    await upsertLinkedTaskForHabit(updatedHabit)
+  } catch (e) {
+    console.error('Error syncing linked task for habit:', e)
+  }
+  return updatedHabit
 }
 
 /**
- * Delete a habit. Deletes linked reminder if any; CASCADE removes habit_entries.
+ * Delete a habit. CASCADE removes habit_entries.
  */
 export async function deleteHabit(id: string): Promise<void> {
-  const { data: existing } = await supabase.from('habits').select('reminder_id').eq('id', id).single()
-  if (existing?.reminder_id) {
-    await deleteReminder(existing.reminder_id as string)
-  }
-
   const { error } = await supabase.from('habits').delete().eq('id', id)
   if (error) {
     console.error('Error deleting habit:', error)
@@ -204,14 +211,12 @@ export async function deleteHabit(id: string): Promise<void> {
 }
 
 /**
- * Set or clear entry for a habit on a date. status 'completed' | 'minimum' | 'skipped' upserts; null means delete (open).
- * When status is 'completed', 'minimum', or 'skipped' and reminderId is provided, the habit reminder is advanced to the next occurrence (dismissed for today).
+ * Set or clear entry for a habit on a date. When status is completed/minimum/skipped, advance todo_remind_at if due on entryDate.
  */
 export async function setEntry(
   habitId: string,
   entryDate: string,
   status: 'completed' | 'skipped' | 'minimum' | null,
-  reminderId?: string | null
 ): Promise<void> {
   if (status === null) {
     const { error } = await supabase
@@ -232,7 +237,7 @@ export async function setEntry(
       entry_date: entryDate,
       status,
     },
-    { onConflict: 'habit_id,entry_date' }
+    { onConflict: 'habit_id,entry_date' },
   )
 
   if (error) {
@@ -240,10 +245,28 @@ export async function setEntry(
     throw error
   }
 
-  /* When habit is marked complete, minimum, or skipped, dismiss the linked reminder if it is due on entryDate (advance to next occurrence) */
-  if ((status === 'completed' || status === 'minimum' || status === 'skipped') && reminderId) {
+  if (status === 'completed' || status === 'minimum' || status === 'skipped') {
     try {
-      await advanceReminderToNextOccurrenceIfDueOn(reminderId, entryDate)
+      const { data: habitRow, error: fetchErr } = await supabase
+        .from('habits')
+        .select('*')
+        .eq('id', habitId)
+        .single()
+      if (fetchErr || !habitRow) {
+        console.error('Error fetching habit for todo advance:', fetchErr)
+        return
+      }
+      const habit = habitRow as Habit
+      const nextAt = advanceTodoRemindAtIfDueOn(habit, entryDate)
+      if (nextAt) {
+        const { error: upErr } = await supabase
+          .from('habits')
+          .update({ todo_remind_at: nextAt })
+          .eq('id', habitId)
+        if (upErr) {
+          console.error('Error advancing habit todo_remind_at:', upErr)
+        }
+      }
     } catch (err) {
       console.error('Error advancing habit reminder:', err)
     }
@@ -256,7 +279,7 @@ export async function setEntry(
 export async function getEntriesForHabits(
   habitIds: string[],
   dateFrom: string,
-  dateTo: string
+  dateTo: string,
 ): Promise<Record<string, HabitEntry[]>> {
   if (habitIds.length === 0) {
     return {}
@@ -292,7 +315,7 @@ export async function getEntriesForHabits(
 export async function getEntriesForHabit(
   habitId: string,
   dateFrom?: string,
-  dateTo?: string
+  dateTo?: string,
 ): Promise<HabitEntry[]> {
   let query = supabase
     .from('habit_entries')

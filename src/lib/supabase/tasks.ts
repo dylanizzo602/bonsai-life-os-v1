@@ -133,6 +133,7 @@ export async function getTasks(filters?: TaskFilters): Promise<Task[]> {
     const { task_tags: _tt, ...rest } = t
     return {
       ...rest,
+      habit_id: (rest as { habit_id?: string | null }).habit_id ?? null,
       tags,
       attachments: Array.isArray(t.attachments) ? t.attachments : [],
     } as Task
@@ -169,12 +170,43 @@ export async function getTasksByIds(ids: string[]): Promise<Task[]> {
     const { task_tags: _tt, ...rest } = t
     return {
       ...rest,
+      habit_id: (rest as { habit_id?: string | null }).habit_id ?? null,
       tags,
       attachments: Array.isArray(t.attachments) ? t.attachments : [],
     } as Task
   })
 
   return tasks
+}
+
+/**
+ * Fetch the single task linked to a habit (habit_id is unique when set).
+ */
+export async function getTaskByHabitId(habitId: string): Promise<Task | null> {
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('*, task_tags(tag_id, tags(*))')
+    .eq('habit_id', habitId)
+    .maybeSingle()
+
+  if (error) {
+    console.error('Error fetching task by habit_id:', error)
+    throw error
+  }
+  if (!data) return null
+
+  const t = data as TaskRowWithTags
+  const taskTags = t.task_tags ?? []
+  const tags: Tag[] = taskTags
+    .map((tt) => tt.tags)
+    .filter((tag): tag is Tag => tag != null)
+  const { task_tags: _tt, ...rest } = t
+  return {
+    ...rest,
+    habit_id: (rest as { habit_id?: string | null }).habit_id ?? null,
+    tags,
+    attachments: Array.isArray(t.attachments) ? t.attachments : [],
+  } as Task
 }
 
 /**
@@ -192,8 +224,12 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     attachments: input.attachments ?? [],
     parent_id: input.parent_id ?? null,
     goal_id: input.goal_id ?? null,
+    habit_id: input.habit_id ?? null,
     recurrence_pattern: input.recurrence_pattern ?? null,
     status: input.status ?? 'active',
+  }
+  if (input.user_id !== undefined) {
+    insertData.user_id = input.user_id
   }
 
   const { data, error } = await supabase

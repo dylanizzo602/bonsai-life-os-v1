@@ -1,4 +1,4 @@
-/* Local calendar YYYY-MM-DD from ISO timestamps — must match reminders.ts dismiss logic (browser local, not UTC prefix). */
+/* Local calendar YYYY-MM-DD from ISO timestamps — must match habit todo advance logic (browser local, not UTC prefix). */
 
 /**
  * Map an ISO instant (or plain YYYY-MM-DD) to the calendar date in the browser's local timezone.
