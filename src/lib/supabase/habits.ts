@@ -219,6 +219,7 @@ export async function setEntry(
   status: 'completed' | 'skipped' | 'minimum' | null,
 ): Promise<void> {
   if (status === null) {
+    /* Entry delete: clear the single day status (no schedule advance). */
     const { error } = await supabase
       .from('habit_entries')
       .delete()
@@ -231,6 +232,7 @@ export async function setEntry(
     return
   }
 
+  /* Entry upsert: set the day status (completed/minimum/skipped). */
   const { error } = await supabase.from('habit_entries').upsert(
     {
       habit_id: habitId,
@@ -247,6 +249,7 @@ export async function setEntry(
 
   if (status === 'completed' || status === 'minimum' || status === 'skipped') {
     try {
+      /* Reminder advance: if today's entry satisfied the due reminder, bump todo_remind_at forward and keep the linked task due_date in sync. */
       const { data: habitRow, error: fetchErr } = await supabase
         .from('habits')
         .select('*')
@@ -258,6 +261,7 @@ export async function setEntry(
       }
       const habit = habitRow as Habit
       const nextAt = advanceTodoRemindAtIfDueOn(habit, entryDate)
+
       if (nextAt) {
         const { error: upErr } = await supabase
           .from('habits')
@@ -265,6 +269,14 @@ export async function setEntry(
           .eq('id', habitId)
         if (upErr) {
           console.error('Error advancing habit todo_remind_at:', upErr)
+          return
+        }
+
+        /* Linked task sync: Tasks page renders reminders from the habit-linked task's due_date, so we must update it when todo_remind_at advances. */
+        try {
+          await upsertLinkedTaskForHabit({ ...habit, todo_remind_at: nextAt })
+        } catch (e) {
+          console.error('Error syncing linked task after habit advance:', e)
         }
       }
     } catch (err) {

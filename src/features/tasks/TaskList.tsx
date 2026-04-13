@@ -74,6 +74,8 @@ export interface TaskListProps {
   onRemoveFromLineUp?: (taskId: string) => void
   /** Linked habit tasks (streak + target/minimum/skip) */
   habitReminders?: Array<{ habit: HabitWithStreaks; task: Task; remindAt: string | null }>
+  /** Habit IDs currently being updated via Target/Minimum/Skip (disables reminder action buttons). */
+  habitActionInFlightIds?: Set<string>
   onHabitTargetComplete?: (habit: HabitWithStreaks, task: Task, remindAt: string | null) => void
   onHabitMinimum?: (habit: HabitWithStreaks, task: Task, remindAt: string | null) => void
   onHabitSkip?: (habit: HabitWithStreaks, task: Task, remindAt: string | null) => void
@@ -121,6 +123,7 @@ export function TaskList({
   onAddToLineUp,
   onRemoveFromLineUp,
   habitReminders = [],
+  habitActionInFlightIds,
   onHabitTargetComplete,
   onHabitMinimum,
   onHabitSkip,
@@ -392,6 +395,8 @@ export function TaskList({
                   onTargetComplete={() => onHabitTargetComplete(habit, task, remindAt)}
                   onMinimum={() => onHabitMinimum(habit, task, remindAt)}
                   onSkip={() => onHabitSkip(habit, task, remindAt)}
+                  /* Disable while the parent is processing a habit entry update (prevents double submits). */
+                  actionsDisabled={Boolean(habitActionInFlightIds?.has(habit.id))}
                   density={taskListViewport === 'desktop' ? undefined : 'compact'}
                   showStreakBreakdown={false}
                 />

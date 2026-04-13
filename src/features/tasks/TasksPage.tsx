@@ -564,6 +564,10 @@ export function TasksPage() {
     refetch: refetchHabits,
   } = useHabits()
 
+  /* Habit reminder action state: surface errors and prevent double-submits on Target/Minimum/Skip. */
+  const [habitActionError, setHabitActionError] = useState<string | null>(null)
+  const [habitActionInFlightIds, setHabitActionInFlightIds] = useState<Set<string>>(new Set())
+
   /* Refetch habits when Tasks page becomes visible so recurring habit reminders stay in sync (e.g. after adding habit or switching tabs) */
   useEffect(() => {
     const onVisible = () => {
@@ -1327,7 +1331,8 @@ export function TasksPage() {
         tasks={filteredTasks}
         availableTaskIds={availableTaskIds}
         loading={loading}
-        error={error}
+        /* Error display: show task errors and habit-action errors in the same banner so failures aren't silent. */
+        error={error ?? habitActionError}
         filters={filters}
         setFilters={setFilters}
         refetch={refetch}
@@ -1360,27 +1365,76 @@ export function TasksPage() {
           }
         }}
         habitReminders={filteredHabitReminders}
+        habitActionInFlightIds={habitActionInFlightIds}
         hideCompletedSubtasks={viewMode === 'available' || viewMode === 'all'}
         onHabitTargetComplete={async (habit, task, remindAt) => {
-          const occurrenceDate =
-            isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
-          await setHabitEntry(habit.id, occurrenceDate, 'completed')
-          await refetchHabits()
-          await refetch()
+          /* Habit completion: write entry, advance next due, then refresh both habits + tasks (linked task due_date). */
+          setHabitActionError(null)
+          setHabitActionInFlightIds((prev) => new Set(prev).add(habit.id))
+
+          try {
+            /* Occurrence date: must align with habit.todo_remind_at local-calendar day for advanceTodoRemindAtIfDueOn. */
+            const occurrenceSourceIso = habit.todo_remind_at ?? remindAt ?? task.due_date
+            const occurrenceDate = isoInstantToLocalCalendarYMD(occurrenceSourceIso) ?? todayYMD
+
+            await setHabitEntry(habit.id, occurrenceDate, 'completed')
+
+            await refetchHabits()
+            await refetch()
+          } catch (err) {
+            setHabitActionError(err instanceof Error ? err.message : 'Failed to complete habit reminder')
+            console.error('Habit Target click failed:', err)
+          } finally {
+            setHabitActionInFlightIds((prev) => {
+              const next = new Set(prev)
+              next.delete(habit.id)
+              return next
+            })
+          }
         }}
         onHabitMinimum={async (habit, task, remindAt) => {
-          const occurrenceDate =
-            isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
-          await setHabitEntry(habit.id, occurrenceDate, 'minimum')
-          await refetchHabits()
-          await refetch()
+          /* Habit minimum: same flow as completion but with minimum status. */
+          setHabitActionError(null)
+          setHabitActionInFlightIds((prev) => new Set(prev).add(habit.id))
+          try {
+            /* Occurrence date: must align with habit.todo_remind_at local-calendar day for advanceTodoRemindAtIfDueOn. */
+            const occurrenceSourceIso = habit.todo_remind_at ?? remindAt ?? task.due_date
+            const occurrenceDate = isoInstantToLocalCalendarYMD(occurrenceSourceIso) ?? todayYMD
+            await setHabitEntry(habit.id, occurrenceDate, 'minimum')
+            await refetchHabits()
+            await refetch()
+          } catch (err) {
+            setHabitActionError(err instanceof Error ? err.message : 'Failed to set habit reminder to minimum')
+            console.error('Habit Minimum click failed:', err)
+          } finally {
+            setHabitActionInFlightIds((prev) => {
+              const next = new Set(prev)
+              next.delete(habit.id)
+              return next
+            })
+          }
         }}
         onHabitSkip={async (habit, task, remindAt) => {
-          const occurrenceDate =
-            isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
-          await setHabitEntry(habit.id, occurrenceDate, 'skipped')
-          await refetchHabits()
-          await refetch()
+          /* Habit skip: same flow but with skipped status. */
+          setHabitActionError(null)
+          setHabitActionInFlightIds((prev) => new Set(prev).add(habit.id))
+          try {
+            /* Occurrence date: must align with habit.todo_remind_at local-calendar day for advanceTodoRemindAtIfDueOn. */
+            const occurrenceSourceIso = habit.todo_remind_at ?? remindAt ?? task.due_date
+            const occurrenceDate = isoInstantToLocalCalendarYMD(occurrenceSourceIso) ?? todayYMD
+            await setHabitEntry(habit.id, occurrenceDate, 'skipped')
+            await refetchHabits()
+            await refetch()
+          } catch (err) {
+            setHabitActionError(err instanceof Error ? err.message : 'Failed to skip habit reminder')
+            console.error('Habit Skip click failed:', err)
+          } finally {
+            setHabitActionInFlightIds((prev) => {
+              const next = new Set(prev)
+              next.delete(habit.id)
+              return next
+            })
+          }
         }}
         onShowArchived={() => {
           setShowArchived(true)

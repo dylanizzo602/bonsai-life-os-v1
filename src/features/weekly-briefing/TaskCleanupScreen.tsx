@@ -6,7 +6,7 @@ import { descriptionToHtml } from '../tasks/utils/descriptionDisplay'
 import type { Task } from '../tasks/types'
 
 interface TaskCleanupScreenProps {
-  /** Tasks that have no due date or no priority (active/in_progress only) */
+  /** Tasks that have no due date and no priority (active/in_progress only) */
   tasksToReview: Task[]
   /** Open edit modal for this task (parent renders AddEditTaskModal) */
   onEditTask: (task: Task) => void
@@ -20,7 +20,7 @@ interface TaskCleanupScreenProps {
 
 /**
  * Task cleanup step: "Review tasks."
- * Lists tasks with no due date or no priority; user can set date/priority, archive, or delete to cut away noise.
+ * Lists tasks with no due date and no priority; user can set date/priority, archive, or delete to cut away noise.
  */
 export function TaskCleanupScreen({
   tasksToReview,
@@ -45,7 +45,7 @@ export function TaskCleanupScreen({
           Review tasks.
         </h2>
         <p className="text-body text-bonsai-slate-700 mb-6">
-          These tasks have no due date or no priority. Set a date and priority, or remove what you don&apos;t need.
+          These tasks have no due date and no priority. Set a date and priority, or remove what you don&apos;t need.
         </p>
 
         {/* Task list or empty state */}

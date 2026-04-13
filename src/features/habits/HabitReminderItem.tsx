@@ -30,6 +30,8 @@ export interface HabitReminderItemProps {
   onTargetComplete: () => void
   onMinimum: () => void
   onSkip: () => void
+  /** Disable action buttons while an update is in flight (prevents double submit and provides feedback). */
+  actionsDisabled?: boolean
   density?: 'default' | 'compact'
   /** Tasks list: streak only; elsewhere defaults to full target/min breakdown */
   showStreakBreakdown?: boolean
@@ -46,6 +48,7 @@ export function HabitReminderItem({
   onTargetComplete,
   onMinimum,
   onSkip,
+  actionsDisabled = false,
   density = 'default',
   showStreakBreakdown = true,
 }: HabitReminderItemProps) {
@@ -100,6 +103,7 @@ export function HabitReminderItem({
           type="button"
           variant="secondary"
           size="sm"
+          disabled={actionsDisabled}
           onClick={(e) => {
             e.stopPropagation()
             onTargetComplete()
@@ -112,6 +116,7 @@ export function HabitReminderItem({
           type="button"
           variant="secondary"
           size="sm"
+          disabled={actionsDisabled}
           onClick={(e) => {
             e.stopPropagation()
             onMinimum()
@@ -124,6 +129,7 @@ export function HabitReminderItem({
           type="button"
           variant="secondary"
           size="sm"
+          disabled={actionsDisabled}
           onClick={(e) => {
             e.stopPropagation()
             onSkip()

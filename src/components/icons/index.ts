@@ -35,5 +35,6 @@ export {
   LineUpIcon,
   ListIcon,
   InfinityIcon,
+  MoreVerticalIcon,
 } from './NavIcons'
 export { BonsaiLogo } from './BonsaiLogo'

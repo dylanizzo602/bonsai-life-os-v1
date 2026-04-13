@@ -119,13 +119,14 @@ export function WeeklyBriefingPage() {
     fetchMilestones()
   }, [activeGoals])
 
-  /* Tasks that need review: active/in_progress, no due date or no priority */
+  /* Tasks that need review: active/in_progress, missing both due date and priority */
   const tasksToReview = useMemo(
     () =>
       tasks.filter(
         (t) =>
           (t.status === 'active' || t.status === 'in_progress') &&
-          (t.due_date == null || t.priority === 'none')
+          t.due_date == null &&
+          t.priority === 'none'
       ),
     [tasks]
   )
