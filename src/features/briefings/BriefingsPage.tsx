@@ -29,28 +29,9 @@ import { useCalendarAgenda } from './hooks/useCalendarAgenda'
 import { getDueStatus } from '../tasks/utils/date'
 import { getAvailableTasksFromList } from '../tasks/utils/available'
 import { isoInstantToLocalCalendarYMD } from '../../lib/localCalendarDate'
-import { useViewportWidth } from '../../hooks/useViewportWidth'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
-import { HabitTable } from '../habits/HabitTable'
+import { HabitGrid } from '../habits/HabitGrid'
 import { AddEditHabitModal } from '../habits/AddEditHabitModal'
-
-/** Desktop breakpoint: matches Habits page / HabitTable layout */
-const LG_BREAKPOINT = 1024
-
-/** Format date range for HabitTable bar: "Feb 15 – Feb 21, 2026" */
-function formatDateRange(start: string, end: string): string {
-  const s = new Date(start + 'T12:00:00')
-  const e = new Date(end + 'T12:00:00')
-  const sameYear = s.getFullYear() === e.getFullYear()
-  const startStr = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  const endStr = e.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: sameYear ? undefined : 'numeric',
-  })
-  const yearStr = sameYear ? `, ${s.getFullYear()}` : ''
-  return `${startStr} – ${endStr}${yearStr}`
-}
 
 /** Total steps in the flow (greeting + overdue + inbox review + plan + 4 reflection + completion) */
 const TOTAL_STEPS = 9
@@ -75,10 +56,6 @@ export interface BriefingsPageProps {
  * Progress bar at bottom; each completed briefing is saved as a reflection entry.
  */
 export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPageProps) {
-  /* Viewport: HabitTable uses desktop vs mobile layout like the Habits section */
-  const viewportWidth = useViewportWidth()
-  const isDesktop = viewportWidth >= LG_BREAKPOINT
-
   /* User time zone: overdue step uses same due semantics as Tasks */
   const timeZone = useUserTimeZone()
   /* Step state: 0 = greeting, 1 = overdue, 2 = inbox, 3 = plan day, 4–7 = reflection Q1–Q4, 8 = completion */
@@ -133,35 +110,32 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     onRemoveDependency,
   } = useTasks()
 
-  /* Habits: overdue step + habit table on "did everything" reflection step */
+  /* Habits: overdue step + "did everything" reflection step (reuse HabitsPage card grid UI) */
   const {
     habitsWithStreaks,
     entriesByHabit,
     dateRange,
+    setDateRange,
     todayYMD,
     setEntry: setHabitEntry,
     refetch: refetchHabits,
-    cycleEntry,
     createHabit,
     updateHabit,
     deleteHabit,
-    setWeekToToday,
-    goToPrevWeek,
-    goToNextWeek,
-    goToPrevRange,
-    goToNextRange,
     loading: habitsLoading,
   } = useHabits()
 
-  /* Habit edit modal: opened from HabitTable name on the did-everything step */
+  /* Habit edit modal: opened from HabitGrid settings button on the did-everything step */
   const [habitBeingEdited, setHabitBeingEdited] = useState<HabitWithStreaks | null>(null)
 
-  /* Did-everything step: show the same week range as Habits (includes yesterday) */
+  /* Did-everything step: show yesterday as a single-day view (matches the Habits card grid) */
   useEffect(() => {
     if (step === 6) {
-      setWeekToToday()
+      const yesterdayYMD =
+        DateTime.fromISO(todayYMD, { zone: timeZone }).minus({ days: 1 }).toISODate() ?? todayYMD
+      setDateRange({ start: yesterdayYMD, end: yesterdayYMD })
     }
-  }, [step, setWeekToToday])
+  }, [step, setDateRange, timeZone, todayYMD])
 
   /* Close habit modal and refresh streak data after edits */
   const closeHabitEditModal = useCallback(() => {
@@ -291,6 +265,12 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
   const availableTasks = useMemo(
     () => getAvailableTasksFromList(tasks, blockedTaskIds),
     [tasks, blockedTaskIds],
+  )
+
+  /* Briefing-only filter: Today's Lineup picker should not include habit-linked reminder tasks */
+  const briefingAvailableTasks = useMemo(
+    () => availableTasks.filter((t) => !t.habit_id),
+    [availableTasks],
   )
 
   /* Edit task modal (used on overdue step and inbox review convert-to-task) */
@@ -470,7 +450,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
 
       {step === 3 && (
         <PlanDayScreen
-          availableTasks={availableTasks}
+          availableTasks={briefingAvailableTasks}
           lineUpTaskIds={lineUpTaskIds}
            calendarEvents={calendarEventsToday}
            calendarLoading={calendarLoading}
@@ -498,21 +478,15 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
                       </p>
                     )
                   : (
-                      <div className="relative z-10 flex w-full min-w-0 justify-center isolate">
-                        <div className="flex w-full justify-center overflow-x-auto">
-                          <HabitTable
-                            habits={habitsWithStreaks}
-                            entriesByHabit={entriesByHabit}
-                            dateRange={dateRange}
-                            todayYMD={todayYMD}
-                            onCycleEntry={cycleEntry}
-                            onEditHabit={(habit) => setHabitBeingEdited(habit)}
-                            isDesktop={isDesktop}
-                            dateRangeText={formatDateRange(dateRange.start, dateRange.end)}
-                            onPrevRange={isDesktop ? goToPrevWeek : goToPrevRange}
-                            onNextRange={isDesktop ? goToNextWeek : goToNextRange}
-                          />
-                        </div>
+                      <div className="w-full">
+                        {/* Yesterday habits: reuse the HabitsPage card grid UI (single-day dateRange) */}
+                        <HabitGrid
+                          habits={habitsWithStreaks}
+                          entriesByHabit={entriesByHabit}
+                          selectedDateYMD={dateRange.start}
+                          onSetEntry={setHabitEntry}
+                          onEditHabit={(habit) => setHabitBeingEdited(habit)}
+                        />
                       </div>
                     )
               : undefined
