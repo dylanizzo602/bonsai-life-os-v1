@@ -23,14 +23,23 @@ import type {
 
 /** Default date range: today for YYYY-MM-DD */
 function todayYMD(): string {
-  return new Date().toISOString().slice(0, 10)
+  /* Local calendar date: streaks and habit entries are defined by the user's local day, not UTC. */
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 /** Add n days to YYYY-MM-DD */
 function addDays(ymd: string, n: number): string {
+  /* Date math: use local noon to avoid DST edges; format back to local YYYY-MM-DD. */
   const d = new Date(ymd + 'T12:00:00')
   d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 export interface DateRange {

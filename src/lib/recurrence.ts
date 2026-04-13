@@ -164,9 +164,9 @@ export function getNextOccurrence(pattern: RecurrencePattern | null, currentDueY
   if (pattern.freq === 'day') {
     next = addDays(new Date(year, month, date), pattern.interval)
   } else if (pattern.freq === 'week') {
+    /* Weekly recurrence: if byDay is set, advance to the next selected weekday; otherwise jump by interval weeks. */
     const days = Array.isArray(pattern.byDay) ? pattern.byDay : pattern.byDay ? [pattern.byDay] : []
     const current = new Date(year, month, date)
-    const anchor = new Date(year, month, date)
 
     if (days.length === 0) {
       next = addDays(current, 7 * pattern.interval)
@@ -177,28 +177,23 @@ export function getNextOccurrence(pattern: RecurrencePattern | null, currentDueY
       if (validDows.length === 0) {
         next = addDays(current, 7 * pattern.interval)
       } else {
-        const isOnValidDay = validDows.includes(current.getDay())
-        if (isOnValidDay) {
-          /* Already on a recurrence day: advance by full interval (e.g. 2 weeks, not 1) */
-          next = addDays(current, 7 * pattern.interval)
+        /* Next weekday selection: Monday→Tuesday (same week) for Mon–Fri, not Monday→next Monday. */
+        const sortedDows = [...new Set(validDows)].sort((a, b) => a - b)
+        const currentDow = current.getDay()
+
+        /* Week math: use local noon so DST edges don't shift the calendar date. */
+        const weekStart = new Date(current)
+        weekStart.setHours(12, 0, 0, 0)
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay())
+
+        const nextDowInWeek = sortedDows.find((d) => d > currentDow)
+        if (nextDowInWeek != null) {
+          /* Same recurrence week: next selected day (e.g. Mon→Tue). */
+          next = addDays(weekStart, nextDowInWeek)
         } else {
-          /* Not on a byDay: find next date that is (1) a byDay and (2) in a valid cycle (week 0, interval, 2*interval, ... from anchor) */
-          const anchorMs = anchor.getTime()
-          const msPerWeek = 7 * 24 * 60 * 60 * 1000
-          let d = addDays(current, 1)
-          for (let i = 0; i < 60; i++) {
-            if (!validDows.includes(d.getDay())) {
-              d = addDays(d, 1)
-              continue
-            }
-            const weeksSince = Math.floor((d.getTime() - anchorMs) / msPerWeek)
-            if (weeksSince % pattern.interval === 0) {
-              next = d
-              break
-            }
-            d = addDays(d, 1)
-          }
-          next = next ?? addDays(current, 7 * pattern.interval)
+          /* End of selected days: jump to the first selected day in the next interval week (e.g. Fri→next Mon). */
+          const nextCycleWeekStart = addDays(weekStart, 7 * pattern.interval)
+          next = addDays(nextCycleWeekStart, sortedDows[0] ?? 0)
         }
       }
     }

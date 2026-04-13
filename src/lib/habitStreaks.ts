@@ -11,9 +11,13 @@ export interface HabitStreakResult {
 
 /** Add n days to YYYY-MM-DD */
 function addDays(ymd: string, n: number): string {
+  /* Date math: use local noon to avoid DST edges; return local YYYY-MM-DD (not UTC slice). */
   const d = new Date(ymd + 'T12:00:00')
   d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 /** Sunday (YYYY-MM-DD) starting the week that contains ymd */
