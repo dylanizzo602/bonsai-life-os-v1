@@ -1,6 +1,6 @@
 /* Vercel function: authenticated Web Push sender using VAPID + Supabase device subscriptions */
 import { createClient } from '@supabase/supabase-js'
-import webpush from 'web-push'
+import webPushImport from 'web-push'
 
 /* Environment: required runtime configuration for secure sending */
 const PUSH_API_KEY = (process.env.NOTIFICATIONS_PUSH_API_KEY ?? '').trim()
@@ -9,6 +9,9 @@ const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').
 const VAPID_PUBLIC_KEY = (process.env.NOTIFICATIONS_VAPID_PUBLIC_KEY ?? '').trim()
 const VAPID_PRIVATE_KEY = (process.env.NOTIFICATIONS_VAPID_PRIVATE_KEY ?? '').trim()
 const VAPID_SUBJECT = (process.env.NOTIFICATIONS_VAPID_SUBJECT ?? 'mailto:notifications@example.com').trim()
+
+/* web-push interop: normalize CJS/ESM default export differences */
+const webpush = webPushImport?.default ?? webPushImport
 
 /* Supabase service client: read/update notification_devices securely */
 const supabase =
@@ -45,83 +48,96 @@ function parseSubscription(tokenOrEndpoint) {
 
 /* Handler: validate request, load devices, send pushes, deactivate invalid subscriptions */
 export default async function handler(req, res) {
-  /* Method guard: only POST is supported */
-  if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' })
-    return
-  }
-
-  /* Auth guard: block unauthenticated send attempts */
-  if (!isAuthorized(req)) {
-    res.status(401).json({ error: 'Unauthorized' })
-    return
-  }
-
-  /* Env guard: ensure sender has everything needed to operate */
-  if (!supabase || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
-    res.status(500).json({ error: 'Push sender not configured (missing env vars)' })
-    return
-  }
-
-  /* Body parsing: extract send parameters */
-  const body = req.body ?? {}
-  const userId = typeof body.userId === 'string' ? body.userId : ''
-  const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : 'Bonsai'
-  const message = typeof body.body === 'string' ? body.body : ''
-  const data = body.data && typeof body.data === 'object' ? body.data : undefined
-
-  if (!userId) {
-    res.status(400).json({ error: 'Missing userId' })
-    return
-  }
-
-  /* Device lookup: active endpoints for this user */
-  const { data: devices, error } = await supabase
-    .from('notification_devices')
-    .select('id, token_or_endpoint')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-
-  if (error) {
-    res.status(500).json({ error: 'Failed to load devices' })
-    return
-  }
-
-  /* Delivery loop: send to each subscription; deactivate invalid endpoints */
-  const results = []
-  for (const device of devices ?? []) {
-    const subscription = parseSubscription(device.token_or_endpoint)
-    if (!subscription) {
-      results.push({ deviceId: device.id, status: 'skipped', reason: 'invalid_subscription_json' })
-      continue
+  try {
+    /* Method guard: only POST is supported */
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed' })
+      return
     }
 
-    const payload = JSON.stringify({
-      title,
-      body: message,
-      icon: '/icons/icon.svg',
-      url: '/',
-      data,
-    })
+    /* Auth guard: block unauthenticated send attempts */
+    if (!isAuthorized(req)) {
+      res.status(401).json({ error: 'Unauthorized' })
+      return
+    }
 
-    try {
-      await webpush.sendNotification(subscription, payload)
-      results.push({ deviceId: device.id, status: 'sent' })
-    } catch (err) {
-      const statusCode = Number(err?.statusCode ?? err?.status ?? 0)
-      const shouldDeactivate = statusCode === 404 || statusCode === 410
-      if (shouldDeactivate) {
-        await supabase.from('notification_devices').update({ is_active: false }).eq('id', device.id)
+    /* Env guard: ensure sender has everything needed to operate */
+    if (!supabase || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+      res.status(500).json({ error: 'Push sender not configured (missing env vars)' })
+      return
+    }
+
+    /* Dependency guard: surface a clear error if web-push interop fails */
+    if (!webpush || typeof webpush.sendNotification !== 'function') {
+      res.status(500).json({ error: 'web-push import failed at runtime' })
+      return
+    }
+
+    /* Body parsing: extract send parameters */
+    const body = req.body ?? {}
+    const userId = typeof body.userId === 'string' ? body.userId : ''
+    const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : 'Bonsai'
+    const message = typeof body.body === 'string' ? body.body : ''
+    const data = body.data && typeof body.data === 'object' ? body.data : undefined
+
+    if (!userId) {
+      res.status(400).json({ error: 'Missing userId' })
+      return
+    }
+
+    /* Device lookup: active endpoints for this user */
+    const { data: devices, error } = await supabase
+      .from('notification_devices')
+      .select('id, token_or_endpoint')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+
+    if (error) {
+      res.status(500).json({ error: 'Failed to load devices' })
+      return
+    }
+
+    /* Delivery loop: send to each subscription; deactivate invalid endpoints */
+    const results = []
+    for (const device of devices ?? []) {
+      const subscription = parseSubscription(device.token_or_endpoint)
+      if (!subscription) {
+        results.push({ deviceId: device.id, status: 'skipped', reason: 'invalid_subscription_json' })
+        continue
       }
-      results.push({
-        deviceId: device.id,
-        status: 'error',
-        statusCode: statusCode || null,
-        deactivated: shouldDeactivate,
-      })
-    }
-  }
 
-  res.status(200).json({ ok: true, userId, count: results.length, results })
+      const payload = JSON.stringify({
+        title,
+        body: message,
+        icon: '/icons/icon.svg',
+        url: '/',
+        data,
+      })
+
+      try {
+        await webpush.sendNotification(subscription, payload)
+        results.push({ deviceId: device.id, status: 'sent' })
+      } catch (err) {
+        const statusCode = Number(err?.statusCode ?? err?.status ?? 0)
+        const shouldDeactivate = statusCode === 404 || statusCode === 410
+        if (shouldDeactivate) {
+          await supabase.from('notification_devices').update({ is_active: false }).eq('id', device.id)
+        }
+        results.push({
+          deviceId: device.id,
+          status: 'error',
+          statusCode: statusCode || null,
+          deactivated: shouldDeactivate,
+        })
+      }
+    }
+
+    res.status(200).json({ ok: true, userId, count: results.length, results })
+  } catch (error) {
+    res.status(500).json({
+      error: 'Unhandled exception in push sender',
+      message: error instanceof Error ? error.message : String(error),
+    })
+  }
 }
 
