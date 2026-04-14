@@ -1,6 +1,6 @@
 /* Vercel function: authenticated Web Push sender using VAPID + Supabase device subscriptions */
 import { createClient } from '@supabase/supabase-js'
-import webPushImport from 'web-push'
+import { createRequire } from 'node:module'
 
 /* Environment: required runtime configuration for secure sending */
 const PUSH_API_KEY = (process.env.NOTIFICATIONS_PUSH_API_KEY ?? '').trim()
@@ -10,8 +10,16 @@ const VAPID_PUBLIC_KEY = (process.env.NOTIFICATIONS_VAPID_PUBLIC_KEY ?? '').trim
 const VAPID_PRIVATE_KEY = (process.env.NOTIFICATIONS_VAPID_PRIVATE_KEY ?? '').trim()
 const VAPID_SUBJECT = (process.env.NOTIFICATIONS_VAPID_SUBJECT ?? 'mailto:notifications@example.com').trim()
 
-/* web-push interop: normalize CJS/ESM default export differences */
-const webpush = webPushImport?.default ?? webPushImport
+/* web-push loader: keep require() inside try/catch to avoid hard-crashing the function */
+const require = createRequire(import.meta.url)
+let webpush = null
+let webpushLoadError = null
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  webpush = require('web-push')
+} catch (error) {
+  webpushLoadError = error
+}
 
 /* Supabase service client: read/update notification_devices securely */
 const supabase =
@@ -21,7 +29,9 @@ const supabase =
 
 /* Web Push config: set VAPID details once per runtime */
 if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
-  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
+  if (webpush && typeof webpush.setVapidDetails === 'function') {
+    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
+  }
 }
 
 /* Auth helper: require Authorization: Bearer <NOTIFICATIONS_PUSH_API_KEY> */
@@ -69,7 +79,10 @@ export default async function handler(req, res) {
 
     /* Dependency guard: surface a clear error if web-push interop fails */
     if (!webpush || typeof webpush.sendNotification !== 'function') {
-      res.status(500).json({ error: 'web-push import failed at runtime' })
+      res.status(500).json({
+        error: 'web-push failed to load at runtime',
+        message: webpushLoadError instanceof Error ? webpushLoadError.message : String(webpushLoadError),
+      })
       return
     }
 
