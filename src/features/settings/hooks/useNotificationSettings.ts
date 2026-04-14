@@ -118,23 +118,40 @@ export function useNotificationSettings(): UseNotificationSettingsState {
       /* Mobile push subscription: create subscription and store full JSON payload for push worker delivery */
       if (channel === 'push_mobile' && nextEnabled) {
         const subscription = await getOrCreatePushSubscription()
-        const serialized = serializePushSubscription(subscription)
-        if (serialized) {
-          const userAgent = typeof window !== 'undefined' ? window.navigator.userAgent : ''
-          const isIos = /iPad|iPhone|iPod/.test(userAgent)
-          const isAndroid = /Android/i.test(userAgent)
-          const platform = isIos ? 'ios_pwa' : isAndroid ? 'android' : 'web'
-
-          await supabase.from('notification_devices').upsert(
-            {
-              platform,
-              token_or_endpoint: JSON.stringify(serialized),
-              is_active: true,
-            },
-            {
-              onConflict: 'user_id,platform,token_or_endpoint',
-            },
+        /* Subscription guard: surface actionable error when the browser can't create a push subscription */
+        if (!subscription) {
+          setError(
+            'Unable to create a push subscription on this device. Confirm the app is opened from the Home Screen icon, notifications are allowed in iOS Settings, and the VAPID public key is configured for the deployed app.',
           )
+          return
+        }
+        const serialized = serializePushSubscription(subscription)
+        /* Serialization guard: ensure we have endpoint + keys before storing in Supabase */
+        if (!serialized) {
+          setError('Unable to store push subscription details. Please try toggling again.')
+          return
+        }
+        const userAgent = typeof window !== 'undefined' ? window.navigator.userAgent : ''
+        const isIos = /iPad|iPhone|iPod/.test(userAgent)
+        const isAndroid = /Android/i.test(userAgent)
+        const platform = isIos ? 'ios_pwa' : isAndroid ? 'android' : 'web'
+
+        const { error: deviceError } = await supabase.from('notification_devices').upsert(
+          {
+            platform,
+            token_or_endpoint: JSON.stringify(serialized),
+            is_active: true,
+          },
+          {
+            onConflict: 'user_id,platform,token_or_endpoint',
+          },
+        )
+
+        /* Persistence guard: show the Supabase error so the user can resolve RLS/auth issues quickly */
+        if (deviceError) {
+          console.error('Error upserting notification device subscription:', deviceError)
+          setError('Unable to save this device for push notifications. Please try again.')
+          return
         }
       }
 

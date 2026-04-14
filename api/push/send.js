@@ -21,16 +21,35 @@ try {
   webpushLoadError = error
 }
 
+/* VAPID subject normalization: accept raw emails and convert to a mailto: URL */
+function normalizeVapidSubject(subject) {
+  if (!subject) return null
+  const trimmed = String(subject).trim()
+  if (!trimmed) return null
+  if (trimmed.startsWith('mailto:')) return trimmed
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed
+  if (trimmed.includes('@')) return `mailto:${trimmed}`
+  return trimmed
+}
+
 /* Supabase service client: read/update notification_devices securely */
 const supabase =
   SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
     ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
     : null
 
-/* Web Push config: set VAPID details once per runtime */
-if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
-  if (webpush && typeof webpush.setVapidDetails === 'function') {
-    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
+/* Web Push config: set VAPID details once per runtime, safely (never crash the function at import time) */
+let vapidConfigError = null
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY && webpush && typeof webpush.setVapidDetails === 'function') {
+  try {
+    const normalizedSubject = normalizeVapidSubject(VAPID_SUBJECT)
+    webpush.setVapidDetails(
+      normalizedSubject ?? 'mailto:notifications@example.com',
+      VAPID_PUBLIC_KEY,
+      VAPID_PRIVATE_KEY,
+    )
+  } catch (error) {
+    vapidConfigError = error
   }
 }
 
@@ -74,6 +93,16 @@ export default async function handler(req, res) {
     /* Env guard: ensure sender has everything needed to operate */
     if (!supabase || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
       res.status(500).json({ error: 'Push sender not configured (missing env vars)' })
+      return
+    }
+
+    /* VAPID guard: surface configuration errors (e.g. invalid subject) */
+    if (vapidConfigError) {
+      res.status(500).json({
+        error: 'Invalid VAPID configuration',
+        message: vapidConfigError instanceof Error ? vapidConfigError.message : String(vapidConfigError),
+        hint: 'Set NOTIFICATIONS_VAPID_SUBJECT to a URL (recommended: mailto:you@domain.com).',
+      })
       return
     }
 
