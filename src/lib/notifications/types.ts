@@ -1,5 +1,10 @@
 /* Notification type definitions: enums for notification kinds and channels shared across app and backend */
-export type NotificationType = 'task_overdue' | 'reminder_due' | 'habit_reminder_due'
+export type NotificationType =
+  | 'task_overdue'
+  | 'task_due_soon'
+  | 'reminder_due'
+  | 'habit_reminder_due'
+  | 'morning_briefing_incomplete_noon'
 
 /* Notification channel definitions: supported delivery channels for each notification */
 export type NotificationChannel = 'email' | 'push_web' | 'push_mobile'

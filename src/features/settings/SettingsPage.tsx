@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useAccountSettings } from './hooks/useAccountSettings'
 import { useNotificationSettings } from './hooks/useNotificationSettings'
+import { requestNotificationPermission, registerServiceWorker } from '../../lib/notifications/pushClient'
 import { Input } from '../../components/Input'
 import { Button } from '../../components/Button'
 import { Checkbox } from '../../components/Checkbox'
@@ -52,6 +53,12 @@ export function SettingsPage() {
   /* Local password field state: keep separate from main hook state */
   const [password, setPassword] = useState('')
 
+  /* Browser notification permission: show a clear CTA when permission isn't granted yet */
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported'
+    return Notification.permission
+  })
+
   /* Derived full name for display-only summary */
   const displayName = useMemo(() => {
     const parts = [firstName, lastName].filter(Boolean)
@@ -87,6 +94,17 @@ export function SettingsPage() {
   const handleSignOut = async () => {
     clearStatus()
     await signOut()
+  }
+
+  /* Handler: request browser notification permission so local reminders can show */
+  const handleEnableBrowserNotifications = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setNotificationPermission('unsupported')
+      return
+    }
+    await registerServiceWorker()
+    const next = await requestNotificationPermission()
+    setNotificationPermission(next)
   }
 
   return (
@@ -213,6 +231,29 @@ export function SettingsPage() {
               Enable mobile push notifications for overdue tasks and reminders when using the Bonsai
               PWA from your Home Screen.
             </p>
+            <div className="mb-4 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 p-3">
+              <p className="text-secondary text-bonsai-slate-700">
+                Browser notifications: <span className="font-medium">{notificationPermission}</span>
+              </p>
+              {notificationPermission !== 'granted' && notificationPermission !== 'unsupported' && (
+                <div className="mt-2 flex justify-end">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleEnableBrowserNotifications}
+                    disabled={!user}
+                  >
+                    Enable browser notifications
+                  </Button>
+                </div>
+              )}
+              {notificationPermission === 'unsupported' && (
+                <p className="text-secondary text-bonsai-slate-600 mt-2">
+                  Notifications are not supported in this browser/environment.
+                </p>
+              )}
+            </div>
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse">
                 <thead>
@@ -234,9 +275,11 @@ export function SettingsPage() {
                   {notificationTypes.map((type) => (
                     <tr key={type} className="border-t border-bonsai-slate-100">
                       <td className="text-body text-bonsai-slate-800 py-2 pr-4">
+                        {type === 'task_due_soon' && 'Tasks due in 1 hour'}
                         {type === 'task_overdue' && 'Overdue tasks'}
-                        {type === 'reminder_due' && 'Reminders due'}
                         {type === 'habit_reminder_due' && 'Habit reminders due'}
+                        {type === 'morning_briefing_incomplete_noon' && 'Morning briefing incomplete by 12pm'}
+                        {type === 'reminder_due' && 'Reminders due'}
                       </td>
                       {notificationChannels.map((channel) => (
                         <td key={channel} className="py-2 px-2">

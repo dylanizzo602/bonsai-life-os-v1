@@ -14,7 +14,13 @@ import {
 import { supabase } from '../../../lib/supabase/client'
 
 /* Ordered list of notification types shown in the settings UI */
-const NOTIFICATION_TYPES: NotificationType[] = ['task_overdue', 'reminder_due', 'habit_reminder_due']
+const NOTIFICATION_TYPES: NotificationType[] = [
+  'task_due_soon',
+  'task_overdue',
+  'habit_reminder_due',
+  'morning_briefing_incomplete_noon',
+  'reminder_due',
+]
 
 /* Ordered list of channels shown in the settings UI: mobile PWA push only */
 const CHANNELS: NotificationChannel[] = ['push_mobile']

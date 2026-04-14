@@ -17,6 +17,7 @@ import {
   getHasCompletedMorningBriefingToday,
   getHasCompletedWeeklyBriefingThisWeek,
 } from '../lib/supabase/reflections'
+import { useLocalNotificationScheduler } from '../features/notifications/hooks/useLocalNotificationScheduler'
 
 /**
  * Screen too small message component
@@ -44,6 +45,9 @@ function ScreenTooSmallMessage() {
 function App() {
   /* Auth state: determine whether to show auth screen or main app */
   const { session, loading } = useAuth()
+
+  /* Local notifications: schedule task/habit/briefing triggers while the app is open */
+  useLocalNotificationScheduler()
 
   /* Viewport width detection: Check if screen is too small (< 300px) */
   const viewportWidth = useViewportWidth()
