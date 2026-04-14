@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { isSelectedWeekday } from '../../lib/streaks'
 import { MoreVerticalIcon } from '../../components/icons'
 import type { HabitEntry, HabitWithStreaks } from './types'
+import { formatHabitStreakCount } from './formatHabitStreak'
 
 export interface HabitGridProps {
   /* Data: habits already decorated with streak numbers */
@@ -151,7 +152,8 @@ export function HabitGrid({
                 <div>
                   <div className="text-secondary text-bonsai-slate-600">Streak</div>
                   <div className="text-[32px] md:text-[36px] leading-none font-bold text-bonsai-brown-700">
-                    {habit.currentStreak}
+                    {/* Display: include unit so weekly streaks read “weeks” instead of “days”. */}
+                    {formatHabitStreakCount(habit, habit.currentStreak)}
                   </div>
                 </div>
                 <div className={`text-secondary border rounded-full px-2.5 py-1 ${pill.className}`}>

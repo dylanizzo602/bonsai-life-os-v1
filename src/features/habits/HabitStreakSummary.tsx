@@ -1,7 +1,7 @@
 /* HabitStreakSummary: Streak block — fire + streak length, target-day count, minimum-day count */
 
 import type { HabitWithStreaks } from './types'
-import { isWeeklyStreakHabit } from './formatHabitStreak'
+import { formatHabitStreakCount } from './formatHabitStreak'
 
 export interface HabitStreakSummaryProps {
   habit: HabitWithStreaks
@@ -27,16 +27,9 @@ export function HabitStreakSummary({
   showTargetMinBreakdown = true,
   variant = 'default',
 }: HabitStreakSummaryProps) {
-  /* Weekly bitmask habits measure streak in weeks; others use calendar days */
-  const isWeekly = isWeeklyStreakHabit(habit)
-  const streakPrimary =
-    isWeekly
-      ? `${habit.currentStreak} ${habit.currentStreak === 1 ? 'week' : 'weeks'}`
-      : `${habit.currentStreak} ${habit.currentStreak === 1 ? 'day' : 'days'}`
-  const longestPrimary =
-    isWeekly
-      ? `${habit.longestStreak} ${habit.longestStreak === 1 ? 'week' : 'weeks'}`
-      : `${habit.longestStreak} ${habit.longestStreak === 1 ? 'day' : 'days'}`
+  /* Primary labels: reuse shared formatter so “days vs weeks” stays consistent across the app. */
+  const streakPrimary = formatHabitStreakCount(habit, habit.currentStreak)
+  const longestPrimary = formatHabitStreakCount(habit, habit.longestStreak)
 
   const primaryClass =
     variant === 'compact'

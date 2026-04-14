@@ -2,6 +2,7 @@
 
 import { Button } from '../../components/Button'
 import { BellIcon } from '../../components/icons'
+import { TruncatedText } from '../../components/TruncatedText'
 import { getDueStatus, formatStartDueDisplay, habitReminderEffectiveInstant } from '../tasks/utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
 import type { Task } from '../tasks/types'
@@ -61,10 +62,16 @@ export function HabitReminderItem({
   const isRemindOverdue = dueStatus === 'overdue'
   const isRemindDueSoon = dueStatus === 'dueSoon'
 
+  /* Typography: match TaskListItem name sizing (compact rows use text-sm). */
+  const nameClass =
+    density === 'compact'
+      ? 'text-sm font-medium text-bonsai-slate-800'
+      : 'text-body font-medium text-bonsai-slate-800'
+
   const containerClasses =
     density === 'compact'
-      ? 'flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-bonsai-slate-200 bg-white px-3 py-2 hover:bg-bonsai-slate-50 transition-colors text-left min-w-0'
-      : 'flex flex-wrap items-center gap-2 rounded-lg border border-bonsai-slate-200 bg-white p-2.5 md:gap-3 md:p-4 hover:bg-bonsai-slate-50 transition-colors text-left min-w-0'
+      ? 'flex flex-col md:flex-row md:flex-wrap md:items-center gap-2 rounded-lg border border-dashed border-bonsai-slate-200 bg-white px-3 py-2 hover:bg-bonsai-slate-50 transition-colors text-left min-w-0'
+      : 'flex flex-col md:flex-row md:flex-wrap md:items-center gap-2 rounded-lg border border-bonsai-slate-200 bg-white p-2.5 md:gap-3 md:p-4 hover:bg-bonsai-slate-50 transition-colors text-left min-w-0'
 
   return (
     <div
@@ -72,33 +79,41 @@ export function HabitReminderItem({
       role="article"
       aria-label={`Habit: ${targetLabel(habit)}, streak ${habit.currentStreak}`}
     >
-      <div className="flex shrink-0">
-        <HabitStreakSummary
-          habit={habit}
-          showLongest={false}
-          showTargetMinBreakdown={showStreakBreakdown}
-          variant="default"
-        />
+      {/* Row 1 (mobile): streak + reminder name (matches Task rows) */}
+      <div className="flex w-full min-w-0 items-center gap-2">
+        <div className="shrink-0">
+          <HabitStreakSummary
+            habit={habit}
+            showLongest={false}
+            showTargetMinBreakdown={showStreakBreakdown}
+            variant="default"
+          />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          {/* Name truncation: force ellipsis by constraining width and using nowrap overflow rules. */}
+          <TruncatedText className={`block w-full truncate ${nameClass} text-left`} style={{ maxWidth: '100%' }}>
+            {targetLabel(habit)}
+          </TruncatedText>
+        </div>
       </div>
 
-      <div className="flex-1 min-w-0">
-        <span className="block truncate text-sm font-medium text-bonsai-slate-800">
-          {targetLabel(habit)}
-        </span>
-      </div>
-
+      {/* Row 2 (mobile): due date + time */}
       <div
-        className={`flex shrink-0 items-center gap-1.5 text-secondary text-sm md:text-base ${
-          isRemindOverdue ? 'text-red-600 font-medium' : isRemindDueSoon ? 'text-amber-600 font-medium' : 'text-bonsai-slate-500'
+        className={`flex w-full items-center gap-1.5 text-secondary ${
+          isRemindOverdue
+            ? 'text-red-600 font-medium'
+            : isRemindDueSoon
+              ? 'text-amber-600 font-medium'
+              : 'text-bonsai-slate-500'
         }`}
       >
         <BellIcon className="w-4 h-4 shrink-0" aria-hidden />
-        <span className="whitespace-nowrap">
-          {formatNotificationDate(effectiveRemindAt, timeZone)}
-        </span>
+        <span className="whitespace-nowrap">{formatNotificationDate(effectiveRemindAt, timeZone)}</span>
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+      {/* Row 3 (mobile): action buttons */}
+      <div className="flex flex-wrap items-center gap-2 w-full justify-start md:justify-end">
         <Button
           type="button"
           variant="secondary"
