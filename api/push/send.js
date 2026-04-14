@@ -75,6 +75,19 @@ function parseSubscription(tokenOrEndpoint) {
   }
 }
 
+/* Error serializer: extract useful details from web-push errors without leaking secrets */
+async function serializeWebPushError(err) {
+  const statusCode = Number(err?.statusCode ?? err?.status ?? 0) || null
+  const message = err instanceof Error ? err.message : String(err)
+  const body = typeof err?.body === 'string' ? err.body : null
+
+  return {
+    statusCode,
+    message,
+    body,
+  }
+}
+
 /* Handler: validate request, load devices, send pushes, deactivate invalid subscriptions */
 export default async function handler(req, res) {
   try {
@@ -160,15 +173,17 @@ export default async function handler(req, res) {
         await webpush.sendNotification(subscription, payload)
         results.push({ deviceId: device.id, status: 'sent' })
       } catch (err) {
-        const statusCode = Number(err?.statusCode ?? err?.status ?? 0)
-        const shouldDeactivate = statusCode === 404 || statusCode === 410
+        const details = await serializeWebPushError(err)
+        const shouldDeactivate = details.statusCode === 404 || details.statusCode === 410
         if (shouldDeactivate) {
           await supabase.from('notification_devices').update({ is_active: false }).eq('id', device.id)
         }
         results.push({
           deviceId: device.id,
           status: 'error',
-          statusCode: statusCode || null,
+          statusCode: details.statusCode,
+          message: details.message,
+          body: details.body,
           deactivated: shouldDeactivate,
         })
       }
