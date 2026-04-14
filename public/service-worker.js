@@ -12,7 +12,8 @@ self.addEventListener('push', (event) => {
 
   const title = data.title || 'Bonsai'
   const body = data.body || 'You have an update in Bonsai.'
-  const icon = data.icon || '/icons/icon-192.png'
+  /* Default icon: keep in sync with PWA manifest icons in /public/icons */
+  const icon = data.icon || '/icons/icon.svg'
   const url = data.url || '/'
 
   const options = {

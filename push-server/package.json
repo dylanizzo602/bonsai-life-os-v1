@@ -1,0 +1,16 @@
+{
+  "name": "bonsai-push-server",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.93.3",
+    "express": "^5.1.0",
+    "web-push": "^3.6.7"
+  }
+}
+

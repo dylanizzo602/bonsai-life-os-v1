@@ -34,10 +34,11 @@ A responsive productivity web app built around task management. Built with React
 
 2. **Set up environment variables**:
    - Copy `.env.example` to `.env`
-   - Add your Supabase project URL and anon key:
+   - Add your Supabase project URL and anon key (and optional web push key):
      ```
      VITE_SUPABASE_URL=your_supabase_url
      VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+     VITE_VAPID_PUBLIC_KEY=your_vapid_public_key_base64url
      ```
 
 3. **Set up database** (if using Supabase):
@@ -51,6 +52,27 @@ A responsive productivity web app built around task management. Built with React
 
 5. **Open your browser**:
    - Navigate to `http://localhost:5173`
+
+## PWA Push Notifications (Web Push)
+
+This repo supports **PWA mobile push** via:
+
+- **Client**: stores web push subscriptions in Supabase `notification_devices` when enabled in Settings.
+- **Service worker**: `public/service-worker.js` displays push notifications.
+- **Sender**: Vercel Serverless Function (`api/push/send`) delivers to stored subscriptions.
+- **Scheduler/trigger**: `supabase/functions/notifications` calls a push sender URL when it finds due/overdue items.
+
+### Configure (high level)
+
+- **Generate VAPID keys** (run anywhere with Node):
+  - `npx web-push generate-vapid-keys`
+- **Set client env**:
+  - `VITE_VAPID_PUBLIC_KEY` in `.env`
+- **Deploy the push sender**:
+  - Deploy this repo to Vercel; it will expose `POST /api/push/send`
+- **Set Supabase Edge Function env** for `supabase/functions/notifications`:
+  - `NOTIFICATIONS_PUSH_API_URL` (e.g. `https://your-vercel-app.vercel.app/api/push/send`)
+  - `NOTIFICATIONS_PUSH_API_KEY` (must match Vercel env `NOTIFICATIONS_PUSH_API_KEY`)
 
 ## Available Scripts
 

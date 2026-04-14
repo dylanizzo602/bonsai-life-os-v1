@@ -1,0 +1,23 @@
+<!-- Bonsai PWA icon: simple inline SVG to avoid binary assets in repo -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Bonsai">
+  <!-- Background: app tile -->
+  <rect x="32" y="32" width="448" height="448" rx="96" fill="#2F5D50" />
+  <!-- Trunk -->
+  <path
+    d="M246 356c0-24 14-44 34-56 14-8 22-22 22-38v-32c0-18-14-32-32-32h-28c-18 0-32 14-32 32v18c0 20-10 38-26 50-18 14-30 36-30 60 0 44 36 80 80 80h20c44 0 80-36 80-80z"
+    fill="#E7D8C6"
+    opacity="0.95"
+  />
+  <!-- Canopy -->
+  <path
+    d="M154 210c0-54 46-98 102-98 24 0 46 8 64 22 14-16 34-26 56-26 42 0 76 34 76 76 0 38-28 70-64 76-10 44-52 78-104 78-64 0-116-44-116-98 0-10 2-20 6-30-12-4-20-14-20-26z"
+    fill="#B7D6C8"
+  />
+  <!-- Pot -->
+  <path
+    d="M160 356h192l-18 78c-4 18-20 30-38 30H216c-18 0-34-12-38-30l-18-78z"
+    fill="#5B3A2B"
+    opacity="0.95"
+  />
+</svg>
+
