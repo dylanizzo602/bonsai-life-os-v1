@@ -6,7 +6,11 @@ import {
   buildEffectivePreferencesMap,
 } from '../../../lib/supabase/notificationPreferences'
 import type { NotificationType, NotificationChannel } from '../../../lib/notifications/types'
-import { getOrCreatePushSubscription, serializePushSubscription } from '../../../lib/notifications/pushClient'
+import {
+  getOrCreatePushSubscription,
+  serializePushSubscription,
+  getPushDiagnostics,
+} from '../../../lib/notifications/pushClient'
 import { supabase } from '../../../lib/supabase/client'
 
 /* Ordered list of notification types shown in the settings UI */
@@ -120,8 +124,20 @@ export function useNotificationSettings(): UseNotificationSettingsState {
         const subscription = await getOrCreatePushSubscription()
         /* Subscription guard: surface actionable error when the browser can't create a push subscription */
         if (!subscription) {
+          /* Diagnostics: compute high-signal capability hints for iOS/PWA debugging */
+          const diag = await getPushDiagnostics()
           setError(
-            'Unable to create a push subscription on this device. Confirm the app is opened from the Home Screen icon, notifications are allowed in iOS Settings, and the VAPID public key is configured for the deployed app.',
+            [
+              'Unable to create a push subscription on this device.',
+              `secure=${diag.isSecureContext}`,
+              `sw=${diag.hasServiceWorker && diag.hasRegistration}`,
+              `pushManager=${diag.hasPushManager}`,
+              `permission=${diag.permission}`,
+              `vapidKeyPresent=${diag.vapidPublicKeyPresent} (len=${diag.vapidPublicKeyLength})`,
+              diag.subscribeError ? `error=${diag.subscribeError}` : null,
+            ]
+              .filter(Boolean)
+              .join(' '),
           )
           return
         }

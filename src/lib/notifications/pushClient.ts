@@ -13,6 +13,33 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray
 }
 
+/* Diagnostics shape: summarize push capability and common failure points for debugging iOS PWA issues */
+export interface PushDiagnostics {
+  /** Whether this code is running in a browser context */
+  hasWindow: boolean
+  /** Whether the current context is secure (required for push) */
+  isSecureContext: boolean
+  /** Whether service workers are available */
+  hasServiceWorker: boolean
+  /** Whether notifications API is available */
+  hasNotification: boolean
+  /** Current notification permission state */
+  permission: NotificationPermission | 'unsupported'
+  /** Whether PushManager appears available on the registration */
+  hasPushManager: boolean
+  /** Whether a VAPID public key is configured and its apparent length */
+  vapidPublicKeyPresent: boolean
+  vapidPublicKeyLength: number
+  /** Whether a service worker registration was created successfully */
+  hasRegistration: boolean
+  /** Whether an existing subscription was found */
+  hadExistingSubscription: boolean
+  /** Whether a new subscription attempt succeeded */
+  createdSubscription: boolean
+  /** Error message captured during subscribe attempt (if any) */
+  subscribeError: string | null
+}
+
 /* Register the Bonsai service worker for push notifications, if supported in this browser */
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (typeof window === 'undefined') return null
@@ -24,6 +51,78 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
   } catch (error) {
     console.error('Failed to register service worker for notifications:', error)
     return null
+  }
+}
+
+/* Push diagnostics: attempt subscription flow and return high-signal info for troubleshooting */
+export async function getPushDiagnostics(): Promise<PushDiagnostics> {
+  /* Runtime capability checks: used to pinpoint iOS/PWA feature support */
+  const hasWindow = typeof window !== 'undefined'
+  const isSecureContext = hasWindow ? Boolean(window.isSecureContext) : false
+  const hasServiceWorker = hasWindow ? 'serviceWorker' in navigator : false
+  const hasNotification = hasWindow ? 'Notification' in window : false
+  const permission: PushDiagnostics['permission'] = hasNotification ? Notification.permission : 'unsupported'
+  const publicKey = getBrowserVapidPublicKey()
+
+  /* Default result: pessimistic values that will be updated as checks succeed */
+  const result: PushDiagnostics = {
+    hasWindow,
+    isSecureContext,
+    hasServiceWorker,
+    hasNotification,
+    permission,
+    hasPushManager: false,
+    vapidPublicKeyPresent: Boolean(publicKey),
+    vapidPublicKeyLength: publicKey ? publicKey.length : 0,
+    hasRegistration: false,
+    hadExistingSubscription: false,
+    createdSubscription: false,
+    subscribeError: null,
+  }
+
+  /* Registration: must exist before push subscription */
+  const registration = await registerServiceWorker()
+  if (!registration) {
+    return result
+  }
+  result.hasRegistration = true
+  result.hasPushManager = 'pushManager' in registration
+  if (!result.hasPushManager) {
+    return result
+  }
+
+  /* Subscription discovery: indicate whether a subscription already exists */
+  const existing = await registration.pushManager.getSubscription()
+  if (existing) {
+    result.hadExistingSubscription = true
+    return result
+  }
+
+  /* Permission gate: only attempt subscribe when granted */
+  const nextPermission = await requestNotificationPermission()
+  result.permission = nextPermission
+  if (nextPermission !== 'granted') {
+    return result
+  }
+
+  /* VAPID guard: if missing, subscription cannot be created */
+  if (!publicKey) {
+    result.subscribeError = 'VAPID public key missing in this build.'
+    return result
+  }
+
+  try {
+    /* Subscribe options: cast to BufferSource for TS DOM compatibility across lib versions */
+    const applicationServerKey = urlBase64ToUint8Array(publicKey) as unknown as BufferSource
+    await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey,
+    })
+    result.createdSubscription = true
+    return result
+  } catch (error) {
+    result.subscribeError = error instanceof Error ? error.message : String(error)
+    return result
   }
 }
 
