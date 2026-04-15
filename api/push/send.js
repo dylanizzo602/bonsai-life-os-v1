@@ -134,6 +134,7 @@ export default async function handler(req, res) {
     const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : 'Bonsai'
     const message = typeof body.body === 'string' ? body.body : ''
     const data = body.data && typeof body.data === 'object' ? body.data : undefined
+    const targetUrl = typeof body.url === 'string' && body.url.trim() ? body.url.trim() : '/'
 
     if (!userId) {
       res.status(400).json({ error: 'Missing userId' })
@@ -165,7 +166,7 @@ export default async function handler(req, res) {
         title,
         body: message,
         icon: '/icons/icon.svg',
-        url: '/',
+        url: targetUrl,
         data,
       })
 

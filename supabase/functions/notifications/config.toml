@@ -1,0 +1,6 @@
+## Edge Function config: allow cron/pg_net invocation without JWT
+##
+## This function is invoked by a database cron job (pg_cron + pg_net) which does not attach a Supabase JWT.
+## We disable JWT verification so the function can be called without an Authorization header.
+verify_jwt = false
+

@@ -1,8 +1,14 @@
 /* Notifications edge function: scan overdue tasks and due habit todo reminders; send mobile push notifications */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { DateTime } from 'https://esm.sh/luxon@3.5.0'
 
-type NotificationType = 'task_overdue' | 'reminder_due' | 'habit_reminder_due'
+type NotificationType =
+  | 'task_overdue'
+  | 'task_due_soon'
+  | 'reminder_due'
+  | 'habit_reminder_due'
+  | 'morning_briefing_incomplete_noon'
 type NotificationChannel = 'push_mobile'
 
 interface UserNotificationPreferenceRow {
@@ -18,9 +24,27 @@ interface EffectivePreferences {
 
 /* Build a Supabase client using service role credentials for cross-table access */
 function getServiceClient() {
-  const url = Deno.env.get('SUPABASE_URL') ?? ''
-  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  /* Supabase Edge Functions restrict setting secrets prefixed with SUPABASE_. Use NOTIFICATIONS_* for CLI-friendly config. */
+  const url = Deno.env.get('NOTIFICATIONS_SUPABASE_URL') ?? Deno.env.get('SUPABASE_URL') ?? ''
+  const key =
+    Deno.env.get('NOTIFICATIONS_SUPABASE_SERVICE_ROLE_KEY') ??
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ??
+    ''
   return createClient(url, key, { auth: { persistSession: false } })
+}
+
+/* Determine non-midnight time in an ISO string (00:00 treated as date-only / placeholder) */
+function hasExplicitTimeInString(isoString: string): boolean {
+  const m = isoString.match(/T(\d{2}):(\d{2})/)
+  return Boolean(m && (m[1] !== '00' || m[2] !== '00'))
+}
+
+/* Best-effort read of a user's preferred IANA timezone from auth user_metadata */
+function getUserTimeZone(userRow: { user_metadata?: Record<string, unknown> } | null): string {
+  const tz = userRow?.user_metadata && typeof userRow.user_metadata.time_zone === 'string'
+    ? String(userRow.user_metadata.time_zone)
+    : ''
+  return tz.trim() || 'local'
 }
 
 /* Convert a flat list of preference rows into a nested type/channel map */
@@ -166,6 +190,30 @@ async function loadUserEmails(
   return map
 }
 
+/* Fetch a map of user id -> auth user row (for timezone metadata, email, etc.) */
+async function loadAuthUsersByIds(
+  supabase: ReturnType<typeof getServiceClient>,
+  userIds: string[],
+): Promise<Record<string, { id: string; email: string | null; user_metadata: Record<string, unknown> }>> {
+  if (userIds.length === 0) return {}
+  const { data, error } = await supabase
+    .schema('auth')
+    .from('users')
+    .select('id, email, user_metadata')
+    .in('id', userIds)
+
+  if (error) {
+    console.error('Error fetching auth users:', error)
+    return {}
+  }
+
+  const map: Record<string, { id: string; email: string | null; user_metadata: Record<string, unknown> }> = {}
+  for (const row of (data ?? []) as any[]) {
+    if (row?.id) map[String(row.id)] = row
+  }
+  return map
+}
+
 /* Determine whether a notification for a specific logical event has already been sent */
 async function hasExistingNotification(
   supabase: ReturnType<typeof getServiceClient>,
@@ -235,6 +283,9 @@ serve(async (req) => {
     const url = new URL(req.url)
     const debug = url.searchParams.get('debug') === 'true'
 
+    /* Time window: due soon is within the next hour */
+    const oneHourFromNowIso = new Date(now.getTime() + 60 * 60 * 1000).toISOString()
+
     /* Overdue tasks: instant before "now" (UTC). For calendar-day parity with the app, users can set
      * `time_zone` in auth user_metadata; a future improvement is to filter per-user using that zone. */
     /* Overdue non-habit tasks only — habit-linked rows use habit reminder flow below */
@@ -247,6 +298,19 @@ serve(async (req) => {
 
     if (taskError) {
       console.error('Error querying overdue tasks:', taskError)
+    }
+
+    /* Due-soon tasks: due within the next hour and has an explicit time (avoid date-only “today” noise) */
+    const { data: dueSoonTaskRows, error: dueSoonError } = await supabase
+      .from('tasks')
+      .select('id, user_id, title, due_date, status')
+      .in('status', ['active', 'in_progress'])
+      .is('habit_id', null)
+      .gte('due_date', now.toISOString())
+      .lte('due_date', oneHourFromNowIso)
+
+    if (dueSoonError) {
+      console.error('Error querying due-soon tasks:', dueSoonError)
     }
 
     const { data: habitTaskRows, error: habitTaskError } = await supabase
@@ -262,10 +326,152 @@ serve(async (req) => {
 
     const allUserIds = new Set<string>()
     for (const t of taskRows ?? []) allUserIds.add((t as any).user_id)
+    for (const t of dueSoonTaskRows ?? []) allUserIds.add((t as any).user_id)
     for (const h of habitTaskRows ?? []) allUserIds.add((h as any).user_id)
 
     const userIdList = Array.from(allUserIds)
     const prefsByUser = await loadPreferencesByUserIds(supabase, userIdList)
+    const authUsersById = await loadAuthUsersByIds(supabase, userIdList)
+
+    /* Morning briefing noon check: compute user-local noon and query reflection_entries in the user's local day window */
+    for (const userId of userIdList) {
+      const prefs = prefsByUser[userId] ?? {}
+      if (!isEnabled(prefs, 'morning_briefing_incomplete_noon', 'push_mobile')) continue
+
+      const authUser = authUsersById[userId] ?? null
+      const tz = getUserTimeZone(authUser)
+      const nowZ = tz === 'local' ? DateTime.utc() : DateTime.now().setZone(tz)
+      const noonZ = nowZ.set({ hour: 12, minute: 0, second: 0, millisecond: 0 })
+      if (nowZ.toMillis() < noonZ.toMillis()) continue
+
+      const dayStartUtc = noonZ.startOf('day').toUTC().toISO()!
+      const dayEndUtc = noonZ.endOf('day').plus({ millisecond: 1 }).toUTC().toISO()!
+
+      const { data: briefings, error: briefingErr } = await supabase
+        .from('reflection_entries')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('type', 'morning_briefing')
+        .gte('created_at', dayStartUtc)
+        .lt('created_at', dayEndUtc)
+        .limit(1)
+
+      if (briefingErr) {
+        console.error('Error checking morning briefing entries:', briefingErr)
+        continue
+      }
+
+      const hasCompleted = (briefings ?? []).length > 0
+      if (hasCompleted) continue
+
+      const already = await hasExistingNotification(
+        supabase,
+        userId,
+        'morning_briefing_incomplete_noon',
+        'push_mobile',
+        'morning_briefing',
+        DateTime.fromISO(dayStartUtc).toFormat('yyyy-LL-dd'),
+      )
+      if (already) continue
+
+      try {
+        await sendPush({
+          userId,
+          title: 'Morning briefing',
+          body: 'Your morning briefing is still incomplete.',
+          data: { kind: 'morning_briefing', date: DateTime.fromISO(dayStartUtc).toFormat('yyyy-LL-dd') },
+          channels: ['push_mobile'],
+        })
+        await recordNotification({
+          supabase,
+          userId,
+          type: 'morning_briefing_incomplete_noon',
+          channel: 'push_mobile',
+          sourceType: 'morning_briefing',
+          sourceId: DateTime.fromISO(dayStartUtc).toFormat('yyyy-LL-dd'),
+          payload: { kind: 'morning_briefing', date: DateTime.fromISO(dayStartUtc).toFormat('yyyy-LL-dd') },
+          status: 'sent',
+        })
+      } catch (err) {
+        console.error('Error sending morning briefing push:', err)
+        await recordNotification({
+          supabase,
+          userId,
+          type: 'morning_briefing_incomplete_noon',
+          channel: 'push_mobile',
+          sourceType: 'morning_briefing',
+          sourceId: DateTime.fromISO(dayStartUtc).toFormat('yyyy-LL-dd'),
+          payload: { kind: 'morning_briefing', date: DateTime.fromISO(dayStartUtc).toFormat('yyyy-LL-dd') },
+          status: 'error',
+          errorMessage: (err as Error).message,
+        })
+      }
+    }
+
+    /* Due-soon tasks: send a "due in 1 hour" notification for tasks with explicit times */
+    for (const task of (dueSoonTaskRows ?? []) as {
+      id: string
+      user_id: string
+      title: string
+      due_date: string | null
+      status: string
+    }[]) {
+      if (!task.due_date || !task.due_date.includes('T') || !hasExplicitTimeInString(task.due_date)) continue
+      const userId = task.user_id
+      const prefs = prefsByUser[userId] ?? {}
+      const basePayload = {
+        kind: 'task',
+        task_id: task.id,
+        title: task.title,
+        due_date: task.due_date,
+      }
+
+      for (const channel of ['push_mobile'] as NotificationChannel[]) {
+        if (!isEnabled(prefs, 'task_due_soon', channel)) continue
+        const already = await hasExistingNotification(
+          supabase,
+          userId,
+          'task_due_soon',
+          channel,
+          'task',
+          task.id,
+        )
+        if (already) continue
+
+        try {
+          await sendPush({
+            userId,
+            title: 'Task due soon',
+            body: `${task.title}`,
+            data: basePayload,
+            channels: [channel],
+          })
+          await recordNotification({
+            supabase,
+            userId,
+            type: 'task_due_soon',
+            channel,
+            sourceType: 'task',
+            sourceId: task.id,
+            payload: basePayload,
+            status: 'sent',
+          })
+        } catch (err) {
+          console.error('Error sending due-soon task push:', err)
+          await recordNotification({
+            supabase,
+            userId,
+            type: 'task_due_soon',
+            channel,
+            sourceType: 'task',
+            sourceId: task.id,
+            payload: basePayload,
+            status: 'error',
+            errorMessage: (err as Error).message,
+          })
+        }
+      }
+    }
 
     for (const task of (taskRows ?? []) as {
       id: string
@@ -399,6 +605,7 @@ serve(async (req) => {
         JSON.stringify({
           now: now.toISOString(),
           overdueTasks: (taskRows ?? []).length,
+          dueSoonTasks: (dueSoonTaskRows ?? []).length,
           dueHabitTodoReminders: (habitTaskRows ?? []).length,
         }),
         {

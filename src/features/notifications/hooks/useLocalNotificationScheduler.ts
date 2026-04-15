@@ -17,6 +17,7 @@ import type { Task } from '../../tasks/types'
 import type { Habit } from '../../habits/types'
 import { getTodayYMD } from '../../../lib/todaysLineup'
 import { resolveHabitRemindAt } from '../../habits/habitReminderEligibility'
+import { getDueStatus } from '../../tasks/utils/date'
 
 /** Local scheduler polling cadence: frequent enough to catch 12pm and minute-level habit/timed due transitions */
 const TICK_MS = 30 * 1000
@@ -26,6 +27,25 @@ const DEDUPE_PREFIX = 'bonsai-local-notify-'
 
 /** Basic task status guard: only notify for active/in-progress work */
 const NOTIFIABLE_TASK_STATUSES = new Set(['active', 'in_progress'])
+
+/** Timeout for service worker readiness so scheduler ticks can't hang indefinitely */
+const SW_READY_TIMEOUT_MS = 1500
+
+/** Race a promise against a timeout to avoid hanging tick loops */
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return await new Promise<T>((resolve, reject) => {
+    const id = window.setTimeout(() => reject(new Error('timeout')), timeoutMs)
+    promise
+      .then((value) => {
+        window.clearTimeout(id)
+        resolve(value)
+      })
+      .catch((err) => {
+        window.clearTimeout(id)
+        reject(err)
+      })
+  })
+}
 
 /**
  * Determine whether a raw due string includes a meaningful clock time (not just midnight placeholders).
@@ -66,7 +86,9 @@ async function showLocalNotification(params: { title: string; body: string; url:
   /* Service worker path: keeps notification behavior consistent with push click handling */
   try {
     if ('serviceWorker' in navigator) {
-      const registration = await navigator.serviceWorker.ready
+      /* Ensure registration exists, but never block the scheduler tick on readiness */
+      await registerServiceWorker()
+      const registration = await withTimeout(navigator.serviceWorker.ready, SW_READY_TIMEOUT_MS)
       await registration.showNotification(params.title, {
         body: params.body,
         icon: '/icons/icon.svg',
@@ -189,21 +211,38 @@ export function useLocalNotificationScheduler() {
 
       /* Rule: date-only tasks become overdue (notify at start of the next day in the user’s zone) */
       if (isEnabled('task_overdue')) {
-        const nowZ = DateTime.now().setZone(timeZone)
-        const todayKey = nowZ.startOf('day').toFormat('yyyy-LL-dd')
-
         for (const t of tasks) {
           if (!t.due_date) continue
           if (t.habit_id) continue
           if (!NOTIFIABLE_TASK_STATUSES.has(t.status)) continue
 
-          const isDateOnly = !t.due_date.includes('T') || !hasExplicitTimeInString(t.due_date)
-          if (!isDateOnly) continue
+          /* Date-only guard: only fire this rule when due does not carry an explicit clock time */
+          const isDateOnlyOrMidnight = !t.due_date.includes('T') || !hasExplicitTimeInString(t.due_date)
+          /* Shared due semantics: use the same zoned overdue classification as the rest of the app */
+          const dueStatus = getDueStatus(t.due_date, timeZone)
 
-          const dueDay = t.due_date.slice(0, 10)
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDay)) continue
+          /* Timed overdue: fire shortly after the due instant passes (so it works for due-time tasks too) */
+          if (!isDateOnlyOrMidnight) {
+            if (dueStatus !== 'overdue') continue
+            const dueMs = new Date(t.due_date).getTime()
+            if (!Number.isFinite(dueMs)) continue
+            const sinceDue = nowMs - dueMs
+            const GRACE_WINDOW_MS = 10 * 60 * 1000
+            if (sinceDue < 0 || sinceDue > GRACE_WINDOW_MS) continue
+            const dedupeKey = `task_overdue_timed:${t.id}`
+            if (wasNotified(dedupeKey)) continue
+            markNotified(dedupeKey)
+            await showLocalNotification({
+              title: 'Task overdue',
+              body: `${t.title || 'Untitled task'} is now overdue.`,
+              url: '/?section=tasks',
+            })
+            continue
+          }
 
-          if (dueDay < todayKey) {
+          /* Date-only overdue: notify once per day after the due day has passed in the user’s zone */
+          if (isDateOnlyOrMidnight && dueStatus === 'overdue') {
+            const todayKey = DateTime.now().setZone(timeZone).toFormat('yyyy-LL-dd')
             const dedupeKey = `task_overdue_date_only:${t.id}:${todayKey}`
             if (wasNotified(dedupeKey)) continue
             markNotified(dedupeKey)

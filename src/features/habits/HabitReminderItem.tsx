@@ -68,10 +68,11 @@ export function HabitReminderItem({
       ? 'text-sm font-medium text-bonsai-slate-800'
       : 'text-body font-medium text-bonsai-slate-800'
 
+  /* Layout: mobile stacks 3 rows; larger viewports use a 2-row grid (top: name+due, bottom: actions). */
   const containerClasses =
     density === 'compact'
-      ? 'flex flex-col md:flex-row md:flex-wrap md:items-center gap-2 rounded-lg border border-dashed border-bonsai-slate-200 bg-white px-3 py-2 hover:bg-bonsai-slate-50 transition-colors text-left min-w-0'
-      : 'flex flex-col md:flex-row md:flex-wrap md:items-center gap-2 rounded-lg border border-bonsai-slate-200 bg-white p-2.5 md:gap-3 md:p-4 hover:bg-bonsai-slate-50 transition-colors text-left min-w-0'
+      ? 'flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center gap-2 rounded-lg border border-dashed border-bonsai-slate-200 bg-white px-3 py-2 hover:bg-bonsai-slate-50 transition-colors text-left min-w-0'
+      : 'flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center gap-2 rounded-lg border border-bonsai-slate-200 bg-white p-2.5 sm:gap-3 sm:p-4 hover:bg-bonsai-slate-50 transition-colors text-left min-w-0'
 
   return (
     <div
@@ -80,7 +81,7 @@ export function HabitReminderItem({
       aria-label={`Habit: ${targetLabel(habit)}, streak ${habit.currentStreak}`}
     >
       {/* Row 1 (mobile): streak + reminder name (matches Task rows) */}
-      <div className="flex w-full min-w-0 items-center gap-2">
+      <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
         <div className="shrink-0">
           <HabitStreakSummary
             habit={habit}
@@ -100,7 +101,7 @@ export function HabitReminderItem({
 
       {/* Row 2 (mobile): due date + time */}
       <div
-        className={`flex w-full items-center gap-1.5 text-secondary ${
+        className={`flex w-full items-center gap-1.5 text-secondary sm:w-auto sm:justify-end ${
           isRemindOverdue
             ? 'text-red-600 font-medium'
             : isRemindDueSoon
@@ -113,7 +114,7 @@ export function HabitReminderItem({
       </div>
 
       {/* Row 3 (mobile): action buttons */}
-      <div className="flex flex-wrap items-center gap-2 w-full justify-start md:justify-end">
+      <div className="flex flex-wrap items-center gap-2 w-full justify-start sm:col-span-2 sm:justify-end">
         <Button
           type="button"
           variant="secondary"

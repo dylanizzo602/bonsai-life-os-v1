@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Button } from '../../../components/Button'
-import { TimePickerModal } from './TimePickerModal'
 import { RecurringSettingsSection } from './RecurringSettingsSection'
 import {
   parseRecurrencePattern,
@@ -128,31 +127,28 @@ function parseDateInput(str: string): string | null {
   return null
 }
 
-/** Parse typed time string to HH:mm (24h). Handles: 4:00 PM, 16:00, 4:30 pm */
+/** Parse typed time string to HH:mm (24h). Handles: 4:00 PM, 16:00, 4:30 pm, 3:00pm, 3pm */
 function parseTimeInput(str: string): string | null {
-  const s = str.trim()
+  /* Normalization: trim, collapse whitespace, ignore dots (e.g. "p.m."). */
+  const s = str.trim().replace(/\./g, '').replace(/\s+/g, ' ')
   if (!s) return null
-  /* Match H:MM or HH:MM with optional am/pm */
-  const m = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i)
+  /* Match H, H:MM, HH:MM with optional am/pm (with or without space). */
+  const m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i)
   if (m) {
-    let h = parseInt(m[1], 10)
-    const min = Math.min(59, Math.max(0, parseInt(m[2], 10)))
+    let h = parseInt(m[1] ?? '0', 10)
+    const minRaw = m[2]
+    const min = Math.min(59, Math.max(0, parseInt(minRaw ?? '0', 10)))
     const ampm = m[3]?.toLowerCase()
-    if (ampm === 'pm' && h !== 12) h += 12
-    if (ampm === 'am' && h === 12) h = 0
+
+    /* Validate hour range based on whether am/pm is present. */
     if (!ampm && (h < 0 || h > 23)) return null
     if (ampm && (h < 1 || h > 12)) return null
-    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
-  }
-  /* Match H am/pm or HH am/pm (e.g. "4 pm") */
-  const m2 = s.match(/^(\d{1,2})\s*(am|pm)$/i)
-  if (m2) {
-    let h = parseInt(m2[1], 10)
-    const ampm = m2[2].toLowerCase()
-    if (h < 1 || h > 12) return null
+
+    /* Convert 12h to 24h when am/pm is present. */
     if (ampm === 'pm' && h !== 12) h += 12
     if (ampm === 'am' && h === 12) h = 0
-    return `${String(h).padStart(2, '0')}:00`
+
+    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
   }
   return null
 }
@@ -384,12 +380,7 @@ export function DatePickerModal({
   hasChecklists = false,
 }: DatePickerModalProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
-  const startTimeTriggerRef = useRef<HTMLButtonElement>(null)
-  const dueTimeTriggerRef = useRef<HTMLButtonElement>(null)
   const [position, setPosition] = useState({ top: 0, left: 0 })
-
-  /* Time picker: which field's time picker is open ('start' | 'due' | null) */
-  const [timePickerOpen, setTimePickerOpen] = useState<'start' | 'due' | null>(null)
 
   /* Recurrence: parsed pattern for RecurringSettingsSection; synced when modal opens */
   const [recurrencePattern, setRecurrencePattern] = useState(parseRecurrencePattern(recurrencePatternProp ?? null))
@@ -536,8 +527,16 @@ export function DatePickerModal({
 
   /* Handle save: build ISO from date + optional time; ensure start <= due before saving */
   const handleSave = async () => {
-    let startISO = start ? toISO(start, showStartTime ? startTime || undefined : undefined) : null
-    let dueISO = due ? toISO(due, showDueTime ? dueTime || undefined : undefined) : null
+    /* Commit typed time buffers on Save so users don't need to blur first. */
+    const parsedStartOnSave =
+      showStartTime && startTimeEdit.trim() ? parseTimeInput(startTimeEdit) : null
+    const parsedDueOnSave =
+      showDueTime && dueTimeEdit.trim() ? parseTimeInput(dueTimeEdit) : null
+    const effectiveStartTime = parsedStartOnSave ?? startTime
+    const effectiveDueTime = parsedDueOnSave ?? dueTime
+
+    let startISO = start ? toISO(start, showStartTime ? effectiveStartTime || undefined : undefined) : null
+    let dueISO = due ? toISO(due, showDueTime ? effectiveDueTime || undefined : undefined) : null
     /* Enforce start <= due: if invalid, use start for both (safety net before save) */
     if (startISO && dueISO && isStartAfterDue(start, due, startTime, dueTime, showStartTime, showDueTime)) {
       dueISO = startISO
@@ -662,15 +661,13 @@ export function DatePickerModal({
                 className="min-w-0 flex-1 bg-transparent border-0 py-0 text-secondary text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-0"
                 aria-label="Start date"
               />
-              {/* Time section: Clock icon opens picker, input allows typing; gap-2 matches calendar icon spacing */}
+              {/* Time section: No time picker; typing only. Clock icon just reveals the input. */}
               <div className="flex items-center gap-2 shrink-0">
                 <button
-                  ref={startTimeTriggerRef}
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation()
                     setShowStartTime(true)
-                    setTimePickerOpen('start')
                   }}
                   className="shrink-0 p-0.5 rounded text-bonsai-slate-500 hover:text-bonsai-slate-700 hover:bg-bonsai-slate-100"
                   aria-label="Open time picker"
@@ -761,15 +758,13 @@ export function DatePickerModal({
                 className="min-w-0 flex-1 bg-transparent border-0 py-0 text-secondary text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-0"
                 aria-label="Due date"
               />
-              {/* Time section: Clock icon opens picker, input allows typing; gap-2 matches calendar icon spacing */}
+              {/* Time section: No time picker; typing only. Clock icon just reveals the input. */}
               <div className="flex items-center gap-2 shrink-0">
                 <button
-                  ref={dueTimeTriggerRef}
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation()
                     setShowDueTime(true)
-                    setTimePickerOpen('due')
                   }}
                   className="shrink-0 p-0.5 rounded text-bonsai-slate-500 hover:text-bonsai-slate-700 hover:bg-bonsai-slate-100"
                   aria-label="Open time picker"
@@ -941,24 +936,6 @@ export function DatePickerModal({
         </Button>
       </div>
 
-      {/* Custom time picker for start time: Opens when start time display is clicked */}
-      <TimePickerModal
-        isOpen={timePickerOpen === 'start'}
-        onClose={() => setTimePickerOpen(null)}
-        value={startTime || '12:00'}
-        onChange={setStartTime}
-        triggerRef={startTimeTriggerRef}
-        ariaLabel="Select start time"
-      />
-      {/* Custom time picker for due time: Opens when due time display is clicked */}
-      <TimePickerModal
-        isOpen={timePickerOpen === 'due'}
-        onClose={() => setTimePickerOpen(null)}
-        value={dueTime || '12:00'}
-        onChange={setDueTime}
-        triggerRef={dueTimeTriggerRef}
-        ariaLabel="Select due time"
-      />
     </div>
   )
 }
