@@ -32,7 +32,7 @@ const NOTIFIABLE_TASK_STATUSES = new Set(['active', 'in_progress'])
 const SW_READY_TIMEOUT_MS = 1500
 
 /** Morning briefing noon window: only notify in a short period after local noon. */
-const MORNING_BRIEFING_NOON_WINDOW_MS = 10 * 60 * 1000
+const MORNING_BRIEFING_NOON_WINDOW_MS = 60 * 1000
 
 /** Race a promise against a timeout to avoid hanging tick loops */
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -136,8 +136,8 @@ async function showLocalNotification(params: { title: string; body: string; url:
 export function useLocalNotificationScheduler() {
   /* Auth: only run when signed in so queries resolve and preferences are user-scoped */
   const { session } = useAuth()
-  /* Time zone: consistent with Settings and task due semantics */
-  const timeZone = useUserTimeZone()
+  /* Notification timezone: use the same effective browser/device-aware zone as the rest of the app. */
+  const notificationTimeZone = useUserTimeZone()
 
   /* Preferences: cache the effective preference map for quick checks during ticking */
   const [prefsMap, setPrefsMap] = useState<EffectiveNotificationPreferences>({})
@@ -190,11 +190,11 @@ export function useLocalNotificationScheduler() {
 
       const nowMs = Date.now()
       const todayYMD = getTodayYMD()
-      const zonedTodayKey = getDayKeyInTimeZone(timeZone)
+      const zonedTodayKey = getDayKeyInTimeZone(notificationTimeZone)
 
       /* Data fetch: pull notifiable tasks (include subtasks) and habits for reminder-time logic */
       const [tasks, habits, completedMorningBriefing] = await Promise.all([
-        getTasks({ includeAllTasks: true, timeZone }).catch(() => [] as Task[]),
+        getTasks({ includeAllTasks: true, timeZone: notificationTimeZone }).catch(() => [] as Task[]),
         getHabits().catch(() => [] as Habit[]),
         getHasCompletedMorningBriefingToday().catch(() => false),
       ])
@@ -236,7 +236,7 @@ export function useLocalNotificationScheduler() {
           /* Date-only guard: only fire this rule when due does not carry an explicit clock time */
           const isDateOnlyOrMidnight = !t.due_date.includes('T') || !hasExplicitTimeInString(t.due_date)
           /* Shared due semantics: use the same zoned overdue classification as the rest of the app */
-          const dueStatus = getDueStatus(t.due_date, timeZone)
+          const dueStatus = getDueStatus(t.due_date, notificationTimeZone)
 
           /* Timed overdue: fire shortly after the due instant passes (so it works for due-time tasks too) */
           if (!isDateOnlyOrMidnight) {
@@ -297,7 +297,7 @@ export function useLocalNotificationScheduler() {
       /* Rule: morning briefing incomplete by 12pm local time (once per day) */
       if (isEnabled('morning_briefing_incomplete_noon')) {
         if (!completedMorningBriefing) {
-          if (isWithinMorningBriefingNoonWindow(timeZone)) {
+          if (isWithinMorningBriefingNoonWindow(notificationTimeZone)) {
             const dedupeKey = `morning_briefing_incomplete_noon:${zonedTodayKey}`
             if (!wasNotified(dedupeKey)) {
               markNotified(dedupeKey)
@@ -326,6 +326,6 @@ export function useLocalNotificationScheduler() {
       window.clearInterval(id)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [session, prefsMap, timeZone, channel])
+  }, [session, prefsMap, notificationTimeZone, channel])
 }
 

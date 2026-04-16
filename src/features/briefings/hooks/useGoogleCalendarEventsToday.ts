@@ -28,6 +28,8 @@ interface UseGoogleCalendarEventsTodayReturn {
   refetch: () => Promise<void>
 }
 
+type FunctionInvokeHeaders = Record<string, string>
+
 /**
  * Hook that calls the server-side Google Calendar API and normalizes the response into CalendarAgendaEvent.
  * Keeps tokens server-side; browser only receives event metadata needed for the briefing.
@@ -39,8 +41,8 @@ export function useGoogleCalendarEventsToday(): UseGoogleCalendarEventsTodayRetu
   const [error, setError] = useState<string | null>(null)
   const [events, setEvents] = useState<CalendarAgendaEvent[]>([])
 
-  /* Auth header: ensure edge function calls include the current session access token */
-  const getAuthHeaders = useCallback(async (): Promise<HeadersInit> => {
+  /* Auth header: build a plain string map that matches Supabase function invoke typings */
+  const getAuthHeaders = useCallback(async (): Promise<FunctionInvokeHeaders> => {
     const { data } = await supabase.auth.getSession()
     const token = data.session?.access_token ?? ''
     return token ? { Authorization: `Bearer ${token}` } : {}

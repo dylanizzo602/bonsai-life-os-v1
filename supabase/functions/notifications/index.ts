@@ -47,6 +47,11 @@ function getUserTimeZone(userRow: { user_metadata?: Record<string, unknown> } | 
   return tz.trim() || 'local'
 }
 
+/* Explicit timezone guard: server-side noon notifications should only run when a real IANA zone is saved. */
+function hasExplicitUserTimeZone(userRow: { user_metadata?: Record<string, unknown> } | null): boolean {
+  return getUserTimeZone(userRow) !== 'local'
+}
+
 /* Normalize fallback zone so date-only comparisons stay deterministic in the edge runtime. */
 function getEffectiveTimeZone(timeZone: string): string {
   return timeZone === 'local' ? 'UTC' : timeZone
@@ -117,8 +122,15 @@ function isWithinMorningBriefingNoonWindow(timeZone: string): boolean {
   const nowZ = DateTime.now().setZone(zone)
   const noonZ = nowZ.set({ hour: 12, minute: 0, second: 0, millisecond: 0 })
   const elapsedMs = nowZ.toMillis() - noonZ.toMillis()
-  const NOON_WINDOW_MS = 10 * 60 * 1000
+  const NOON_WINDOW_MS = 60 * 1000
   return elapsedMs >= 0 && elapsedMs <= NOON_WINDOW_MS
+}
+
+/* Stable local day key: use the user's effective zone so dedupe/source ids do not drift via UTC conversion. */
+function getLocalDayKey(timeZone: string, instant?: DateTime): string {
+  const zone = getEffectiveTimeZone(timeZone)
+  const base = instant ? instant.setZone(zone) : DateTime.now().setZone(zone)
+  return base.toFormat('yyyy-LL-dd')
 }
 
 /* Convert a flat list of preference rows into a nested type/channel map */
@@ -432,10 +444,12 @@ serve(async (req) => {
       if (!isEnabled(prefs, 'morning_briefing_incomplete_noon', 'push_mobile')) continue
 
       const authUser = authUsersById[userId] ?? null
+      if (!hasExplicitUserTimeZone(authUser)) continue
       const tz = getUserTimeZone(authUser)
       const zone = getEffectiveTimeZone(tz)
       const nowZ = DateTime.now().setZone(zone)
       const noonZ = nowZ.set({ hour: 12, minute: 0, second: 0, millisecond: 0 })
+      const briefingDayKey = getLocalDayKey(tz, noonZ)
       if (!isWithinMorningBriefingNoonWindow(tz)) continue
 
       const dayStartUtc = noonZ.startOf('day').toUTC().toISO()!
@@ -464,7 +478,7 @@ serve(async (req) => {
         'morning_briefing_incomplete_noon',
         'push_mobile',
         'morning_briefing',
-        DateTime.fromISO(dayStartUtc).toFormat('yyyy-LL-dd'),
+        briefingDayKey,
       )
       if (already) continue
 
@@ -473,7 +487,7 @@ serve(async (req) => {
           userId,
           title: 'Morning briefing',
           body: 'Your morning briefing is still incomplete.',
-          data: { kind: 'morning_briefing', date: DateTime.fromISO(dayStartUtc).toFormat('yyyy-LL-dd') },
+          data: { kind: 'morning_briefing', date: briefingDayKey },
           channels: ['push_mobile'],
         })
         await recordNotification({
@@ -482,8 +496,8 @@ serve(async (req) => {
           type: 'morning_briefing_incomplete_noon',
           channel: 'push_mobile',
           sourceType: 'morning_briefing',
-          sourceId: DateTime.fromISO(dayStartUtc).toFormat('yyyy-LL-dd'),
-          payload: { kind: 'morning_briefing', date: DateTime.fromISO(dayStartUtc).toFormat('yyyy-LL-dd') },
+          sourceId: briefingDayKey,
+          payload: { kind: 'morning_briefing', date: briefingDayKey },
           status: 'sent',
         })
       } catch (err) {
@@ -494,8 +508,8 @@ serve(async (req) => {
           type: 'morning_briefing_incomplete_noon',
           channel: 'push_mobile',
           sourceType: 'morning_briefing',
-          sourceId: DateTime.fromISO(dayStartUtc).toFormat('yyyy-LL-dd'),
-          payload: { kind: 'morning_briefing', date: DateTime.fromISO(dayStartUtc).toFormat('yyyy-LL-dd') },
+          sourceId: briefingDayKey,
+          payload: { kind: 'morning_briefing', date: briefingDayKey },
           status: 'error',
           errorMessage: (err as Error).message,
         })

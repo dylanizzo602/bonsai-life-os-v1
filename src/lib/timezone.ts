@@ -25,18 +25,31 @@ export const PROFILE_TIME_ZONE_OPTIONS: Array<{ value: string; label: string }> 
 ]
 
 /**
+ * Read the explicit IANA timezone saved in user metadata.
+ * Returns null when the user has not chosen a timezone in Settings.
+ */
+export function getSavedTimeZoneFromMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+): string | null {
+  /* Saved profile override: only return a valid IANA zone selected in Settings. */
+  const raw = metadata?.time_zone
+  if (typeof raw === 'string' && raw.trim()) {
+    const tz = raw.trim()
+    if (DateTime.now().setZone(tz).isValid) return tz
+  }
+  return null
+}
+
+/**
  * Resolve the effective IANA timezone for the signed-in user.
  * Uses `time_zone` from Supabase user_metadata when set and valid; otherwise the browser's zone.
  */
 export function getEffectiveTimeZoneFromMetadata(
   metadata: Record<string, unknown> | null | undefined,
 ): string {
-  /* Read optional profile override */
-  const raw = metadata?.time_zone
-  if (typeof raw === 'string' && raw.trim()) {
-    const tz = raw.trim()
-    if (DateTime.now().setZone(tz).isValid) return tz
-  }
+  /* Saved timezone: prefer the explicit Settings value when available. */
+  const savedTimeZone = getSavedTimeZoneFromMetadata(metadata)
+  if (savedTimeZone) return savedTimeZone
   /* Fallback: device / browser zone */
   return Intl.DateTimeFormat().resolvedOptions().timeZone
 }

@@ -48,6 +48,23 @@ export async function updateAccountProfileMetadata(input: UpdateAccountProfileIn
 }
 
 /**
+ * Sync only the inferred browser/device timezone into auth user metadata.
+ * Keeps server-side notifications aligned with the same timezone the app uses locally.
+ */
+export async function syncAccountTimeZoneMetadata(timeZone: string): Promise<void> {
+  const { error } = await supabase.auth.updateUser({
+    data: {
+      time_zone: timeZone,
+    },
+  })
+
+  if (error) {
+    console.error('Error syncing account timezone metadata:', error)
+    throw error
+  }
+}
+
+/**
  * Request an email address change for the current user.
  * Supabase may require the user to confirm the new email via an inbox link.
  */

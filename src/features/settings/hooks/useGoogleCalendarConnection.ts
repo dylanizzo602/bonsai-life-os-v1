@@ -17,6 +17,8 @@ interface UseGoogleCalendarConnectionReturn {
   refreshStatus: () => Promise<void>
 }
 
+type FunctionInvokeHeaders = Record<string, string>
+
 /**
  * Hook to manage Google Calendar connection state.
  * Uses edge functions so refresh tokens never reach the browser.
@@ -27,8 +29,8 @@ export function useGoogleCalendarConnection(): UseGoogleCalendarConnectionReturn
   const [connected, setConnected] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
-  /* Auth header: ensure edge function calls include the current session access token */
-  const getAuthHeaders = async (): Promise<HeadersInit> => {
+  /* Auth header: build a plain string map that matches Supabase function invoke typings */
+  const getAuthHeaders = async (): Promise<FunctionInvokeHeaders> => {
     const { data } = await supabase.auth.getSession()
     const token = data.session?.access_token ?? ''
     return token ? { Authorization: `Bearer ${token}` } : {}
