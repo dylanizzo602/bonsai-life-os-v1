@@ -26,6 +26,7 @@ import { AddEditTaskModal } from '../tasks/AddEditTaskModal'
 import type { InboxItem } from '../home/types'
 import { useAuth } from '../auth/AuthContext'
 import { useCalendarAgenda } from './hooks/useCalendarAgenda'
+import { useGoogleCalendarEventsToday } from './hooks/useGoogleCalendarEventsToday'
 import { getDueStatus } from '../tasks/utils/date'
 import { getAvailableTasksFromList } from '../tasks/utils/available'
 import { isoInstantToLocalCalendarYMD } from '../../lib/localCalendarDate'
@@ -230,6 +231,21 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     countToday: calendarEventCount,
   } = useCalendarAgenda({ urlsBySource: calendarUrlsBySource })
 
+  /* Google Calendar (OAuth): preferred source for today's agenda when connected */
+  const {
+    loading: googleCalendarLoading,
+    connected: googleCalendarConnected,
+    error: googleCalendarError,
+    eventsToday: googleCalendarEventsToday,
+    countToday: googleCalendarEventCount,
+  } = useGoogleCalendarEventsToday()
+
+  /* Calendar source selection: prefer Google OAuth when connected, fallback to ICS links */
+  const effectiveCalendarLoading = googleCalendarConnected ? googleCalendarLoading : calendarLoading
+  const effectiveCalendarError = googleCalendarConnected ? googleCalendarError : calendarError
+  const effectiveCalendarEventsToday = googleCalendarConnected ? googleCalendarEventsToday : calendarEventsToday
+  const effectiveCalendarEventCount = googleCalendarConnected ? googleCalendarEventCount : calendarEventCount
+
   /* Overdue tasks (exclude habit-linked rows — those use overdue habit list) */
   const overdueTasks = useMemo(
     () =>
@@ -397,9 +413,9 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
       {step === 0 && (
         <GreetingScreen
           tasksDueTodayCount={tasksDueTodayCount}
-          calendarEventCount={calendarEventCount}
-          calendarLoading={calendarLoading}
-          calendarError={calendarError}
+          calendarEventCount={effectiveCalendarEventCount}
+          calendarLoading={effectiveCalendarLoading}
+          calendarError={effectiveCalendarError}
           onBegin={() => setStep(1)}
         />
       )}
@@ -452,9 +468,9 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
         <PlanDayScreen
           availableTasks={briefingAvailableTasks}
           lineUpTaskIds={lineUpTaskIds}
-           calendarEvents={calendarEventsToday}
-           calendarLoading={calendarLoading}
-           calendarError={calendarError}
+          calendarEvents={effectiveCalendarEventsToday}
+          calendarLoading={effectiveCalendarLoading}
+          calendarError={effectiveCalendarError}
           onEditTask={openEditTask}
           onAddToLineUp={addToLineUp}
           onRemoveFromLineUp={removeFromLineUp}

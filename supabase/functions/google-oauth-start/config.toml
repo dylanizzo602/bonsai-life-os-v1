@@ -1,0 +1,5 @@
+[functions]
+# CORS preflight (OPTIONS) does not include an Authorization token, so Supabase's gateway-level JWT
+# verification can block the request before our handler runs. We verify auth inside the function.
+verify_jwt = false
+

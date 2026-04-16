@@ -47,6 +47,80 @@ function getUserTimeZone(userRow: { user_metadata?: Record<string, unknown> } | 
   return tz.trim() || 'local'
 }
 
+/* Normalize fallback zone so date-only comparisons stay deterministic in the edge runtime. */
+function getEffectiveTimeZone(timeZone: string): string {
+  return timeZone === 'local' ? 'UTC' : timeZone
+}
+
+/* Parse a stored task ISO into the user's zone while preserving date-only semantics. */
+function toZonedDateTime(
+  isoString: string | null | undefined,
+  timeZone: string,
+): DateTime | null {
+  if (isoString == null || isoString === '') return null
+  const zone = getEffectiveTimeZone(timeZone)
+  if (!isoString.includes('T')) {
+    const dt = DateTime.fromISO(isoString, { zone })
+    return dt.isValid ? dt : null
+  }
+  if (!hasExplicitTimeInString(isoString)) {
+    const datePart = isoString.slice(0, 10)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      const dt = DateTime.fromISO(datePart, { zone })
+      return dt.isValid ? dt : null
+    }
+  }
+  const parsed = DateTime.fromISO(isoString, { setZone: true })
+  if (!parsed.isValid) return null
+  return parsed.setZone(zone)
+}
+
+/* Shared due classification: match app semantics so date-only tasks flip overdue after local end-of-day. */
+function getTaskDueStatusForNotifications(
+  dueDate: string | null | undefined,
+  timeZone: string,
+): 'none' | 'dueSoon' | 'overdue' {
+  if (!dueDate) return 'none'
+  const due = toZonedDateTime(dueDate, timeZone)
+  if (!due) return 'none'
+
+  const hasT = dueDate.includes('T')
+  const explicit = hasExplicitTimeInString(dueDate)
+
+  /* Timed tasks: overdue after the instant; due-soon only in the last hour before it. */
+  if (hasT && explicit) {
+    const instant = DateTime.fromISO(dueDate, { setZone: true })
+    if (!instant.isValid) return 'none'
+    const dueMs = instant.toMillis()
+    const nowMs = Date.now()
+    if (dueMs < nowMs) return 'overdue'
+    const untilDue = dueMs - nowMs
+    if (untilDue <= 60 * 60 * 1000) return 'dueSoon'
+    return 'none'
+  }
+
+  /* Date-only and midnight-placeholder dues: compare by the user's local calendar day. */
+  const now = DateTime.now().setZone(getEffectiveTimeZone(timeZone))
+  const todayStart = now.startOf('day')
+  const dueDayStart = due.startOf('day')
+
+  const todayKey = todayStart.year * 10000 + todayStart.month * 100 + todayStart.day
+  const dueKey = dueDayStart.year * 10000 + dueDayStart.month * 100 + dueDayStart.day
+
+  if (dueKey < todayKey) return 'overdue'
+  return 'none'
+}
+
+/* Morning briefing noon gate: only allow sending in a short window after 12pm in the user's zone. */
+function isWithinMorningBriefingNoonWindow(timeZone: string): boolean {
+  const zone = getEffectiveTimeZone(timeZone)
+  const nowZ = DateTime.now().setZone(zone)
+  const noonZ = nowZ.set({ hour: 12, minute: 0, second: 0, millisecond: 0 })
+  const elapsedMs = nowZ.toMillis() - noonZ.toMillis()
+  const NOON_WINDOW_MS = 10 * 60 * 1000
+  return elapsedMs >= 0 && elapsedMs <= NOON_WINDOW_MS
+}
+
 /* Convert a flat list of preference rows into a nested type/channel map */
 function buildPreferencesMap(rows: UserNotificationPreferenceRow[]): EffectivePreferences {
   const map: EffectivePreferences = {}
@@ -283,34 +357,16 @@ serve(async (req) => {
     const url = new URL(req.url)
     const debug = url.searchParams.get('debug') === 'true'
 
-    /* Time window: due soon is within the next hour */
-    const oneHourFromNowIso = new Date(now.getTime() + 60 * 60 * 1000).toISOString()
-
-    /* Overdue tasks: instant before "now" (UTC). For calendar-day parity with the app, users can set
-     * `time_zone` in auth user_metadata; a future improvement is to filter per-user using that zone. */
-    /* Overdue non-habit tasks only — habit-linked rows use habit reminder flow below */
-    const { data: taskRows, error: taskError } = await supabase
+    /* Task candidate query: load active non-habit tasks with due dates, then classify per-user in JS. */
+    const { data: taskCandidates, error: taskError } = await supabase
       .from('tasks')
       .select('id, user_id, title, due_date, status')
       .in('status', ['active', 'in_progress'])
       .is('habit_id', null)
-      .lt('due_date', now.toISOString())
+      .not('due_date', 'is', null)
 
     if (taskError) {
-      console.error('Error querying overdue tasks:', taskError)
-    }
-
-    /* Due-soon tasks: due within the next hour and has an explicit time (avoid date-only “today” noise) */
-    const { data: dueSoonTaskRows, error: dueSoonError } = await supabase
-      .from('tasks')
-      .select('id, user_id, title, due_date, status')
-      .in('status', ['active', 'in_progress'])
-      .is('habit_id', null)
-      .gte('due_date', now.toISOString())
-      .lte('due_date', oneHourFromNowIso)
-
-    if (dueSoonError) {
-      console.error('Error querying due-soon tasks:', dueSoonError)
+      console.error('Error querying task notification candidates:', taskError)
     }
 
     const { data: habitTaskRows, error: habitTaskError } = await supabase
@@ -325,13 +381,50 @@ serve(async (req) => {
     }
 
     const allUserIds = new Set<string>()
-    for (const t of taskRows ?? []) allUserIds.add((t as any).user_id)
-    for (const t of dueSoonTaskRows ?? []) allUserIds.add((t as any).user_id)
+    for (const t of taskCandidates ?? []) allUserIds.add((t as any).user_id)
     for (const h of habitTaskRows ?? []) allUserIds.add((h as any).user_id)
 
     const userIdList = Array.from(allUserIds)
     const prefsByUser = await loadPreferencesByUserIds(supabase, userIdList)
     const authUsersById = await loadAuthUsersByIds(supabase, userIdList)
+    const overdueTaskRows: {
+      id: string
+      user_id: string
+      title: string
+      due_date: string | null
+      status: string
+    }[] = []
+    const dueSoonTaskRows: {
+      id: string
+      user_id: string
+      title: string
+      due_date: string | null
+      status: string
+    }[] = []
+
+    /* Task bucketing: apply the same timezone-aware due semantics used in the app before notifying. */
+    for (const task of (taskCandidates ?? []) as {
+      id: string
+      user_id: string
+      title: string
+      due_date: string | null
+      status: string
+    }[]) {
+      const userTimeZone = getUserTimeZone(authUsersById[task.user_id] ?? null)
+      const dueStatus = getTaskDueStatusForNotifications(task.due_date, userTimeZone)
+      if (dueStatus === 'overdue') {
+        overdueTaskRows.push(task)
+        continue
+      }
+      if (
+        dueStatus === 'dueSoon' &&
+        task.due_date &&
+        task.due_date.includes('T') &&
+        hasExplicitTimeInString(task.due_date)
+      ) {
+        dueSoonTaskRows.push(task)
+      }
+    }
 
     /* Morning briefing noon check: compute user-local noon and query reflection_entries in the user's local day window */
     for (const userId of userIdList) {
@@ -340,9 +433,10 @@ serve(async (req) => {
 
       const authUser = authUsersById[userId] ?? null
       const tz = getUserTimeZone(authUser)
-      const nowZ = tz === 'local' ? DateTime.utc() : DateTime.now().setZone(tz)
+      const zone = getEffectiveTimeZone(tz)
+      const nowZ = DateTime.now().setZone(zone)
       const noonZ = nowZ.set({ hour: 12, minute: 0, second: 0, millisecond: 0 })
-      if (nowZ.toMillis() < noonZ.toMillis()) continue
+      if (!isWithinMorningBriefingNoonWindow(tz)) continue
 
       const dayStartUtc = noonZ.startOf('day').toUTC().toISO()!
       const dayEndUtc = noonZ.endOf('day').plus({ millisecond: 1 }).toUTC().toISO()!
@@ -473,13 +567,13 @@ serve(async (req) => {
       }
     }
 
-    for (const task of (taskRows ?? []) as {
+    for (const task of overdueTaskRows) {
       id: string
       user_id: string
       title: string
       due_date: string | null
       status: string
-    }[]) {
+    }) {
       const userId = task.user_id
       const prefs = prefsByUser[userId] ?? {}
       const basePayload = {
@@ -604,8 +698,8 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           now: now.toISOString(),
-          overdueTasks: (taskRows ?? []).length,
-          dueSoonTasks: (dueSoonTaskRows ?? []).length,
+          overdueTasks: overdueTaskRows.length,
+          dueSoonTasks: dueSoonTaskRows.length,
           dueHabitTodoReminders: (habitTaskRows ?? []).length,
         }),
         {

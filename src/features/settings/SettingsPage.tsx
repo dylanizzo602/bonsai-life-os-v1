@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useAccountSettings } from './hooks/useAccountSettings'
+import { useGoogleCalendarConnection } from './hooks/useGoogleCalendarConnection'
 import { useNotificationSettings } from './hooks/useNotificationSettings'
 import { requestNotificationPermission, registerServiceWorker } from '../../lib/notifications/pushClient'
 import { Input } from '../../components/Input'
@@ -38,6 +39,15 @@ export function SettingsPage() {
     saveEmail,
     savePassword,
   } = useAccountSettings(user)
+
+  /* Google Calendar OAuth: connect/disconnect status and actions */
+  const {
+    loading: googleCalendarLoading,
+    connected: googleCalendarConnected,
+    message: googleCalendarMessage,
+    startConnect: startGoogleCalendarConnect,
+    disconnect: disconnectGoogleCalendar,
+  } = useGoogleCalendarConnection()
 
   /* Notification settings hook: manage per-type/channel notification preferences */
   const {
@@ -192,6 +202,50 @@ export function SettingsPage() {
               Paste read-only calendar links (ICS format) from Google, Microsoft, or Apple to
               surface today&apos;s agenda in your morning briefing.
             </p>
+            {/* Google Calendar connect: preferred for most users (no manual ICS link) */}
+            <div className="mb-6 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-body font-semibold text-bonsai-brown-700">Google Calendar</p>
+                  <p className="text-secondary text-bonsai-slate-600 mt-1">
+                    Status:{' '}
+                    <span className="font-medium">
+                      {googleCalendarConnected ? 'Connected' : 'Not connected'}
+                    </span>
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  {googleCalendarConnected ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void disconnectGoogleCalendar()}
+                      disabled={!user || googleCalendarLoading}
+                    >
+                      {googleCalendarLoading ? 'Disconnecting…' : 'Disconnect'}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      onClick={() => void startGoogleCalendarConnect()}
+                      disabled={!user || googleCalendarLoading}
+                    >
+                      {googleCalendarLoading ? 'Connecting…' : 'Connect Google Calendar'}
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <p className="text-secondary text-bonsai-slate-500 mt-3">
+                Bonsai will only read your calendar to show today&apos;s agenda in your morning
+                briefing. It will never modify your calendars.
+              </p>
+              {googleCalendarMessage && (
+                <p className="text-secondary text-bonsai-slate-600 mt-2">{googleCalendarMessage}</p>
+              )}
+            </div>
             <div className="space-y-4">
               <Input
                 label="Google Calendar link (ICS)"

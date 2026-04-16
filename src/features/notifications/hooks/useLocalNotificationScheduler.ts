@@ -31,6 +31,9 @@ const NOTIFIABLE_TASK_STATUSES = new Set(['active', 'in_progress'])
 /** Timeout for service worker readiness so scheduler ticks can't hang indefinitely */
 const SW_READY_TIMEOUT_MS = 1500
 
+/** Morning briefing noon window: only notify in a short period after local noon. */
+const MORNING_BRIEFING_NOON_WINDOW_MS = 10 * 60 * 1000
+
 /** Race a promise against a timeout to avoid hanging tick loops */
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return await new Promise<T>((resolve, reject) => {
@@ -72,6 +75,19 @@ function markNotified(dedupeKey: string): void {
   } catch {
     // ignore
   }
+}
+
+/** Build a stable YYYY-MM-DD key in the active user time zone for per-day dedupe. */
+function getDayKeyInTimeZone(timeZone: string): string {
+  return DateTime.now().setZone(timeZone).toFormat('yyyy-LL-dd')
+}
+
+/** Noon gate: only allow the briefing notification in the first few minutes after 12pm local time. */
+function isWithinMorningBriefingNoonWindow(timeZone: string): boolean {
+  const nowZ = DateTime.now().setZone(timeZone)
+  const noon = nowZ.set({ hour: 12, minute: 0, second: 0, millisecond: 0 })
+  const elapsedMs = nowZ.toMillis() - noon.toMillis()
+  return elapsedMs >= 0 && elapsedMs <= MORNING_BRIEFING_NOON_WINDOW_MS
 }
 
 /**
@@ -174,6 +190,7 @@ export function useLocalNotificationScheduler() {
 
       const nowMs = Date.now()
       const todayYMD = getTodayYMD()
+      const zonedTodayKey = getDayKeyInTimeZone(timeZone)
 
       /* Data fetch: pull notifiable tasks (include subtasks) and habits for reminder-time logic */
       const [tasks, habits, completedMorningBriefing] = await Promise.all([
@@ -242,7 +259,7 @@ export function useLocalNotificationScheduler() {
 
           /* Date-only overdue: notify once per day after the due day has passed in the user’s zone */
           if (isDateOnlyOrMidnight && dueStatus === 'overdue') {
-            const todayKey = DateTime.now().setZone(timeZone).toFormat('yyyy-LL-dd')
+            const todayKey = zonedTodayKey
             const dedupeKey = `task_overdue_date_only:${t.id}:${todayKey}`
             if (wasNotified(dedupeKey)) continue
             markNotified(dedupeKey)
@@ -280,10 +297,8 @@ export function useLocalNotificationScheduler() {
       /* Rule: morning briefing incomplete by 12pm local time (once per day) */
       if (isEnabled('morning_briefing_incomplete_noon')) {
         if (!completedMorningBriefing) {
-          const nowZ = DateTime.now().setZone(timeZone)
-          const noon = nowZ.set({ hour: 12, minute: 0, second: 0, millisecond: 0 })
-          if (nowZ.toMillis() >= noon.toMillis()) {
-            const dedupeKey = `morning_briefing_incomplete_noon:${todayYMD}`
+          if (isWithinMorningBriefingNoonWindow(timeZone)) {
+            const dedupeKey = `morning_briefing_incomplete_noon:${zonedTodayKey}`
             if (!wasNotified(dedupeKey)) {
               markNotified(dedupeKey)
               await showLocalNotification({

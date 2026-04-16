@@ -81,6 +81,43 @@ This repo supports **PWA mobile push** via:
 - `npm run preview` - Preview production build
 - `npm run lint` - Run ESLint
 
+## Google Calendar (OAuth) for Morning Briefing
+
+This repo supports connecting **Google Calendar** so the Morning Briefing can show **today’s events** without pasting an ICS link.
+
+### What it does
+
+- **Read-only**: Bonsai requests `calendar.readonly` scope and only reads events to render an agenda.
+- **Server-side tokens**: Google refresh tokens are stored in Supabase (table `google_calendar_tokens`) and only used by Supabase Edge Functions.
+
+### Setup steps
+
+1. **Create a Google OAuth client** (Google Cloud Console)
+   - Type: “Web application”
+   - Add an **authorized redirect URI** pointing to your Supabase Edge Function callback:
+     - `https://YOUR_PROJECT_REF.supabase.co/functions/v1/google-oauth-callback`
+
+2. **Set Supabase Edge Function secrets**
+   - In your Supabase project (Edge Functions → Secrets), set:
+     - `GOOGLE_OAUTH_CLIENT_ID`
+     - `GOOGLE_OAUTH_CLIENT_SECRET`
+     - `GOOGLE_OAUTH_REDIRECT_URL` (same value as your authorized redirect URI above)
+     - `GOOGLE_OAUTH_STATE_SECRET` (random long string)
+     - `APP_BASE_URL` (where users should be redirected after connecting, e.g. `http://localhost:5173` or your deployed URL)
+   - Ensure your project also has:
+     - `SUPABASE_SERVICE_ROLE_KEY` (needed by the edge functions to read/write token rows securely)
+
+3. **Deploy the Edge Functions**
+   - Functions added for Google Calendar:
+     - `google-oauth-start`
+     - `google-oauth-callback`
+     - `google-calendar-events-today`
+     - `google-calendar-disconnect`
+
+4. **Connect from the app**
+   - Open **Settings → Calendar** and click **Connect Google Calendar**
+   - After granting access, return to Morning Briefing → “Today’s calendar”
+
 ## Project Structure
 
 ```

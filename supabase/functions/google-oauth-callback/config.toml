@@ -1,0 +1,4 @@
+[functions]
+# Callback is invoked by Google (no Supabase JWT). State signature ensures integrity.
+verify_jwt = false
+

@@ -1,0 +1,4 @@
+[functions]
+# Browser preflight (OPTIONS) can be blocked by gateway JWT verification; function verifies user internally.
+verify_jwt = false
+
