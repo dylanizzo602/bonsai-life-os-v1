@@ -33,6 +33,25 @@ function getAuthedClient(req: Request) {
   })
 }
 
+/* Auth lookup: resolve current user via the Auth HTTP API to avoid local JWT algorithm limitations */
+async function getAuthenticatedUser(req: Request): Promise<{ id: string; user_metadata?: Record<string, unknown> } | null> {
+  const url = Deno.env.get('SUPABASE_URL') ?? ''
+  const anon = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+  const authHeader = req.headers.get('Authorization') ?? ''
+  if (!url || !anon || !authHeader) return null
+
+  const res = await fetch(`${url}/auth/v1/user`, {
+    headers: {
+      apikey: anon,
+      Authorization: authHeader,
+    },
+  })
+
+  if (!res.ok) return null
+  const user = (await res.json()) as { id?: string; user_metadata?: Record<string, unknown> }
+  return user?.id ? { id: user.id, user_metadata: user.user_metadata } : null
+}
+
 /* Create a Supabase client using service role credentials for reading refresh tokens */
 function getServiceClient() {
   const url = Deno.env.get('SUPABASE_URL') ?? ''
@@ -125,9 +144,8 @@ serve(async (req) => {
 
   try {
     /* Auth check: require an authenticated Supabase user */
-    const authed = getAuthedClient(req)
-    const { data, error } = await authed.auth.getUser()
-    if (error || !data?.user) {
+    const user = await getAuthenticatedUser(req)
+    if (!user) {
       return new Response(JSON.stringify({ error: 'unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -136,8 +154,8 @@ serve(async (req) => {
 
     /* Time zone: prefer user profile time_zone; fallback to UTC */
     const timeZone =
-      typeof (data.user.user_metadata as any)?.time_zone === 'string'
-        ? String((data.user.user_metadata as any).time_zone)
+      typeof (user.user_metadata as any)?.time_zone === 'string'
+        ? String((user.user_metadata as any).time_zone)
         : 'UTC'
 
     /* Load refresh token server-side */
@@ -145,7 +163,7 @@ serve(async (req) => {
     const { data: tokenRow, error: tokenErr } = await service
       .from('google_calendar_tokens')
       .select('refresh_token, calendar_id')
-      .eq('user_id', data.user.id)
+      .eq('user_id', user.id)
       .maybeSingle()
 
     if (tokenErr) {

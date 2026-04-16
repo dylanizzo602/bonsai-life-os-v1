@@ -22,6 +22,25 @@ function getAuthedClient(req: Request) {
   })
 }
 
+/* Auth lookup: resolve current user via the Auth HTTP API to avoid local JWT algorithm limitations */
+async function getAuthenticatedUser(req: Request): Promise<{ id: string } | null> {
+  const url = Deno.env.get('SUPABASE_URL') ?? ''
+  const anon = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+  const authHeader = req.headers.get('Authorization') ?? ''
+  if (!url || !anon || !authHeader) return null
+
+  const res = await fetch(`${url}/auth/v1/user`, {
+    headers: {
+      apikey: anon,
+      Authorization: authHeader,
+    },
+  })
+
+  if (!res.ok) return null
+  const user = (await res.json()) as { id?: string }
+  return user?.id ? { id: user.id } : null
+}
+
 /* Base64url encode helpers for compact state payloads */
 function base64UrlEncode(bytes: Uint8Array): string {
   const b64 = btoa(String.fromCharCode(...bytes))
@@ -65,9 +84,8 @@ serve(async (req) => {
 
   try {
     /* Auth check: require an authenticated Supabase user */
-    const supabase = getAuthedClient(req)
-    const { data, error } = await supabase.auth.getUser()
-    if (error || !data?.user) {
+    const user = await getAuthenticatedUser(req)
+    if (!user) {
       return new Response(JSON.stringify({ error: 'unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -90,7 +108,7 @@ serve(async (req) => {
 
     /* State payload: signed so callback can trust user id + return target */
     const payload = {
-      userId: data.user.id,
+      userId: user.id,
       nonce: randomNonce(),
       returnTo,
       issuedAt: Date.now(),

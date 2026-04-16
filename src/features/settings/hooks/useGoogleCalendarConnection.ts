@@ -1,6 +1,6 @@
 /* useGoogleCalendarConnection hook: Connect/disconnect Google Calendar via Supabase Edge Functions */
 import { useCallback, useEffect, useState } from 'react'
-import { supabase } from '../../../lib/supabase/client'
+import { supabase, supabaseUrl } from '../../../lib/supabase/client'
 
 interface UseGoogleCalendarConnectionReturn {
   /** True while connect/disconnect/status request is in flight */
@@ -18,6 +18,7 @@ interface UseGoogleCalendarConnectionReturn {
 }
 
 type FunctionInvokeHeaders = Record<string, string>
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim() ?? ''
 
 /**
  * Hook to manage Google Calendar connection state.
@@ -34,6 +35,49 @@ export function useGoogleCalendarConnection(): UseGoogleCalendarConnectionReturn
     const { data } = await supabase.auth.getSession()
     const token = data.session?.access_token ?? ''
     return token ? { Authorization: `Bearer ${token}` } : {}
+  }
+
+  /* Direct function fetch: include apikey + bearer explicitly so auth is guaranteed at the HTTP layer */
+  const callFunction = async <T>(name: string, body: unknown, headers: FunctionInvokeHeaders): Promise<{
+    status: number
+    data: T | null
+    error: { status: number; message: string } | null
+  }> => {
+    const response = await fetch(`${supabaseUrl}/functions/v1/${name}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: supabaseAnonKey,
+        ...headers,
+      },
+      body: JSON.stringify(body),
+    })
+
+    const text = await response.text()
+    let parsed: unknown = null
+    try {
+      parsed = text ? JSON.parse(text) : null
+    } catch {
+      parsed = text
+    }
+
+    if (!response.ok) {
+      return {
+        status: response.status,
+        data: null,
+        error: {
+          status: response.status,
+          message:
+            typeof parsed === 'object' && parsed && 'message' in parsed
+              ? String((parsed as { message?: unknown }).message ?? 'Request failed')
+              : typeof parsed === 'string' && parsed
+                ? parsed
+                : 'Request failed',
+        },
+      }
+    }
+
+    return { status: response.status, data: (parsed as T) ?? null, error: null }
   }
 
   /* Error formatting: surface useful details from Supabase function invocation errors */
@@ -55,13 +99,14 @@ export function useGoogleCalendarConnection(): UseGoogleCalendarConnectionReturn
       setMessage(null)
 
       const headers = await getAuthHeaders()
-      const { error } = await supabase.functions.invoke('google-calendar-events-today', { body: {}, headers })
+      const result = await callFunction<unknown>('google-calendar-events-today', {}, headers)
+      const error = result.error
       if (!error) {
         setConnected(true)
         return
       }
 
-      const status = (error as any)?.status
+      const status = error?.status
       if (status === 404) {
         setConnected(false)
         return
@@ -81,10 +126,9 @@ export function useGoogleCalendarConnection(): UseGoogleCalendarConnectionReturn
       setMessage(null)
 
       const headers = await getAuthHeaders()
-      const { data, error } = await supabase.functions.invoke<{ url?: string }>('google-oauth-start', {
-        body: { returnTo: '/?section=settings' },
-        headers,
-      })
+      const result = await callFunction<{ url?: string }>('google-oauth-start', { returnTo: '/?section=settings' }, headers)
+      const data = result.data
+      const error = result.error
 
       if (error) {
         setMessage(formatFunctionError(error, 'Unable to start Google Calendar connection.'))
@@ -110,7 +154,8 @@ export function useGoogleCalendarConnection(): UseGoogleCalendarConnectionReturn
       setMessage(null)
 
       const headers = await getAuthHeaders()
-      const { error } = await supabase.functions.invoke('google-calendar-disconnect', { body: {}, headers })
+      const result = await callFunction<unknown>('google-calendar-disconnect', {}, headers)
+      const error = result.error
       if (error) {
         setMessage(formatFunctionError(error, 'Unable to disconnect Google Calendar right now.'))
         return
