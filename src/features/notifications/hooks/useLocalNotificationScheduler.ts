@@ -34,6 +34,11 @@ const SW_READY_TIMEOUT_MS = 1500
 /** Morning briefing noon window: only notify in a short period after local noon. */
 const MORNING_BRIEFING_NOON_WINDOW_MS = 60 * 1000
 
+/** Device timezone: for local-only notifications, prefer the current device zone. */
+function getDeviceTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone
+}
+
 /** Race a promise against a timeout to avoid hanging tick loops */
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return await new Promise<T>((resolve, reject) => {
@@ -60,7 +65,9 @@ function hasExplicitTimeInString(isoString: string): boolean {
 }
 
 /** Local storage: check whether we've already fired a notification for this logical event */
-function wasNotified(dedupeKey: string): boolean {
+function wasNotified(dedupeKey: string, sessionDedupe: Set<string>): boolean {
+  /* In-memory guard: prevents spam even when localStorage is unavailable/blocked. */
+  if (sessionDedupe.has(dedupeKey)) return true
   try {
     return localStorage.getItem(DEDUPE_PREFIX + dedupeKey) === '1'
   } catch {
@@ -69,7 +76,9 @@ function wasNotified(dedupeKey: string): boolean {
 }
 
 /** Local storage: persist that we've fired a notification for this logical event */
-function markNotified(dedupeKey: string): void {
+function markNotified(dedupeKey: string, sessionDedupe: Set<string>): void {
+  /* In-memory mark first so the current session never re-fires this key. */
+  sessionDedupe.add(dedupeKey)
   try {
     localStorage.setItem(DEDUPE_PREFIX + dedupeKey, '1')
   } catch {
@@ -139,6 +148,9 @@ export function useLocalNotificationScheduler() {
   /* Notification timezone: use the same effective browser/device-aware zone as the rest of the app. */
   const notificationTimeZone = useUserTimeZone()
 
+  /* Session dedupe: prevents repeated notifications when storage writes fail. */
+  const sessionDedupeRef = useRef<Set<string>>(new Set())
+
   /* Preferences: cache the effective preference map for quick checks during ticking */
   const [prefsMap, setPrefsMap] = useState<EffectiveNotificationPreferences>({})
   const prefsLoadedRef = useRef(false)
@@ -191,6 +203,7 @@ export function useLocalNotificationScheduler() {
       const nowMs = Date.now()
       const todayYMD = getTodayYMD()
       const zonedTodayKey = getDayKeyInTimeZone(notificationTimeZone)
+      const sessionDedupe = sessionDedupeRef.current
 
       /* Data fetch: pull notifiable tasks (include subtasks) and habits for reminder-time logic */
       const [tasks, habits, completedMorningBriefing] = await Promise.all([
@@ -215,8 +228,8 @@ export function useLocalNotificationScheduler() {
           const untilDue = dueMs - nowMs
           if (untilDue <= 60 * 60 * 1000 && untilDue > 0) {
             const dedupeKey = `task_due_soon:${t.id}`
-            if (wasNotified(dedupeKey)) continue
-            markNotified(dedupeKey)
+            if (wasNotified(dedupeKey, sessionDedupe)) continue
+            markNotified(dedupeKey, sessionDedupe)
             await showLocalNotification({
               title: 'Task due soon',
               body: `${t.title || 'Untitled task'} is due in 1 hour.`,
@@ -247,8 +260,8 @@ export function useLocalNotificationScheduler() {
             const GRACE_WINDOW_MS = 10 * 60 * 1000
             if (sinceDue < 0 || sinceDue > GRACE_WINDOW_MS) continue
             const dedupeKey = `task_overdue_timed:${t.id}`
-            if (wasNotified(dedupeKey)) continue
-            markNotified(dedupeKey)
+            if (wasNotified(dedupeKey, sessionDedupe)) continue
+            markNotified(dedupeKey, sessionDedupe)
             await showLocalNotification({
               title: 'Task overdue',
               body: `${t.title || 'Untitled task'} is now overdue.`,
@@ -261,8 +274,8 @@ export function useLocalNotificationScheduler() {
           if (isDateOnlyOrMidnight && dueStatus === 'overdue') {
             const todayKey = zonedTodayKey
             const dedupeKey = `task_overdue_date_only:${t.id}:${todayKey}`
-            if (wasNotified(dedupeKey)) continue
-            markNotified(dedupeKey)
+            if (wasNotified(dedupeKey, sessionDedupe)) continue
+            markNotified(dedupeKey, sessionDedupe)
             await showLocalNotification({
               title: 'Task overdue',
               body: `${t.title || 'Untitled task'} is now overdue.`,
@@ -283,8 +296,8 @@ export function useLocalNotificationScheduler() {
 
           if (nowMs >= dueMs && nowMs - dueMs <= 5 * 60 * 1000) {
             const dedupeKey = `habit_reminder_due:${h.id}:${todayYMD}`
-            if (wasNotified(dedupeKey)) continue
-            markNotified(dedupeKey)
+            if (wasNotified(dedupeKey, sessionDedupe)) continue
+            markNotified(dedupeKey, sessionDedupe)
             await showLocalNotification({
               title: 'Habit reminder',
               body: `${h.name || 'Habit'} is due now.`,
@@ -297,10 +310,13 @@ export function useLocalNotificationScheduler() {
       /* Rule: morning briefing incomplete by 12pm local time (once per day) */
       if (isEnabled('morning_briefing_incomplete_noon')) {
         if (!completedMorningBriefing) {
-          if (isWithinMorningBriefingNoonWindow(notificationTimeZone)) {
-            const dedupeKey = `morning_briefing_incomplete_noon:${zonedTodayKey}`
-            if (!wasNotified(dedupeKey)) {
-              markNotified(dedupeKey)
+          /* Noon gate: use device timezone so local-only notifications match the user's clock. */
+          const deviceTz = getDeviceTimeZone()
+          if (isWithinMorningBriefingNoonWindow(deviceTz)) {
+            const deviceDayKey = getDayKeyInTimeZone(deviceTz)
+            const dedupeKey = `morning_briefing_incomplete_noon:${deviceDayKey}`
+            if (!wasNotified(dedupeKey, sessionDedupe)) {
+              markNotified(dedupeKey, sessionDedupe)
               await showLocalNotification({
                 title: 'Morning briefing',
                 body: 'Your morning briefing is still incomplete.',
