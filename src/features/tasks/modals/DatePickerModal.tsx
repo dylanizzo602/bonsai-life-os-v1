@@ -403,7 +403,15 @@ export function DatePickerModal({
   /* Calendar view: which month is displayed */
   const [viewMonth, setViewMonth] = useState(() => new Date())
   /* Which field (start or due) receives quick pick and calendar clicks */
-  const [focusedField, setFocusedField] = useState<'start' | 'due'>('due')
+  const [focusedField, _setFocusedField] = useState<'start' | 'due'>('due')
+  /* Focused field ref: Avoid first-click race where state hasn't re-rendered before a calendar click */
+  const focusedFieldRef = useRef<'start' | 'due'>('due')
+
+  /* Keep focused field state + ref in sync so applyDate always uses latest user intent */
+  const setFocusedField = (next: 'start' | 'due') => {
+    focusedFieldRef.current = next
+    _setFocusedField(next)
+  }
 
   /* Position: center on mobile/tablet (< 1024px); below trigger on desktop */
   const DESKTOP_BREAKPOINT = 1024
@@ -557,10 +565,12 @@ export function DatePickerModal({
 
   /* Apply quick option or calendar date to the focused field, then auto-switch to the other field */
   const applyDate = (ymd: string | null, isLater = false) => {
+    /* Use ref to avoid stale focusedField during fast click sequences (Start input -> calendar click) */
+    const targetField = focusedFieldRef.current
     if (isLater) {
       /* Later: set date and time to one hour from now */
       const { date, time } = getOneHourFromNow()
-      if (focusedField === 'start') {
+      if (targetField === 'start') {
         setStart(date)
         setStartTime(time)
         setShowStartTime(true)
@@ -572,7 +582,7 @@ export function DatePickerModal({
         setFocusedField('start')
       }
     } else {
-      if (focusedField === 'start') {
+      if (targetField === 'start') {
         setStart(ymd ?? '')
         if (!ymd) setShowStartTime(false)
         /* Auto-switch to due date after selecting start date */

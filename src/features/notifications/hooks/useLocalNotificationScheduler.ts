@@ -15,7 +15,6 @@ import type { EffectiveNotificationPreferences, NotificationType } from '../../.
 import { registerServiceWorker } from '../../../lib/notifications/pushClient'
 import type { Task } from '../../tasks/types'
 import type { Habit } from '../../habits/types'
-import { getTodayYMD } from '../../../lib/todaysLineup'
 import { resolveHabitRemindAt } from '../../habits/habitReminderEligibility'
 import { getDueStatus } from '../../tasks/utils/date'
 
@@ -201,7 +200,7 @@ export function useLocalNotificationScheduler() {
       if (cancelled) return
 
       const nowMs = Date.now()
-      const todayYMD = getTodayYMD()
+      /* Today key: compute in the effective notification timezone (avoid UTC day skew for weekly habits). */
       const zonedTodayKey = getDayKeyInTimeZone(notificationTimeZone)
       const sessionDedupe = sessionDedupeRef.current
 
@@ -288,14 +287,16 @@ export function useLocalNotificationScheduler() {
       /* Rule: habit reminder hits its reminder time (today only, per-habit) */
       if (isEnabled('habit_reminder_due')) {
         for (const h of habits) {
-          const remindAtIso = resolveHabitRemindAt(h, todayYMD)
+          /* Resolve today's reminder time in the notification timezone so day-of-week recurrence advances properly. */
+          const remindAtIso = resolveHabitRemindAt(h, zonedTodayKey)
           if (!remindAtIso) continue
 
           const dueMs = new Date(remindAtIso).getTime()
           if (!Number.isFinite(dueMs)) continue
 
           if (nowMs >= dueMs && nowMs - dueMs <= 5 * 60 * 1000) {
-            const dedupeKey = `habit_reminder_due:${h.id}:${todayYMD}`
+            /* Dedupe per local day so reopening the app doesn't re-fire the same day's reminder. */
+            const dedupeKey = `habit_reminder_due:${h.id}:${zonedTodayKey}`
             if (wasNotified(dedupeKey, sessionDedupe)) continue
             markNotified(dedupeKey, sessionDedupe)
             await showLocalNotification({
