@@ -208,7 +208,7 @@ export function useLocalNotificationScheduler() {
       const [tasks, habits, completedMorningBriefing] = await Promise.all([
         getTasks({ includeAllTasks: true, timeZone: notificationTimeZone }).catch(() => [] as Task[]),
         getHabits().catch(() => [] as Habit[]),
-        getHasCompletedMorningBriefingToday().catch(() => false),
+        getHasCompletedMorningBriefingToday(notificationTimeZone).catch(() => false),
       ])
 
       if (cancelled) return

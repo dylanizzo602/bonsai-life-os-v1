@@ -52,7 +52,10 @@ function hasExplicitUserTimeZone(userRow: { user_metadata?: Record<string, unkno
   return getUserTimeZone(userRow) !== 'local'
 }
 
-/* Normalize fallback zone so date-only comparisons stay deterministic in the edge runtime. */
+/* Normalize fallback zone so comparisons stay deterministic in the edge runtime.
+ * Note: 'local' is not a real IANA zone in Edge Functions; treating it as UTC can shift
+ * user-intended local-noon and day-boundary rules. We only use UTC fallback for
+ * non-user-specific computations; user-specific rules should require an explicit IANA zone. */
 function getEffectiveTimeZone(timeZone: string): string {
   return timeZone === 'local' ? 'UTC' : timeZone
 }
@@ -328,6 +331,33 @@ async function hasExistingNotification(
   return (data ?? []).length > 0
 }
 
+/* Determine whether a notification has already been sent using a string dedupe key.
+ * This supports non-UUID logical ids (e.g. per-day keys like YYYY-MM-DD). */
+async function hasExistingNotificationByDedupeKey(
+  supabase: ReturnType<typeof getServiceClient>,
+  userId: string,
+  type: NotificationType,
+  channel: NotificationChannel,
+  dedupeKey: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('type', type)
+    .eq('channel', channel)
+    .eq('dedupe_key', dedupeKey)
+    .in('status', ['pending', 'sent'])
+    .limit(1)
+
+  if (error) {
+    console.error('Error checking existing notification by dedupe key:', error)
+    return false
+  }
+
+  return (data ?? []).length > 0
+}
+
 /* Record a notification attempt/result in the notifications table */
 async function recordNotification(params: {
   supabase: ReturnType<typeof getServiceClient>
@@ -335,19 +365,20 @@ async function recordNotification(params: {
   type: NotificationType
   channel: NotificationChannel
   sourceType: string
-  sourceId: string
+  sourceId?: string | null
   payload: Record<string, unknown>
+  dedupeKey?: string
   status: 'pending' | 'sent' | 'error' | 'skipped'
   errorMessage?: string
 }): Promise<void> {
-  const { supabase, userId, type, channel, sourceType, sourceId, payload, status, errorMessage } =
-    params
+  const { supabase, userId, type, channel, sourceType, payload, status, errorMessage } = params
   const { error } = await supabase.from('notifications').insert({
     user_id: userId,
     type,
     channel,
     source_type: sourceType,
-    source_id: sourceId,
+    ...(params.sourceId ? { source_id: params.sourceId } : {}),
+    dedupe_key: params.dedupeKey ?? null,
     payload,
     status,
     error: errorMessage ?? null,
@@ -444,8 +475,10 @@ serve(async (req) => {
       if (!isEnabled(prefs, 'morning_briefing_incomplete_noon', 'push_mobile')) continue
 
       const authUser = authUsersById[userId] ?? null
-      if (!hasExplicitUserTimeZone(authUser)) continue
       const tz = getUserTimeZone(authUser)
+      /* Timezone requirement: morning briefing noon must be computed in a real IANA zone.
+       * If we don't have one saved, skip rather than incorrectly firing at UTC noon. */
+      if (!hasExplicitUserTimeZone(authUser)) continue
       const zone = getEffectiveTimeZone(tz)
       const nowZ = DateTime.now().setZone(zone)
       const noonZ = nowZ.set({ hour: 12, minute: 0, second: 0, millisecond: 0 })
@@ -472,13 +505,14 @@ serve(async (req) => {
       const hasCompleted = (briefings ?? []).length > 0
       if (hasCompleted) continue
 
-      const already = await hasExistingNotification(
+      /* Dedupe: notifications.source_id is UUID; use dedupe_key for per-day string keys. */
+      const dedupeKey = `morning_briefing_incomplete_noon:${briefingDayKey}`
+      const already = await hasExistingNotificationByDedupeKey(
         supabase,
         userId,
         'morning_briefing_incomplete_noon',
         'push_mobile',
-        'morning_briefing',
-        briefingDayKey,
+        dedupeKey,
       )
       if (already) continue
 
@@ -496,7 +530,8 @@ serve(async (req) => {
           type: 'morning_briefing_incomplete_noon',
           channel: 'push_mobile',
           sourceType: 'morning_briefing',
-          sourceId: briefingDayKey,
+          sourceId: null,
+          dedupeKey,
           payload: { kind: 'morning_briefing', date: briefingDayKey },
           status: 'sent',
         })
@@ -508,7 +543,8 @@ serve(async (req) => {
           type: 'morning_briefing_incomplete_noon',
           channel: 'push_mobile',
           sourceType: 'morning_briefing',
-          sourceId: briefingDayKey,
+          sourceId: null,
+          dedupeKey,
           payload: { kind: 'morning_briefing', date: briefingDayKey },
           status: 'error',
           errorMessage: (err as Error).message,

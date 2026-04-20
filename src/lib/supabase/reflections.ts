@@ -1,7 +1,17 @@
 /* Reflection entries data access: create and list reflection entries (e.g. morning briefings) */
 
 import { supabase } from './client'
+import { DateTime } from 'luxon'
 import type { ReflectionEntry, CreateReflectionEntryInput } from '../../features/reflections/types'
+
+/* Zoned day range helper: compute [startOfDay, nextDayStart) in UTC for a given IANA time zone */
+function getZonedDayRangeUtc(timeZone: string, baseInstant?: DateTime): { from: string; to: string } {
+  /* Base instant: default to now in the requested zone */
+  const base = (baseInstant ?? DateTime.now()).setZone(timeZone)
+  const from = base.startOf('day').toUTC().toISO()!
+  const to = base.plus({ days: 1 }).startOf('day').toUTC().toISO()!
+  return { from, to }
+}
 
 /**
  * Create a new reflection entry (e.g. after completing morning briefing).
@@ -32,13 +42,10 @@ export async function createReflectionEntry(
  */
 export async function saveOrUpdateMorningBriefingEntryForToday(
   input: Omit<CreateReflectionEntryInput, 'type'>,
+  timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone,
 ): Promise<ReflectionEntry> {
-  const now = new Date()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const todayEnd = new Date(todayStart)
-  todayEnd.setDate(todayEnd.getDate() + 1)
-  const from = todayStart.toISOString()
-  const to = todayEnd.toISOString()
+  /* Today's window: compute in the user's effective zone, query in UTC */
+  const { from, to } = getZonedDayRangeUtc(timeZone)
 
   const { data: existing, error: existingError } = await supabase
     .from('reflection_entries')
@@ -132,13 +139,11 @@ export async function getReflectionEntries(limit = 50): Promise<ReflectionEntry[
  * Return true if the user has completed a morning briefing today (at least one reflection entry
  * with type 'morning_briefing' and created_at on today's calendar day).
  */
-export async function getHasCompletedMorningBriefingToday(): Promise<boolean> {
-  const now = new Date()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const todayEnd = new Date(todayStart)
-  todayEnd.setDate(todayEnd.getDate() + 1)
-  const from = todayStart.toISOString()
-  const to = todayEnd.toISOString()
+export async function getHasCompletedMorningBriefingToday(
+  timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone,
+): Promise<boolean> {
+  /* Today's window: compute in the user's effective zone, query in UTC */
+  const { from, to } = getZonedDayRangeUtc(timeZone)
 
   const { data, error } = await supabase
     .from('reflection_entries')

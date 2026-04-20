@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getHasCompletedMorningBriefingToday } from '../../../lib/supabase/reflections'
 import { getTodayYMD } from '../../../lib/todaysLineup'
+import { useUserTimeZone } from '../../settings/useUserTimeZone'
 
 const DISMISS_KEY_PREFIX = 'bonsai-dismissed-morning-briefing-'
 
@@ -13,11 +14,13 @@ const DISMISS_KEY_PREFIX = 'bonsai-dismissed-morning-briefing-'
 export function useMorningBriefingBanner() {
   const [completedToday, setCompletedToday] = useState<boolean | null>(null)
   const [dismissedToday, setDismissedToday] = useState(false)
+  /* Timezone: align the “completed today” banner with the user's zoned calendar day */
+  const timeZone = useUserTimeZone()
 
   /* Check completed and dismissed on mount */
   useEffect(() => {
     let cancelled = false
-    getHasCompletedMorningBriefingToday().then((completed) => {
+    getHasCompletedMorningBriefingToday(timeZone).then((completed) => {
       if (!cancelled) setCompletedToday(completed)
     })
     const today = getTodayYMD()
@@ -30,7 +33,7 @@ export function useMorningBriefingBanner() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [timeZone])
 
   const dismiss = useCallback(() => {
     const today = getTodayYMD()

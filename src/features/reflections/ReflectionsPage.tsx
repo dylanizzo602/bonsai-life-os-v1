@@ -11,6 +11,7 @@ import {
 } from '../../lib/supabase/reflections'
 import type { ReflectionEntry, MorningBriefingResponses } from './types'
 import { ReflectionEntryView } from './ReflectionEntryView'
+import { useUserTimeZone } from '../settings/useUserTimeZone'
 
 interface ReflectionsPageProps {
   /** Optional handler to open the morning briefing flow */
@@ -38,6 +39,8 @@ export function ReflectionsPage({ onOpenMorningBriefing, onOpenWeeklyBriefing }:
   /* Briefing status: whether morning briefing is done today and weekly briefing is done this week */
   const [hasCompletedMorningToday, setHasCompletedMorningToday] = useState<boolean | null>(null)
   const [hasCompletedWeeklyThisWeek, setHasCompletedWeeklyThisWeek] = useState<boolean | null>(null)
+  /* Timezone: ensures “completed today” uses the user's zoned calendar day */
+  const timeZone = useUserTimeZone()
 
   /* Delete handler: allow user to delete an entry (invoked from right-click on list item) */
   const handleDeleteEntry = useCallback(
@@ -83,7 +86,7 @@ export function ReflectionsPage({ onOpenMorningBriefing, onOpenWeeklyBriefing }:
     ;(async () => {
       try {
         const [morningDone, weeklyDone] = await Promise.all([
-          getHasCompletedMorningBriefingToday(),
+          getHasCompletedMorningBriefingToday(timeZone),
           getHasCompletedWeeklyBriefingThisWeek(),
         ])
         if (!cancelled) {
@@ -101,7 +104,7 @@ export function ReflectionsPage({ onOpenMorningBriefing, onOpenWeeklyBriefing }:
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [timeZone])
 
   /* When user clicks an entry, load full entry and show detail */
   const handleSelectEntry = useCallback(async (entry: ReflectionEntry) => {

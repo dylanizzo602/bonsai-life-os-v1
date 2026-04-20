@@ -356,11 +356,11 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     const entry = await saveOrUpdateMorningBriefingEntryForToday({
       title,
       responses: reflectionAnswers,
-    })
+    }, timeZone)
     setSavedEntryId(entry.id)
     setSavedEntryTitle(entry.title ?? title)
     setStep(8)
-  }, [reflectionAnswers, savedEntryId])
+  }, [reflectionAnswers, savedEntryId, timeZone])
 
   /* View overview: show saved entry; create or update today's entry first so we never create duplicates */
   const handleViewOverview = useCallback(async () => {
@@ -373,12 +373,12 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
       const entry = await saveOrUpdateMorningBriefingEntryForToday({
         title,
         responses: reflectionAnswers,
-      })
+      }, timeZone)
       setSavedEntryId(entry.id)
       setSavedEntryTitle(entry.title ?? title)
     }
     setShowOverview(true)
-  }, [savedEntryId, reflectionAnswers])
+  }, [savedEntryId, reflectionAnswers, timeZone])
 
   /* Back from overview to completion step */
   const handleBackToBriefing = useCallback(() => {

@@ -18,6 +18,7 @@ import {
   getHasCompletedWeeklyBriefingThisWeek,
 } from '../lib/supabase/reflections'
 import { useLocalNotificationScheduler } from '../features/notifications/hooks/useLocalNotificationScheduler'
+import { useUserTimeZone } from '../features/settings/useUserTimeZone'
 
 /**
  * Screen too small message component
@@ -45,6 +46,8 @@ function ScreenTooSmallMessage() {
 function App() {
   /* Auth state: determine whether to show auth screen or main app */
   const { session, loading } = useAuth()
+  /* Timezone: ensures morning briefing completion checks align with the user's due-date semantics */
+  const timeZone = useUserTimeZone()
 
   /* Local notifications: schedule task/habit/briefing triggers while the app is open */
   useLocalNotificationScheduler()
@@ -67,7 +70,7 @@ function App() {
     if (!session) return
 
     let cancelled = false
-    getHasCompletedMorningBriefingToday().then((completed) => {
+    getHasCompletedMorningBriefingToday(timeZone).then((completed) => {
       if (cancelled) return
 
       setHasCompletedMorningBriefingToday(completed)
@@ -85,7 +88,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [session, setActiveSection])
+  }, [session, setActiveSection, timeZone])
 
   /* Content rendering: Render the appropriate page component based on active section */
   const renderContent = () => {

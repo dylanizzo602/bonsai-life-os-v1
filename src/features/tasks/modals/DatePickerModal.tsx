@@ -483,6 +483,12 @@ export function DatePickerModal({
       const d = toDateInputValue(dueDate)
       const st = toTimeInputValue(startDate)
       const dt = toTimeInputValue(dueDate)
+      /* Initial focus: match the “active field” to what the user sees selected/highlighted on open.
+       * - If only one date exists, focus that field so the first calendar click edits the highlighted date.
+       * - If both exist (or neither), default to due (common “deadline” workflow).
+       */
+      const initialFocus: 'start' | 'due' = s && !d ? 'start' : 'due'
+      setFocusedField(initialFocus)
       setStart(s)
       setDue(d)
       setStartTime(st)
