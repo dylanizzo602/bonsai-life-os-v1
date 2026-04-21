@@ -15,7 +15,7 @@ import type { EffectiveNotificationPreferences, NotificationType } from '../../.
 import { registerServiceWorker } from '../../../lib/notifications/pushClient'
 import type { Task } from '../../tasks/types'
 import type { Habit } from '../../habits/types'
-import { resolveHabitRemindAt } from '../../habits/habitReminderEligibility'
+import { resolveHabitReminderInstants } from '../../habits/habitReminderEligibility'
 import { getDueStatus } from '../../tasks/utils/date'
 
 /** Local scheduler polling cadence: frequent enough to catch 12pm and minute-level habit/timed due transitions */
@@ -288,22 +288,25 @@ export function useLocalNotificationScheduler() {
       if (isEnabled('habit_reminder_due')) {
         for (const h of habits) {
           /* Resolve today's reminder time in the notification timezone so day-of-week recurrence advances properly. */
-          const remindAtIso = resolveHabitRemindAt(h, zonedTodayKey)
-          if (!remindAtIso) continue
+          const instants = resolveHabitReminderInstants(h, zonedTodayKey)
+          if (instants.length === 0) continue
 
-          const dueMs = new Date(remindAtIso).getTime()
-          if (!Number.isFinite(dueMs)) continue
+          for (let i = 0; i < instants.length; i++) {
+            const remindAtIso = instants[i]
+            const dueMs = new Date(remindAtIso).getTime()
+            if (!Number.isFinite(dueMs)) continue
 
-          if (nowMs >= dueMs && nowMs - dueMs <= 5 * 60 * 1000) {
-            /* Dedupe per local day so reopening the app doesn't re-fire the same day's reminder. */
-            const dedupeKey = `habit_reminder_due:${h.id}:${zonedTodayKey}`
-            if (wasNotified(dedupeKey, sessionDedupe)) continue
-            markNotified(dedupeKey, sessionDedupe)
-            await showLocalNotification({
-              title: 'Habit reminder',
-              body: `${h.name || 'Habit'} is due now.`,
-              url: '/?section=tasks',
-            })
+            if (nowMs >= dueMs && nowMs - dueMs <= 5 * 60 * 1000) {
+              /* Dedupe per local day and index so multiple reminders can fire once each. */
+              const dedupeKey = `habit_reminder_due:${h.id}:${zonedTodayKey}:${i}`
+              if (wasNotified(dedupeKey, sessionDedupe)) continue
+              markNotified(dedupeKey, sessionDedupe)
+              await showLocalNotification({
+                title: 'Habit reminder',
+                body: `${h.name || 'Habit'} is due now.`,
+                url: '/?section=tasks',
+              })
+            }
           }
         }
       }

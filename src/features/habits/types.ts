@@ -35,6 +35,8 @@ export interface Habit {
   frequency_target: number | null
   add_to_todos: boolean
   reminder_time: string | null
+  /** Additional reminder offsets in minutes relative to the primary reminder_time (negative=before, positive=after). */
+  additional_reminder_offsets_mins: number[] | null
   /** Legacy: linked row in reminders table; scheduling uses todo_remind_at */
   reminder_id: string | null
   /** Next scheduled instant for habit todo / linked task due alignment */
@@ -65,6 +67,8 @@ export interface CreateHabitInput {
   frequency_target?: number | null
   add_to_todos?: boolean
   reminder_time?: string | null
+  /** Additional reminder offsets in minutes relative to reminder_time (negative=before, positive=after). */
+  additional_reminder_offsets_mins?: number[] | null
   color?: HabitColorId
 }
 
@@ -79,6 +83,8 @@ export interface UpdateHabitInput {
   frequency_target?: number | null
   add_to_todos?: boolean
   reminder_time?: string | null
+  /** Additional reminder offsets in minutes relative to reminder_time (negative=before, positive=after). */
+  additional_reminder_offsets_mins?: number[] | null
   reminder_id?: string | null
   color?: HabitColorId
 }

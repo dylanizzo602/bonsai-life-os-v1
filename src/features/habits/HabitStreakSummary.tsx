@@ -59,7 +59,7 @@ export function HabitStreakSummary({
           </span>
         </>
       ) : null}
-      {showLongest ? <span className={maxClass}>Max: {longestPrimary}</span> : null}
+      {showLongest ? <span className={maxClass}>Best: {longestPrimary}</span> : null}
     </div>
   )
 }

@@ -155,6 +155,10 @@ export function HabitGrid({
                     {/* Display: include unit so weekly streaks read “weeks” instead of “days”. */}
                     {formatHabitStreakCount(habit, habit.currentStreak)}
                   </div>
+                  <div className="mt-1 text-secondary text-bonsai-slate-500">
+                    {/* Record: show the longest streak achieved (same unit as current streak). */}
+                    Best: {formatHabitStreakCount(habit, habit.longestStreak)}
+                  </div>
                 </div>
                 <div className={`text-secondary border rounded-full px-2.5 py-1 ${pill.className}`}>
                   {pill.label}

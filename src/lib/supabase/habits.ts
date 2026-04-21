@@ -14,6 +14,19 @@ import type {
   UpdateHabitInput,
 } from '../../features/habits/types'
 
+/** Reminder offsets sanitizer: keep only finite, non-zero integer minute offsets */
+function normalizeAdditionalReminderOffsets(
+  offsets: number[] | null | undefined,
+): number[] {
+  if (!offsets || offsets.length === 0) return []
+  const cleaned = offsets
+    .filter((x) => typeof x === 'number' && Number.isFinite(x))
+    .map((x) => Math.trunc(x))
+    .filter((x) => x !== 0)
+  /* De-dupe and keep a stable order (sorted) so updates are deterministic */
+  return Array.from(new Set(cleaned)).sort((a, b) => a - b)
+}
+
 /** Local calendar YYYY-MM-DD for "today" in the browser */
 function todayLocalYMD(): string {
   const d = new Date()
@@ -46,6 +59,10 @@ export async function getHabits(): Promise<Habit[]> {
  */
 export async function createHabit(input: CreateHabitInput): Promise<Habit> {
   const addToTodos = input.add_to_todos ?? true
+  /* Reminder offsets: only meaningful when add_to_todos is enabled */
+  const additionalOffsets = addToTodos
+    ? normalizeAdditionalReminderOffsets(input.additional_reminder_offsets_mins)
+    : []
   let todoRemindAt: string | null = null
   if (
     addToTodos &&
@@ -77,6 +94,7 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
     frequency_target: input.frequency_target ?? null,
     add_to_todos: addToTodos,
     reminder_time: input.reminder_time ?? null,
+    additional_reminder_offsets_mins: additionalOffsets,
     reminder_id: null,
     todo_remind_at: todoRemindAt,
     color: input.color ?? 'green',
@@ -129,6 +147,12 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
   const habit = existing as Habit
   const addToTodos = input.add_to_todos ?? habit.add_to_todos
   const reminderTime = input.reminder_time ?? habit.reminder_time
+  /* Additional reminder offsets: default to existing (coerce null to []) */
+  const additionalOffsets = addToTodos
+    ? normalizeAdditionalReminderOffsets(
+        input.additional_reminder_offsets_mins ?? habit.additional_reminder_offsets_mins ?? [],
+      )
+    : []
   const desiredAction = input.desired_action !== undefined ? input.desired_action : habit.desired_action
   const minimumAction = input.minimum_action !== undefined ? input.minimum_action : habit.minimum_action
 
@@ -174,6 +198,10 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
   if (input.frequency_target !== undefined) updateData.frequency_target = input.frequency_target
   if (input.add_to_todos !== undefined) updateData.add_to_todos = input.add_to_todos
   if (input.reminder_time !== undefined) updateData.reminder_time = input.reminder_time
+  /* Keep offsets in sync; also clear them when add_to_todos is turned off */
+  if (input.additional_reminder_offsets_mins !== undefined || input.add_to_todos !== undefined) {
+    updateData.additional_reminder_offsets_mins = additionalOffsets
+  }
   if (input.reminder_id !== undefined) updateData.reminder_id = input.reminder_id
   if (input.color !== undefined) updateData.color = input.color
   updateData.todo_remind_at = todoRemindAt

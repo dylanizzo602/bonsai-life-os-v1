@@ -34,3 +34,31 @@ export function resolveHabitRemindAt(habit: Habit, todayYMD: string): string | n
   }
   return null
 }
+
+/**
+ * Resolve ALL ISO instants for today's habit notifications:
+ * - Index 0 is the primary remind-at instant (drives the due time shown in the UI).
+ * - Additional reminders are offsets (minutes) relative to the primary time (negative=before, positive=after).
+ */
+export function resolveHabitReminderInstants(habit: Habit, todayYMD: string): string[] {
+  const base = resolveHabitRemindAt(habit, todayYMD)
+  if (!base) return []
+
+  /* Offsets: coerce null to [], keep only finite integers, ignore 0 to avoid duplicates */
+  const offsets = (habit.additional_reminder_offsets_mins ?? [])
+    .filter((x) => typeof x === 'number' && Number.isFinite(x))
+    .map((x) => Math.trunc(x))
+    .filter((x) => x !== 0)
+
+  const baseMs = new Date(base).getTime()
+  if (!Number.isFinite(baseMs)) return [base]
+
+  const instants = [base]
+  for (const offset of offsets) {
+    const nextMs = baseMs + offset * 60 * 1000
+    if (!Number.isFinite(nextMs)) continue
+    instants.push(new Date(nextMs).toISOString())
+  }
+
+  return instants
+}

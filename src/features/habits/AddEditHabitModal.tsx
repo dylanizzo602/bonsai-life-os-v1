@@ -75,6 +75,7 @@ export function AddEditHabitModal({
   onDeleteHabit,
   habit = null,
 }: AddEditHabitModalProps) {
+  /* Form state: main habit fields */
   const [name, setName] = useState('')
   const [desiredAction, setDesiredAction] = useState('')
   const [minimumAction, setMinimumAction] = useState('')
@@ -82,6 +83,8 @@ export function AddEditHabitModal({
   const [frequencyTarget, setFrequencyTarget] = useState<number | ''>(1)
   const [addToTodos, setAddToTodos] = useState(false)
   const [reminderTime, setReminderTime] = useState('09:00')
+  /* Form state: additional reminder offsets relative to reminderTime */
+  const [additionalReminderOffsets, setAdditionalReminderOffsets] = useState<number[]>([])
   const [color, setColor] = useState<HabitColorId>('green')
   const [submitting, setSubmitting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -109,6 +112,10 @@ export function AddEditHabitModal({
         }
         setAddToTodos(habit.add_to_todos)
         setReminderTime(habit.reminder_time ?? '09:00')
+        /* Additional reminders: coerce null to empty array and filter out zero offsets */
+        setAdditionalReminderOffsets(
+          (habit.additional_reminder_offsets_mins ?? []).filter((x) => typeof x === 'number' && x !== 0),
+        )
         setColor(habit.color)
         setDeleteConfirm(false)
       } else {
@@ -119,10 +126,22 @@ export function AddEditHabitModal({
         setFrequencyTarget(1)
         setAddToTodos(true)
         setReminderTime('09:00')
+        setAdditionalReminderOffsets([])
         setColor('green')
       }
     }
   }, [isOpen, habit])
+
+  /* Additional reminders helpers: add/update/remove offsets */
+  const addOffset = () => {
+    setAdditionalReminderOffsets((prev) => [...prev, -30])
+  }
+  const updateOffset = (idx: number, next: number) => {
+    setAdditionalReminderOffsets((prev) => prev.map((v, i) => (i === idx ? next : v)))
+  }
+  const removeOffset = (idx: number) => {
+    setAdditionalReminderOffsets((prev) => prev.filter((_, i) => i !== idx))
+  }
 
   const handleSubmit = async () => {
     if (!name.trim()) return
@@ -141,6 +160,7 @@ export function AddEditHabitModal({
       frequency_target: numTarget,
       add_to_todos: addToTodos,
       reminder_time: addToTodos ? reminderTime : null,
+      additional_reminder_offsets_mins: addToTodos ? additionalReminderOffsets : [],
       color,
     }
     try {
@@ -339,6 +359,89 @@ export function AddEditHabitModal({
                 value={reminderTime}
                 onChange={(e) => setReminderTime(e.target.value)}
               />
+
+              {/* Additional reminders: offsets relative to the main reminder time */}
+              <div className="mt-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-secondary font-medium text-bonsai-slate-700">
+                    Additional reminders
+                  </p>
+                  <Button
+                    variant="secondary"
+                    onClick={addOffset}
+                    disabled={submitting}
+                  >
+                    + Add
+                  </Button>
+                </div>
+                <p className="text-secondary text-bonsai-slate-500 mt-1">
+                  The first time above is the main due time shown on the habit. These extras can notify before or after.
+                </p>
+
+                {additionalReminderOffsets.length > 0 && (
+                  <div className="mt-2 space-y-2">
+                    {additionalReminderOffsets.map((offset, idx) => {
+                      const direction = offset < 0 ? 'before' : 'after'
+                      const minutes = Math.abs(offset)
+                      return (
+                        <div
+                          key={`${idx}-${offset}`}
+                          className="flex flex-col gap-2 rounded-lg border border-bonsai-slate-200 bg-white p-3 md:flex-row md:items-end"
+                        >
+                          {/* Offset minutes: numeric input */}
+                          <div className="flex-1">
+                            <label className="block text-secondary font-medium text-bonsai-slate-700 mb-1">
+                              Minutes
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              step={1}
+                              value={minutes}
+                              onChange={(e) => {
+                                const nextMinutes = Math.max(1, Math.trunc(Number(e.target.value) || 0))
+                                const sign = direction === 'before' ? -1 : 1
+                                updateOffset(idx, sign * nextMinutes)
+                              }}
+                              className="w-full px-3 py-2 md:px-4 md:py-2.5 border border-bonsai-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent text-body"
+                            />
+                          </div>
+
+                          {/* Offset direction: before/after select */}
+                          <div className="flex-1">
+                            <label className="block text-secondary font-medium text-bonsai-slate-700 mb-1">
+                              Timing
+                            </label>
+                            <select
+                              value={direction}
+                              onChange={(e) => {
+                                const nextDirection = e.target.value === 'before' ? 'before' : 'after'
+                                const sign = nextDirection === 'before' ? -1 : 1
+                                updateOffset(idx, sign * Math.max(1, minutes))
+                              }}
+                              className="w-full px-3 py-2 md:px-4 md:py-2.5 border border-bonsai-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent text-body bg-white"
+                            >
+                              <option value="before">Before</option>
+                              <option value="after">After</option>
+                            </select>
+                          </div>
+
+                          {/* Remove button */}
+                          <div className="md:pb-[1px]">
+                            <Button
+                              variant="danger"
+                              onClick={() => removeOffset(idx)}
+                              disabled={submitting}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
