@@ -332,6 +332,15 @@ function addDays(ymd: string, n: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+/** Get today's date as YYYY-MM-DD in local time (civil date). */
+function todayLocalYMD(): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
 /**
  * Toggle task completion status.
  * When completing a recurring task: advance dates, set status back to active, optionally reopen checklist items.
@@ -389,7 +398,14 @@ export async function toggleTaskComplete(id: string, completed: boolean): Promis
    * Anchor on due_date when present; otherwise fall back to start_date so
    * recurring tasks with only a start date still advance like reminders.
    */
-  const anchorYMD = toDateOnly(task.due_date ?? task.start_date)
+  const completionYMD = todayLocalYMD()
+  const anchorMode = (pattern as unknown as { anchor?: 'due' | 'completion' }).anchor ?? 'due'
+  const baseAnchorYMD =
+    anchorMode === 'completion'
+      ? completionYMD
+      : toDateOnly(task.due_date ?? task.start_date)
+
+  const anchorYMD = baseAnchorYMD
   if (!anchorYMD) {
     /* No anchor date at all: just mark completed (fallback) */
     const { data, error } = await supabase
@@ -404,7 +420,14 @@ export async function toggleTaskComplete(id: string, completed: boolean): Promis
     return { ...updated, tags, attachments: Array.isArray(updated.attachments) ? updated.attachments : [] }
   }
 
-  const nextDueYMD = getNextOccurrence(pattern, anchorYMD)
+  /* Compute next occurrence; if overdue past multiple intervals, advance until we reach a future date (Todoist-style). */
+  let nextDueYMD = getNextOccurrence(pattern, anchorYMD)
+  let guard = 0
+  while (nextDueYMD && nextDueYMD <= completionYMD && guard < 400) {
+    nextDueYMD = getNextOccurrence(pattern, nextDueYMD)
+    guard += 1
+  }
+
   if (!nextDueYMD) {
     /* No next occurrence (e.g. past until): mark completed */
     const { data, error } = await supabase

@@ -1,6 +1,7 @@
 /* AddEditTaskModal: Modal for adding/editing a task; full form state, templates, and sub-modals */
 
 import { useState, useEffect, useRef } from 'react'
+import type { ReactNode } from 'react'
 import { Modal } from '../../components/Modal'
 import { Button } from '../../components/Button'
 import { Input } from '../../components/Input'
@@ -24,6 +25,7 @@ import {
 import { parseRecurrencePattern, getNextOccurrence } from '../../lib/recurrence'
 import { formatDateShort } from './utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
+import { parseSmartQuickAdd } from './utils/smartQuickAdd'
 import { DatePickerModal } from './modals/DatePickerModal'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { TagModal } from './modals/TagModal'
@@ -216,6 +218,43 @@ function TaskStatusIndicator({ status }: { status: DisplayStatus }) {
   )
 }
 
+/** Render highlighted smart tokens beneath a transparent input (Todoist-style). */
+function SmartQuickAddUnderlay({
+  value,
+  matches,
+}: {
+  value: string
+  matches: Array<{ start: number; end: number; kind: string }>
+}) {
+  /* Match styling: treat all recognized kinds the same in v1 (informational highlight only). */
+  const highlightClass = 'bg-amber-100 text-bonsai-slate-900 rounded px-0.5'
+
+  if (!value) {
+    return <span className="text-transparent">.</span>
+  }
+
+  if (!matches || matches.length === 0) {
+    return <span>{value}</span>
+  }
+
+  const parts: ReactNode[] = []
+  let cursor = 0
+  for (const m of matches) {
+    const start = Math.max(0, Math.min(value.length, m.start))
+    const end = Math.max(0, Math.min(value.length, m.end))
+    if (end <= start) continue
+    if (start > cursor) parts.push(<span key={`t-${cursor}`}>{value.slice(cursor, start)}</span>)
+    parts.push(
+      <mark key={`m-${start}-${end}`} className={highlightClass}>
+        {value.slice(start, end)}
+      </mark>,
+    )
+    cursor = end
+  }
+  if (cursor < value.length) parts.push(<span key={`t-${cursor}`}>{value.slice(cursor)}</span>)
+  return <>{parts}</>
+}
+
 export interface AddEditTaskModalProps {
   /** Whether the modal is open */
   isOpen: boolean
@@ -351,6 +390,10 @@ export function AddEditTaskModal({
   const [newDraftSubtaskTitle, setNewDraftSubtaskTitle] = useState('')
   /* Inline task actions menu: track open/closed state for three-dot menu in edit mode */
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false)
+  /* Smart quick add state: parsed fields + highlight ranges (add mode only) */
+  const [smartTagNames, setSmartTagNames] = useState<string[]>([])
+  const [smartMatches, setSmartMatches] = useState<Array<{ start: number; end: number; kind: string }>>([])
+  const smartParseTimerRef = useRef<number | null>(null)
 
   const isEditMode = Boolean(task?.id)
   const {
@@ -382,6 +425,40 @@ export function AddEditTaskModal({
     saveTemplateFromTask,
     removeTemplate,
   } = useTaskTemplates()
+
+  /* Smart title parsing: update fields from recognized tokens while typing (add mode only). */
+  const scheduleSmartParse = (nextValue: string) => {
+    if (smartParseTimerRef.current) {
+      window.clearTimeout(smartParseTimerRef.current)
+    }
+    smartParseTimerRef.current = window.setTimeout(() => {
+      const parsed = parseSmartQuickAdd(nextValue, { now: new Date() })
+      setSmartTagNames(parsed.tagNames)
+      setSmartMatches(parsed.matches)
+      /* Field updates: only apply when parser found an explicit token. */
+      if (parsed.priority) setPriority(parsed.priority)
+      if (parsed.due_date) setDueDate(parsed.due_date)
+      if (parsed.recurrence_pattern) setRecurrencePattern(parsed.recurrence_pattern)
+    }, 200)
+  }
+
+  /* Tag resolution: map @tag names to tag ids (create missing tags), then merge with selected tags. */
+  const resolveSmartTagIds = async (names: string[]): Promise<string[]> => {
+    const unique = Array.from(new Set(names.map((n) => n.trim()).filter(Boolean)))
+    if (unique.length === 0) return []
+    const resolved: string[] = []
+    for (const name of unique) {
+      const candidates = await searchTags(name)
+      const exact = candidates.find((t) => t.name.toLowerCase() === name.toLowerCase())
+      if (exact) {
+        resolved.push(exact.id)
+        continue
+      }
+      const created = await createTag(name, 'slate')
+      resolved.push(created.id)
+    }
+    return resolved
+  }
 
   /* Apply a template snapshot to the current form (dates and status stay as-is). */
   const applyTemplateToForm = (data: TaskTemplateData) => {
@@ -441,8 +518,17 @@ export function AddEditTaskModal({
       setDraftChecklistItemTitles({})
       setDraftSubtasks([])
       setNewDraftSubtaskTitle('')
+      setSmartTagNames([])
+      setSmartMatches([])
     }
   }, [isOpen, task?.id, initialTitle])
+
+  /* Smart parse cleanup: cancel pending timer when modal closes/unmounts. */
+  useEffect(() => {
+    return () => {
+      if (smartParseTimerRef.current) window.clearTimeout(smartParseTimerRef.current)
+    }
+  }, [])
 
   /* Submit: create or update task with all form fields (invoked by callers that still want explicit save) */
   const handleSubmit = async () => {
@@ -479,6 +565,11 @@ export function AddEditTaskModal({
     if (!onCreateTask) return
     setSubmitting(true)
     try {
+      /* Parse once on submit so saved title and fields match the latest text. */
+      const parsedOnSubmit = parseSmartQuickAdd(title, { now: new Date() })
+      const cleanedTitle = parsedOnSubmit.cleanedTitle.trim() || title.trim()
+      const submitTagNames = parsedOnSubmit.tagNames
+
       /* When saving a recurring task with no start/due, set to next instance from today */
       let effectiveStart = start_date || null
       let effectiveDue = due_date || null
@@ -491,7 +582,7 @@ export function AddEditTaskModal({
         if (!effectiveStart) effectiveStart = fallback
       }
       const input: CreateTaskInput = {
-        title: title.trim(),
+        title: cleanedTitle,
         description: description.trim() || null,
         start_date: effectiveStart,
         due_date: effectiveDue,
@@ -504,7 +595,11 @@ export function AddEditTaskModal({
       const result = await onCreateTask(input)
       if (result && typeof result === 'object' && 'id' in result) {
         const createdTask = result as Task
-        await setTagsForTask(createdTask.id, tags.map((t) => t.id))
+        /* Apply tags: merge selected pills with @tag tokens (auto-create missing). */
+        const selectedIds = tags.map((t) => t.id)
+        const smartIds = await resolveSmartTagIds(submitTagNames.length ? submitTagNames : smartTagNames)
+        const mergedIds = Array.from(new Set([...selectedIds, ...smartIds]))
+        await setTagsForTask(createdTask.id, mergedIds)
         /* If a template was applied when creating, instantiate its checklists and subtasks for the new task. */
         if (appliedTemplate) {
           await instantiateTemplateChildren(createdTask.id, appliedTemplate)
@@ -513,9 +608,7 @@ export function AddEditTaskModal({
         if (draftChecklists.length > 0 || draftSubtasks.length > 0) {
           await instantiateDraftChildren(createdTask.id, draftChecklists, draftSubtasks)
         }
-        if (onCreatedTask) {
-          onCreatedTask({ ...createdTask, tags })
-        }
+        if (onCreatedTask) onCreatedTask({ ...createdTask, tags })
         /* Always close modal and reset form after creating a task */
         setTitle('')
         setDescription('')
@@ -525,6 +618,8 @@ export function AddEditTaskModal({
         setPriority('medium')
         setGoalId(null)
         setTags([])
+        setSmartTagNames([])
+        setSmartMatches([])
         setTimeEstimate(null)
         setAttachments([])
         onClose()
@@ -833,30 +928,45 @@ export function AddEditTaskModal({
         >
           <TaskStatusIndicator status={status} />
         </button>
-        {/* Task title input: Takes remaining space; in edit mode persist on blur like description (footer has no Save) */}
+        {/* Task title input: In add mode, smart-parse + highlight recognized tokens. */}
         <div className="flex-1">
-          <Input
-            placeholder="What needs to be done?"
-            className="border-bonsai-slate-300"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={async () => {
-              /* Edit mode: persist title when user leaves the field so "auto-saved" matches behavior */
-              if (!isEditMode || !task || !onUpdateTask) return
-              const trimmed = title.trim()
-              if (!trimmed) {
-                setTitle(task.title)
-                return
-              }
-              if (trimmed === task.title) return
-              try {
-                await onUpdateTask(task.id, { title: trimmed })
-              } catch (error) {
-                console.error('Failed to auto-save task title from modal:', error)
-              }
-            }}
-            spellCheck
-          />
+          <div className="relative">
+            {/* Underlay: renders highlighted tokens for smart quick add */}
+            {!isEditMode && (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 flex items-center px-3 py-2 md:px-4 md:py-2.5 lg:px-4 lg:py-3 text-body text-bonsai-slate-900 whitespace-pre-wrap"
+              >
+                <SmartQuickAddUnderlay value={title} matches={smartMatches} />
+              </div>
+            )}
+            <Input
+              placeholder="What needs to be done?"
+              className={`border-bonsai-slate-300 ${!isEditMode ? 'text-transparent caret-bonsai-slate-900' : ''}`}
+              value={title}
+              onChange={(e) => {
+                const next = e.target.value
+                setTitle(next)
+                if (!isEditMode) scheduleSmartParse(next)
+              }}
+              onBlur={async () => {
+                /* Edit mode: persist title when user leaves the field so "auto-saved" matches behavior */
+                if (!isEditMode || !task || !onUpdateTask) return
+                const trimmed = title.trim()
+                if (!trimmed) {
+                  setTitle(task.title)
+                  return
+                }
+                if (trimmed === task.title) return
+                try {
+                  await onUpdateTask(task.id, { title: trimmed })
+                } catch (error) {
+                  console.error('Failed to auto-save task title from modal:', error)
+                }
+              }}
+              spellCheck
+            />
+          </div>
         </div>
       </div>
 

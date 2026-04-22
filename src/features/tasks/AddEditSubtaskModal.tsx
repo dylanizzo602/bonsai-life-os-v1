@@ -1,6 +1,7 @@
 /* AddEditSubtaskModal: Modal for adding/editing a subtask; full form state and sub-modals (no subtasks) */
 
 import { useState, useEffect, useRef } from 'react'
+import type { ReactNode } from 'react'
 import { Modal } from '../../components/Modal'
 import { Button } from '../../components/Button'
 import { Input } from '../../components/Input'
@@ -8,6 +9,7 @@ import { Checkbox } from '../../components/Checkbox'
 import { RichTextEditor } from '../notes/RichTextEditor'
 import { useTaskChecklists } from './hooks/useTaskChecklists'
 import { useTags } from './hooks/useTags'
+import { parseSmartQuickAdd } from './utils/smartQuickAdd'
 import {
   PlusIcon,
   ChevronRightIcon,
@@ -113,6 +115,43 @@ function TaskStatusIndicator({ status }: { status: DisplayStatus }) {
   )
 }
 
+/** Render highlighted smart tokens beneath a transparent input (Todoist-style). */
+function SmartQuickAddUnderlay({
+  value,
+  matches,
+}: {
+  value: string
+  matches: Array<{ start: number; end: number; kind: string }>
+}) {
+  /* Match styling: treat all recognized kinds the same in v1 (informational highlight only). */
+  const highlightClass = 'bg-amber-100 text-bonsai-slate-900 rounded px-0.5'
+
+  if (!value) {
+    return <span className="text-transparent">.</span>
+  }
+
+  if (!matches || matches.length === 0) {
+    return <span>{value}</span>
+  }
+
+  const parts: ReactNode[] = []
+  let cursor = 0
+  for (const m of matches) {
+    const start = Math.max(0, Math.min(value.length, m.start))
+    const end = Math.max(0, Math.min(value.length, m.end))
+    if (end <= start) continue
+    if (start > cursor) parts.push(<span key={`t-${cursor}`}>{value.slice(cursor, start)}</span>)
+    parts.push(
+      <mark key={`m-${start}-${end}`} className={highlightClass}>
+        {value.slice(start, end)}
+      </mark>,
+    )
+    cursor = end
+  }
+  if (cursor < value.length) parts.push(<span key={`t-${cursor}`}>{value.slice(cursor)}</span>)
+  return <>{parts}</>
+}
+
 export interface AddEditSubtaskModalProps {
   /** Whether the modal is open */
   isOpen: boolean
@@ -196,6 +235,10 @@ export function AddEditSubtaskModal({
   const [newItemTitles, setNewItemTitles] = useState<Record<string, string>>({})
   /* When user pastes multi-line text into a checklist item input, show prompt to keep as 1 item or create many (keyed by checklist id) */
   const [pendingPasteLines, setPendingPasteLines] = useState<Record<string, string[]>>({})
+  /* Smart quick add state: parsed fields + highlight ranges (add mode only) */
+  const [smartTagNames, setSmartTagNames] = useState<string[]>([])
+  const [smartMatches, setSmartMatches] = useState<Array<{ start: number; end: number; kind: string }>>([])
+  const smartParseTimerRef = useRef<number | null>(null)
 
   const isEditMode = Boolean(subtask?.id)
   const {
@@ -224,6 +267,40 @@ export function AddEditSubtaskModal({
     deleteTagFromAllTasks,
     setTagsForTask,
   } = useTags(subtask?.user_id ?? null)
+
+  /* Tag resolution: map @tag names to tag ids (create missing tags), then merge with selected tags. */
+  const resolveSmartTagIds = async (names: string[]): Promise<string[]> => {
+    const unique = Array.from(new Set(names.map((n) => n.trim()).filter(Boolean)))
+    if (unique.length === 0) return []
+    const resolved: string[] = []
+    for (const name of unique) {
+      const candidates = await searchTags(name)
+      const exact = candidates.find((t) => t.name.toLowerCase() === name.toLowerCase())
+      if (exact) {
+        resolved.push(exact.id)
+        continue
+      }
+      const created = await createTag(name, 'slate')
+      resolved.push(created.id)
+    }
+    return resolved
+  }
+
+  /* Smart title parsing: update fields from recognized tokens while typing (add mode only). */
+  const scheduleSmartParse = (nextValue: string) => {
+    if (smartParseTimerRef.current) {
+      window.clearTimeout(smartParseTimerRef.current)
+    }
+    smartParseTimerRef.current = window.setTimeout(() => {
+      const parsed = parseSmartQuickAdd(nextValue, { now: new Date() })
+      setSmartTagNames(parsed.tagNames)
+      setSmartMatches(parsed.matches)
+      /* Field updates: only apply when parser found an explicit token. */
+      if (parsed.priority) setPriority(parsed.priority)
+      if (parsed.due_date) setDueDate(parsed.due_date)
+      if (parsed.recurrence_pattern) setRecurrencePattern(parsed.recurrence_pattern)
+    }, 200)
+  }
 
   /* Auto-save: When editing an existing subtask, persist title changes so the parent list reflects updates immediately */
   const handleTitleAutoSave = async () => {
@@ -264,8 +341,17 @@ export function AddEditSubtaskModal({
       setTimeEstimate(null)
       setAttachments([])
       setStatus('open')
+      setSmartTagNames([])
+      setSmartMatches([])
     }
   }, [isOpen, subtask?.id])
+
+  /* Smart parse cleanup: cancel pending timer when modal closes/unmounts. */
+  useEffect(() => {
+    return () => {
+      if (smartParseTimerRef.current) window.clearTimeout(smartParseTimerRef.current)
+    }
+  }, [])
 
   /* Submit: create or update subtask with all form fields (uses description HTML from rich text editor) */
   const handleSubmit = async () => {
@@ -296,8 +382,13 @@ export function AddEditSubtaskModal({
     if (!onCreateSubtask) return
     setSubmitting(true)
     try {
+      /* Parse once on submit so saved title and fields match the latest text. */
+      const parsedOnSubmit = parseSmartQuickAdd(title, { now: new Date() })
+      const cleanedTitle = parsedOnSubmit.cleanedTitle.trim() || title.trim()
+      const submitTagNames = parsedOnSubmit.tagNames
+
       const input: CreateTaskInput = {
-        title: title.trim(),
+        title: cleanedTitle,
         description: description.trim() || null,
         start_date: start_date || null,
         due_date: due_date || null,
@@ -310,7 +401,11 @@ export function AddEditSubtaskModal({
       const result = await onCreateSubtask(input)
       if (result && typeof result === 'object' && 'id' in result) {
         const createdSubtask = result as Task
-        await setTagsForTask(createdSubtask.id, tags.map((t) => t.id))
+        /* Apply tags: merge selected pills with @tag tokens (auto-create missing). */
+        const selectedIds = tags.map((t) => t.id)
+        const smartIds = await resolveSmartTagIds(submitTagNames.length ? submitTagNames : smartTagNames)
+        const mergedIds = Array.from(new Set([...selectedIds, ...smartIds]))
+        await setTagsForTask(createdSubtask.id, mergedIds)
         if (onCreatedSubtask) {
           onCreatedSubtask({ ...createdSubtask, tags })
           /* Modal stays open in edit mode; parent sets subtask to result */
@@ -321,6 +416,8 @@ export function AddEditSubtaskModal({
           setDueDate(null)
           setPriority('medium')
           setTags([])
+          setSmartTagNames([])
+          setSmartMatches([])
           setTimeEstimate(null)
           setAttachments([])
           onClose()
@@ -382,22 +479,37 @@ export function AddEditSubtaskModal({
         >
           <TaskStatusIndicator status={status} />
         </button>
-        {/* Subtask title input: Takes remaining space */}
+        {/* Subtask title input: In add mode, smart-parse + highlight recognized tokens. */}
         <div className="flex-1">
-          <Input
-            placeholder="What needs to be done?"
-            className="border-bonsai-slate-300"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={handleTitleAutoSave}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                void handleTitleAutoSave()
-              }
-            }}
-            spellCheck
-          />
+          <div className="relative">
+            {/* Underlay: renders highlighted tokens for smart quick add */}
+            {!isEditMode && (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 flex items-center px-3 py-2 md:px-4 md:py-2.5 lg:px-4 lg:py-3 text-body text-bonsai-slate-900 whitespace-pre-wrap"
+              >
+                <SmartQuickAddUnderlay value={title} matches={smartMatches} />
+              </div>
+            )}
+            <Input
+              placeholder="What needs to be done?"
+              className={`border-bonsai-slate-300 ${!isEditMode ? 'text-transparent caret-bonsai-slate-900' : ''}`}
+              value={title}
+              onChange={(e) => {
+                const next = e.target.value
+                setTitle(next)
+                if (!isEditMode) scheduleSmartParse(next)
+              }}
+              onBlur={handleTitleAutoSave}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void handleTitleAutoSave()
+                }
+              }}
+              spellCheck
+            />
+          </div>
         </div>
       </div>
 

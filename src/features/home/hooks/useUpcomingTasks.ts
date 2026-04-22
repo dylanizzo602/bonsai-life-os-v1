@@ -1,4 +1,4 @@
-/* useUpcomingTasks: First 5 "available" tasks (same logic as Tasks page Available view) */
+/* useUpcomingTasks: First 5 "available" non-habit tasks (same logic as Tasks page Available view) */
 
 import { useState, useEffect, useMemo } from 'react'
 import { useTasks } from '../../tasks/hooks/useTasks'
@@ -8,6 +8,7 @@ import { getAvailableTasksFromList } from '../../tasks/utils/available'
 
 /**
  * Returns the first 5 available tasks (incomplete, not blocked, start <= now), sorted like Tasks page Available view.
+ * Excludes habit-linked reminder tasks so the home widget shows only "real" tasks.
  */
 export function useUpcomingTasks(): Task[] {
   const { tasks } = useTasks()
@@ -36,7 +37,11 @@ export function useUpcomingTasks(): Task[] {
   }, [tasks])
 
   return useMemo(() => {
+    /* Availability + sort: reuse the same Available view logic from Tasks page */
     const availableSorted = getAvailableTasksFromList(tasks, blockedTaskIds)
-    return availableSorted.slice(0, 5)
+    /* Home widget filter: hide habit reminders (habit-linked tasks) */
+    const nonHabit = availableSorted.filter((t) => !t.habit_id)
+    /* Truncate: keep widget compact */
+    return nonHabit.slice(0, 5)
   }, [tasks, blockedTaskIds])
 }
