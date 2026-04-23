@@ -1,4 +1,4 @@
-/* HabitReminderItem: Streak, target action label, due time, Target / Minimum / Skip */
+/* HabitReminderItem: Streak, target action label, due time, Target (+ optional Minimum) */
 
 import { Button } from '../../components/Button'
 import { BellIcon } from '../../components/icons'
@@ -39,7 +39,7 @@ export interface HabitReminderItemProps {
 }
 
 /**
- * Habit-linked task row: streak | target action | due time | Target / Minimum / Skip.
+ * Habit-linked task row: streak | target action | due time | Target (+ optional Minimum).
  */
 export function HabitReminderItem({
   habit,
@@ -48,7 +48,6 @@ export function HabitReminderItem({
   reminderTime,
   onTargetComplete,
   onMinimum,
-  onSkip,
   actionsDisabled = false,
   density = 'default',
   showStreakBreakdown = true,
@@ -61,6 +60,9 @@ export function HabitReminderItem({
   const dueStatus = effectiveRemindAt != null ? getDueStatus(effectiveRemindAt, timeZone) : null
   const isRemindOverdue = dueStatus === 'overdue'
   const isRemindDueSoon = dueStatus === 'dueSoon'
+
+  /* Habit capability: minimum status only makes sense when a minimum action is defined */
+  const hasMinimumAction = Boolean(habit.minimum_action && habit.minimum_action.trim() !== '')
 
   /* Typography: match TaskListItem name sizing (compact rows use text-sm). */
   const nameClass =
@@ -128,32 +130,22 @@ export function HabitReminderItem({
         >
           Target
         </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          disabled={actionsDisabled}
-          onClick={(e) => {
-            e.stopPropagation()
-            onMinimum()
-          }}
-          className="border-2 border-amber-500 text-amber-800 bg-white hover:bg-amber-50 focus:ring-amber-500"
-        >
-          Minimum
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          disabled={actionsDisabled}
-          onClick={(e) => {
-            e.stopPropagation()
-            onSkip()
-          }}
-          className="border-2 border-bonsai-slate-400 text-bonsai-slate-700 bg-white hover:bg-bonsai-slate-50 focus:ring-bonsai-slate-500"
-        >
-          Skip
-        </Button>
+        {/* Minimum: optional per-habit; only render when configured */}
+        {hasMinimumAction && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={actionsDisabled}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMinimum()
+            }}
+            className="border-2 border-amber-500 text-amber-800 bg-white hover:bg-amber-50 focus:ring-amber-500"
+          >
+            Minimum
+          </Button>
+        )}
       </div>
     </div>
   )

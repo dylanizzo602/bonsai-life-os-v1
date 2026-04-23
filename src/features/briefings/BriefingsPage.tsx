@@ -33,6 +33,7 @@ import { isoInstantToLocalCalendarYMD } from '../../lib/localCalendarDate'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
 import { HabitGrid } from '../habits/HabitGrid'
 import { AddEditHabitModal } from '../habits/AddEditHabitModal'
+import { isSelectedWeekday } from '../../lib/streaks'
 
 /** Total steps in the flow (greeting + overdue + inbox review + plan + 4 reflection + completion) */
 const TOTAL_STEPS = 9
@@ -68,12 +69,15 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
   /* After saving, we have the entry id and title for overview */
   const [savedEntryId, setSavedEntryId] = useState<string | null>(null)
   const [savedEntryTitle, setSavedEntryTitle] = useState<string | null>(null)
+  /* Save guard: prevent double-submit races that can create duplicate morning briefings */
+  const [isSavingEntry, setIsSavingEntry] = useState(false)
 
   /* Today's Lineup: date-scoped, shared with Tasks section */
   const [lineUpTaskIds, setLineUpTaskIds] = useState<Set<string>>(new Set())
   useEffect(() => {
     setLineUpTaskIds(loadTodaysLineupTaskIds())
   }, [step])
+
   const addToLineUp = useCallback((id: string) => {
     setLineUpTaskIds((prev) => {
       const next = new Set(prev)
@@ -129,14 +133,44 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
   /* Habit edit modal: opened from HabitGrid settings button on the did-everything step */
   const [habitBeingEdited, setHabitBeingEdited] = useState<HabitWithStreaks | null>(null)
 
-  /* Did-everything step: show yesterday as a single-day view (matches the Habits card grid) */
+  /* Yesterday YMD (local calendar day): used for the habits "accountability" reflection skip logic */
+  const yesterdayYMD = useMemo(() => {
+    return DateTime.fromISO(todayYMD, { zone: timeZone }).minus({ days: 1 }).toISODate() ?? todayYMD
+  }, [timeZone, todayYMD])
+
+  /* Accountability skip: true when every scheduled habit is marked Target (completed) for yesterday */
+  const allHabitsTargetYesterday = useMemo(() => {
+    /* No habits: keep reflections visible (avoid skipping the user's prompts unexpectedly) */
+    if (habitsWithStreaks.length === 0) return false
+
+    /* Determine which habits were actually scheduled yesterday (weekly bitmask habits may be off-day) */
+    const scheduledYesterday = habitsWithStreaks.filter((habit) => {
+      const isWeekly =
+        habit.frequency === 'weekly' &&
+        typeof habit.frequency_target === 'number' &&
+        habit.frequency_target >= 1 &&
+        habit.frequency_target <= 127
+      return !isWeekly || isSelectedWeekday(yesterdayYMD, habit.frequency_target ?? 0)
+    })
+
+    /* If nothing was scheduled yesterday, don't skip the reflection prompts */
+    if (scheduledYesterday.length === 0) return false
+
+    /* "Target" in the UI maps to entry status "completed" */
+    return scheduledYesterday.every((habit) => {
+      const entries = entriesByHabit[habit.id] ?? []
+      const e = entries.find((x) => x.entry_date === yesterdayYMD)
+      return e?.status === 'completed'
+    })
+  }, [entriesByHabit, habitsWithStreaks, yesterdayYMD])
+
+  /* Habits grid step: show yesterday as a single-day view (matches the Habits card grid) */
   useEffect(() => {
-    if (step === 6) {
-      const yesterdayYMD =
-        DateTime.fromISO(todayYMD, { zone: timeZone }).minus({ days: 1 }).toISODate() ?? todayYMD
+    /* We set this starting at step 5 so yesterday entries are already in-range when the skip condition is evaluated */
+    if (step >= 5 && step <= 7) {
       setDateRange({ start: yesterdayYMD, end: yesterdayYMD })
     }
-  }, [step, setDateRange, timeZone, todayYMD])
+  }, [step, setDateRange, yesterdayYMD])
 
   /* Close habit modal and refresh streak data after edits */
   const closeHabitEditModal = useCallback(() => {
@@ -348,37 +382,61 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
 
   /* Save reflection entry once when moving to completion (step 6); use shared helper so only one entry exists per day */
   const saveEntryAndGoToCompletion = useCallback(async () => {
-    if (savedEntryId) {
+    if (savedEntryId || isSavingEntry) {
       setStep(8)
       return
     }
-    const title = `Morning briefing – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-    const entry = await saveOrUpdateMorningBriefingEntryForToday({
-      title,
-      responses: reflectionAnswers,
-    }, timeZone)
-    setSavedEntryId(entry.id)
-    setSavedEntryTitle(entry.title ?? title)
-    setStep(8)
-  }, [reflectionAnswers, savedEntryId, timeZone])
+    try {
+      setIsSavingEntry(true)
+      const title = `Morning briefing – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+      const entry = await saveOrUpdateMorningBriefingEntryForToday(
+        {
+          title,
+          responses: reflectionAnswers,
+        },
+        timeZone,
+      )
+      setSavedEntryId(entry.id)
+      setSavedEntryTitle(entry.title ?? title)
+      setStep(8)
+    } finally {
+      setIsSavingEntry(false)
+    }
+  }, [isSavingEntry, reflectionAnswers, savedEntryId, timeZone])
+
+  /* Progress bar: adjust total/current when accountability questions are skipped */
+  const effectiveTotalSteps = allHabitsTargetYesterday ? TOTAL_STEPS - 2 : TOTAL_STEPS
+  const effectiveCurrentStep =
+    allHabitsTargetYesterday && step >= 8
+      ? step - 2
+      : step
 
   /* View overview: show saved entry; create or update today's entry first so we never create duplicates */
   const handleViewOverview = useCallback(async () => {
+    if (isSavingEntry) return
     if (!savedEntryId && Object.keys(reflectionAnswers).length > 0) {
       const title = `Morning briefing – ${new Date().toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
       })}`
-      const entry = await saveOrUpdateMorningBriefingEntryForToday({
-        title,
-        responses: reflectionAnswers,
-      }, timeZone)
-      setSavedEntryId(entry.id)
-      setSavedEntryTitle(entry.title ?? title)
+      try {
+        setIsSavingEntry(true)
+        const entry = await saveOrUpdateMorningBriefingEntryForToday(
+          {
+            title,
+            responses: reflectionAnswers,
+          },
+          timeZone,
+        )
+        setSavedEntryId(entry.id)
+        setSavedEntryTitle(entry.title ?? title)
+      } finally {
+        setIsSavingEntry(false)
+      }
     }
     setShowOverview(true)
-  }, [savedEntryId, reflectionAnswers, timeZone])
+  }, [isSavingEntry, savedEntryId, reflectionAnswers, timeZone])
 
   /* Back from overview to completion step */
   const handleBackToBriefing = useCallback(() => {
@@ -516,9 +574,17 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
             }))
           }
           onNext={() => {
+            /* Skip accountability questions when yesterday's scheduled habits are all marked Target */
+            if (allHabitsTargetYesterday && step === 5) {
+              saveEntryAndGoToCompletion()
+              return
+            }
+
             if (step === 7) saveEntryAndGoToCompletion()
             else setStep(step + 1)
           }}
+          isNextDisabled={isSavingEntry}
+          isNextLoading={isSavingEntry}
           onBack={step > 4 ? goToPreviousStep : undefined}
           showBack={step > 4}
         />
@@ -531,8 +597,8 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
       {/* Progress bar: show for steps 1–8 (not greeting); total 9 steps */}
       {step >= 1 && step <= 8 && (
         <BriefingProgressBar
-          currentStep={step}
-          totalSteps={TOTAL_STEPS}
+          currentStep={effectiveCurrentStep}
+          totalSteps={effectiveTotalSteps}
         />
       )}
 

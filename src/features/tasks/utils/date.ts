@@ -151,6 +151,15 @@ function isTomorrowInZone(isoString: string | null | undefined, timeZone: string
   )
 }
 
+/** Return true when an ISO string is yesterday's calendar day in `timeZone`. */
+function isYesterdayInZone(isoString: string | null | undefined, timeZone: string): boolean {
+  const d = toZonedDateTime(isoString, timeZone)
+  if (!d) return false
+  const yesterday = DateTime.now().setZone(timeZone).plus({ days: -1 }).startOf('day')
+  const day = d.startOf('day')
+  return day.year === yesterday.year && day.month === yesterday.month && day.day === yesterday.day
+}
+
 /** Format wall time for display when the raw ISO encodes a non-midnight time (or legacy rules). */
 function formatWallTimeInZone(isoString: string | null | undefined, timeZone: string): string {
   const d = toZonedDateTime(isoString, timeZone)
@@ -189,6 +198,21 @@ function getDueDayOnlyLabel(
   const explicit = hasT && hasExplicitTimeInString(dueDate ?? '')
   if (!hasT || !explicit) return dayLabel
   const timeStr = formatWallTimeInZone(dueDate, timeZone)
+  return `${dayLabel} at ${timeStr}`
+}
+
+/** Build "Yesterday" / "Today" / "Tomorrow" with optional " at {time}" when start has explicit time. */
+function getStartDayOnlyLabel(
+  startDate: string | null | undefined,
+  dayLabel: 'Yesterday' | 'Today' | 'Tomorrow',
+  timeZone: string,
+): string {
+  const d = toZonedDateTime(startDate, timeZone)
+  if (!d) return dayLabel
+  const hasT = startDate?.includes('T')
+  const explicit = hasT && hasExplicitTimeInString(startDate ?? '')
+  if (!hasT || !explicit) return dayLabel
+  const timeStr = formatWallTimeInZone(startDate, timeZone)
   return `${dayLabel} at ${timeStr}`
 }
 
@@ -262,17 +286,23 @@ export function formatStartDueDisplay(
   dueDate: string | null | undefined,
   timeZone: string,
 ): string | null {
+  /* Presence checks: keep empty-string safety consistent across callers */
   const hasStart = startDate != null && startDate !== ''
   const hasDue = dueDate != null && dueDate !== ''
   if (!hasStart && !hasDue) return null
   if (hasStart && !hasDue) {
-    const today = isTodayInZone(startDate, timeZone)
+    /* Start-only display: use relative day words (Yesterday/Today/Tomorrow) when applicable */
+    const isYesterday = isYesterdayInZone(startDate, timeZone)
+    const isToday = isTodayInZone(startDate, timeZone)
+    const isTomorrow = isTomorrowInZone(startDate, timeZone)
+
+    if (isYesterday) return 'Started Yesterday'
+    if (isToday) return isPastStartDate(startDate, timeZone) ? 'Started Today' : 'Starts Today'
+    if (isTomorrow) return 'Starts Tomorrow'
+
     const formatted =
       formatDateWithOrdinal(startDate, timeZone) ?? formatDateWithOptionalTime(startDate, timeZone)
-    if (!formatted && !today) return null
-    if (today) {
-      return isPastStartDate(startDate, timeZone) ? 'Started Today' : 'Starts Today'
-    }
+    if (!formatted) return null
     return isPastStartDate(startDate, timeZone) ? `Started ${formatted}` : `Starts ${formatted}`
   }
   if (!hasStart && hasDue) {
@@ -294,7 +324,14 @@ export function formatStartDueDisplay(
     return `Due ${dueFormatted}`
   }
 
-  const startFormatted = formatDateWithOptionalTime(startDate, timeZone)
+  /* Start–due range display: prefer relative day words for the start segment when applicable */
+  const startFormatted = isYesterdayInZone(startDate, timeZone)
+    ? getStartDayOnlyLabel(startDate, 'Yesterday', timeZone)
+    : isTodayInZone(startDate, timeZone)
+      ? getStartDayOnlyLabel(startDate, 'Today', timeZone)
+      : isTomorrowInZone(startDate, timeZone)
+        ? getStartDayOnlyLabel(startDate, 'Tomorrow', timeZone)
+        : formatDateWithOptionalTime(startDate, timeZone)
   if (isDueToday) {
     const dayLabel = getDueDayOnlyLabel(dueDate, 'Today', timeZone)
     return startFormatted ? `${startFormatted} - ${dayLabel}` : `Due ${dayLabel}`

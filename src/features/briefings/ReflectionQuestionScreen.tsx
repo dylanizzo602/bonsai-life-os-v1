@@ -19,6 +19,10 @@ interface ReflectionQuestionScreenProps {
   onBack?: () => void
   /** Whether this is the first reflection step (hide Back) */
   showBack?: boolean
+  /** Optional disabled state for Next (used to prevent double-submit on save) */
+  isNextDisabled?: boolean
+  /** Optional loading state for Next (used to show "Next…" while saving) */
+  isNextLoading?: boolean
 }
 
 /**
@@ -32,6 +36,8 @@ export function ReflectionQuestionScreen({
   onNext,
   onBack,
   showBack = true,
+  isNextDisabled,
+  isNextLoading,
 }: ReflectionQuestionScreenProps) {
   /* Container: max-w-full and box-border so briefing text box is not cut off on the sides */
   return (
@@ -51,7 +57,12 @@ export function ReflectionQuestionScreen({
         placeholder="Type your thoughts here..."
         className="mb-6"
       />
-      <BriefingFooter onBack={showBack ? onBack : undefined} onNext={onNext} />
+      <BriefingFooter
+        onBack={showBack ? onBack : undefined}
+        onNext={onNext}
+        isNextDisabled={isNextDisabled}
+        isNextLoading={isNextLoading}
+      />
     </div>
   )
 }

@@ -144,7 +144,9 @@ export function AddEditHabitModal({
   }
 
   const handleSubmit = async () => {
+    /* Validation: habit requires a name and a target action */
     if (!name.trim()) return
+    if (!desiredAction.trim()) return
     /* For weekly, frequency_target is day-of-week bitmask (1-127); for daily it is null */
     const numTarget: number | null =
       frequency === 'weekly'
@@ -232,7 +234,7 @@ export function AddEditHabitModal({
           <Button
             variant="primary"
             onClick={handleSubmit}
-            disabled={submitting || !name.trim()}
+            disabled={submitting || !name.trim() || !desiredAction.trim()}
           >
             {isEditMode ? 'Save Changes' : 'Create Habit'}
           </Button>
@@ -248,24 +250,24 @@ export function AddEditHabitModal({
           placeholder="e.g., Morning meditation, Drink water, Exercise"
         />
 
-        {/* Desired action: full/ideal action description */}
+        {/* Target action: full/ideal action description */}
         <div>
           <label className="block text-secondary font-medium text-bonsai-slate-700 mb-1">
-            Desired action
+            Target action
           </label>
           <textarea
             value={desiredAction}
             onChange={(e) => setDesiredAction(e.target.value)}
-            placeholder="Describe the full action you're aiming for (e.g., Run 3 miles, Meditate 10 minutes)"
+            placeholder="Describe the action you're aiming for (e.g., Run 3 miles, Meditate 10 minutes)"
             rows={2}
             className="w-full px-3 py-2 md:px-4 md:py-2.5 border border-bonsai-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent text-body"
           />
         </div>
 
-        {/* Minimum action: smallest version that still counts (Habits 1.1 minimum status) */}
+        {/* Minimum action (optional): smallest version that still counts (Habits 1.1 minimum status) */}
         <div>
           <label className="block text-secondary font-medium text-bonsai-slate-700 mb-1">
-            Minimum desired action
+            Minimum action (optional)
           </label>
           <textarea
             value={minimumAction}
@@ -275,7 +277,7 @@ export function AddEditHabitModal({
             className="w-full px-3 py-2 md:px-4 md:py-2.5 border border-bonsai-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent text-body"
           />
           <p className="text-secondary text-bonsai-slate-500 mt-1">
-            In Habits 1.1, marking &quot;minimum&quot; uses this; full completion uses the desired action.
+            If set, marking &quot;minimum&quot; uses this; full completion uses the target action.
           </p>
         </div>
 

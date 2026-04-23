@@ -111,6 +111,9 @@ export function HabitGrid({
         const status = isSelectedDay ? getStatusForDate(entriesByHabit, habit.id, selectedDateYMD) : null
         const pill = getStatusPill(isSelectedDay ? status : null)
 
+        /* Habit capability: minimum status only makes sense when a minimum action is defined */
+        const hasMinimumAction = Boolean(habit.minimum_action && habit.minimum_action.trim() !== '')
+
         /* Due-by display: reminder_time is stored as a local wall-clock time (HH:mm:ss) */
         const dueByText = habit.reminder_time
           ? `Due by ${formatReminderTime(habit.reminder_time)}`
@@ -180,27 +183,13 @@ export function HabitGrid({
               </div>
             </div>
 
-            {/* Entry actions: set a specific status for the selected date */}
+            {/* Entry actions: show Target; show Minimum only when configured */}
             <div className="mt-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className={`grid grid-cols-1 gap-2 ${hasMinimumAction ? 'sm:grid-cols-2' : 'sm:grid-cols-1'}`}>
                 <button
                   type="button"
                   disabled={!isSelectedDay}
-                  onClick={() => onSetEntry(habit.id, selectedDateYMD, null)}
-                  className={`rounded-lg px-3 py-2 text-body font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:ring-offset-2 ${
-                    !isSelectedDay
-                      ? 'bg-bonsai-slate-100 text-bonsai-slate-400 cursor-not-allowed'
-                      : status === null
-                        ? 'bg-bonsai-slate-900 text-white'
-                        : 'bg-white border border-bonsai-slate-200 text-bonsai-slate-800 hover:bg-bonsai-slate-50'
-                  }`}
-                >
-                  Open
-                </button>
-                <button
-                  type="button"
-                  disabled={!isSelectedDay}
-                  onClick={() => onSetEntry(habit.id, selectedDateYMD, 'completed')}
+                  onClick={() => onSetEntry(habit.id, selectedDateYMD, status === 'completed' ? null : 'completed')}
                   className={`rounded-lg px-3 py-2 text-body font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:ring-offset-2 ${
                     !isSelectedDay
                       ? 'bg-bonsai-slate-100 text-bonsai-slate-400 cursor-not-allowed'
@@ -211,34 +200,23 @@ export function HabitGrid({
                 >
                   Target
                 </button>
-                <button
-                  type="button"
-                  disabled={!isSelectedDay}
-                  onClick={() => onSetEntry(habit.id, selectedDateYMD, 'minimum')}
-                  className={`rounded-lg px-3 py-2 text-body font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:ring-offset-2 ${
-                    !isSelectedDay
-                      ? 'bg-bonsai-slate-100 text-bonsai-slate-400 cursor-not-allowed'
-                      : status === 'minimum'
-                        ? 'bg-amber-500 text-white'
-                        : 'bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100'
-                  }`}
-                >
-                  Minimum
-                </button>
-                <button
-                  type="button"
-                  disabled={!isSelectedDay}
-                  onClick={() => onSetEntry(habit.id, selectedDateYMD, 'skipped')}
-                  className={`rounded-lg px-3 py-2 text-body font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:ring-offset-2 ${
-                    !isSelectedDay
-                      ? 'bg-bonsai-slate-100 text-bonsai-slate-400 cursor-not-allowed'
-                      : status === 'skipped'
-                        ? 'bg-red-500 text-white'
-                        : 'bg-red-50 border border-red-200 text-red-800 hover:bg-red-100'
-                  }`}
-                >
-                  Skipped
-                </button>
+                {/* Minimum: only show when the habit defines a minimum action */}
+                {hasMinimumAction && (
+                  <button
+                    type="button"
+                    disabled={!isSelectedDay}
+                    onClick={() => onSetEntry(habit.id, selectedDateYMD, status === 'minimum' ? null : 'minimum')}
+                    className={`rounded-lg px-3 py-2 text-body font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:ring-offset-2 ${
+                      !isSelectedDay
+                        ? 'bg-bonsai-slate-100 text-bonsai-slate-400 cursor-not-allowed'
+                        : status === 'minimum'
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100'
+                    }`}
+                  >
+                    Minimum
+                  </button>
+                )}
               </div>
               {!isSelectedDay && (
                 <p className="mt-2 text-secondary text-bonsai-slate-500">
