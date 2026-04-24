@@ -815,8 +815,19 @@ export function TasksPage() {
       }
     }
 
-    /* Base tasks: exclude deleted and habit-linked rows (those render as habit rows). */
-    let baseTasks = tasks.filter((t) => t.status !== 'deleted' && !t.habit_id)
+    /* Base tasks: exclude deleted and habit-linked rows (habit-linked render as habit rows).
+     * Also hide subtasks whose parent is in Archive/Trash so "orphaned" active subtasks don't leak into normal views.
+     */
+    const taskById = new Map(tasks.map((t) => [t.id, t] as const))
+    let baseTasks = tasks.filter((t) => {
+      if (t.status === 'deleted') return false
+      if (t.habit_id) return false
+      if (t.parent_id) {
+        const parent = taskById.get(t.parent_id)
+        if (parent?.status === 'deleted' || parent?.status === 'archived') return false
+      }
+      return true
+    })
 
     /* By view: lineup, available, all, or custom base list. */
     let viewTasks: Task[]

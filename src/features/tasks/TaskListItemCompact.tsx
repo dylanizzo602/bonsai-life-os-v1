@@ -107,6 +107,7 @@ function getPriorityFlagClasses(priority: TaskPriority): string {
  */
 export function TaskListItemCompactLayout({
   task,
+  parentTaskTitle = null,
   hasSubtasks = false,
   incompleteSubtaskCount = 0,
   expanded = false,
@@ -242,6 +243,18 @@ export function TaskListItemCompactLayout({
           <span className="text-sm font-medium text-bonsai-slate-800 truncate flex-1">
             {task.title}
           </span>
+        )}
+        {/* Subtask indicator: compact badge with tooltip for parent context */}
+        {task.parent_id && (
+          <Tooltip
+            content={`Subtask of ${parentTaskTitle ?? 'parent task'}`}
+            position="top"
+            size="sm"
+          >
+            <span className="shrink-0 rounded-md border border-bonsai-slate-200 bg-bonsai-slate-50 px-2 py-0.5 text-xs text-bonsai-slate-600">
+              Subtask
+            </span>
+          </Tooltip>
         )}
         {/* Remove button */}
         {onRemove && (

@@ -653,6 +653,8 @@ export function DatePickerModal({
         <div className="grid shrink-0 grid-cols-1 gap-3 pb-3 sm:grid-cols-2 sm:mb-5 min-w-0">
           <div
             className={`${fieldBase} min-h-[2.75rem] ${focusedField === 'start' ? 'bg-bonsai-sage-50 ring-2 ring-bonsai-sage-500' : 'bg-bonsai-slate-100'}`}
+            /* Field activation: use pointer down so touch devices update target before calendar tap */
+            onPointerDown={() => setFocusedField('start')}
             onClick={() => setFocusedField('start')}
           >
             <CalendarIcon className="w-4 h-4 text-bonsai-slate-500 shrink-0" />
@@ -662,6 +664,8 @@ export function DatePickerModal({
                 type="text"
                 value={startDateEdit}
                 onChange={(e) => setStartDateEdit(e.target.value)}
+                /* Focus sync: ensure calendar clicks apply to whichever input the browser focused (tablet/mobile auto-focus quirks) */
+                onFocus={() => setFocusedField('start')}
                 onBlur={() => {
                   const p = parseDateInput(startDateEdit)
                   if (p) {
@@ -672,6 +676,7 @@ export function DatePickerModal({
                     setStartDateEdit(start ? formatDateDisplay(start) : '')
                   }
                 }}
+                onPointerDown={(e) => { e.stopPropagation(); setFocusedField('start') }}
                 onClick={(e) => { e.stopPropagation(); setFocusedField('start') }}
                 placeholder={formatTodayPlaceholder()}
                 className="min-w-0 flex-1 bg-transparent border-0 py-0 text-secondary text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-0"
@@ -695,6 +700,8 @@ export function DatePickerModal({
                     type="text"
                     value={startTimeEdit}
                     onChange={(e) => setStartTimeEdit(e.target.value)}
+                    /* Focus sync: keep start active while editing time */
+                    onFocus={() => setFocusedField('start')}
                     onBlur={() => {
                       const p = parseTimeInput(startTimeEdit)
                       if (p) {
@@ -718,6 +725,7 @@ export function DatePickerModal({
                         ;(e.currentTarget as HTMLInputElement).blur()
                       }
                     }}
+                    onPointerDown={(e) => { e.stopPropagation(); setFocusedField('start') }}
                     onClick={(e) => e.stopPropagation()}
                     placeholder="12:00 PM"
                     className={timeInputClass}
@@ -750,6 +758,8 @@ export function DatePickerModal({
           </div>
           <div
             className={`${fieldBase} min-h-[2.75rem] ${focusedField === 'due' ? 'bg-bonsai-sage-50 ring-2 ring-bonsai-sage-500' : 'bg-bonsai-slate-100'}`}
+            /* Field activation: use pointer down so touch devices update target before calendar tap */
+            onPointerDown={() => setFocusedField('due')}
             onClick={() => setFocusedField('due')}
           >
             <CalendarIcon className="w-4 h-4 text-bonsai-slate-500 shrink-0" />
@@ -759,6 +769,8 @@ export function DatePickerModal({
                 type="text"
                 value={dueDateEdit}
                 onChange={(e) => setDueDateEdit(e.target.value)}
+                /* Focus sync: ensure calendar clicks apply to whichever input the browser focused (tablet/mobile auto-focus quirks) */
+                onFocus={() => setFocusedField('due')}
                 onBlur={() => {
                   const p = parseDateInput(dueDateEdit)
                   if (p) {
@@ -769,6 +781,7 @@ export function DatePickerModal({
                     setDueDateEdit(due ? formatDateDisplay(due) : '')
                   }
                 }}
+                onPointerDown={(e) => { e.stopPropagation(); setFocusedField('due') }}
                 onClick={(e) => { e.stopPropagation(); setFocusedField('due') }}
                 placeholder={formatTodayPlaceholder()}
                 className="min-w-0 flex-1 bg-transparent border-0 py-0 text-secondary text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-0"
@@ -792,6 +805,8 @@ export function DatePickerModal({
                     type="text"
                     value={dueTimeEdit}
                     onChange={(e) => setDueTimeEdit(e.target.value)}
+                    /* Focus sync: keep due active while editing time */
+                    onFocus={() => setFocusedField('due')}
                     onBlur={() => {
                       const p = parseTimeInput(dueTimeEdit)
                       if (p) {
@@ -815,6 +830,7 @@ export function DatePickerModal({
                         ;(e.currentTarget as HTMLInputElement).blur()
                       }
                     }}
+                    onPointerDown={(e) => { e.stopPropagation(); setFocusedField('due') }}
                     onClick={(e) => e.stopPropagation()}
                     placeholder="12:00 PM"
                     className={timeInputClass}

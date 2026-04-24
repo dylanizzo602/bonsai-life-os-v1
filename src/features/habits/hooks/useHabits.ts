@@ -12,6 +12,7 @@ import {
   getHabitStreaks,
   getHabitCurrentStreakDates,
   countTargetVsMinimumInCurrentStreak,
+  getCurrentWeekProgressDatesWeekly,
 } from '../../../lib/habitStreaks'
 import type {
   Habit,
@@ -161,24 +162,40 @@ export function useHabits(initialDateRange?: DateRange) {
   /* Integer streaks: daily consecutive done days; weekly = consecutive complete weeks */
   const habitsWithStreaks = useMemo((): HabitWithStreaks[] => {
     return habits.map((habit) => {
+      /* Per-habit entry prep: normalize to streak entry format (date+status). */
       const entries = entriesByHabit[habit.id] ?? []
       const streakEntries = entries.map((e) => ({ date: e.entry_date, status: e.status }))
+
+      /* Weekly detection: only weekly habits with a valid weekday bitmask count streaks in weeks. */
+      const weeklyMask = typeof habit.frequency_target === 'number' ? habit.frequency_target : 0
+      const isWeekly = habit.frequency === 'weekly' && weeklyMask >= 1 && weeklyMask <= 127
+
+      /* Streak length: days for daily-style habits; weeks for weekly-bitmask habits. */
       const { currentStreak, longestStreak } = getHabitStreaks(
         streakEntries,
         today,
         habit.frequency,
         habit.frequency_target,
       )
+
+      /* Calendar shading: streak dates are the "official" streak window (weekly = complete weeks only). */
       const currentStreakDates = getHabitCurrentStreakDates(
         streakEntries,
         today,
         habit.frequency,
         habit.frequency_target,
       )
-      const { targetCount, minimumCount } = countTargetVsMinimumInCurrentStreak(
-        streakEntries,
-        currentStreakDates,
-      )
+
+      /* Target/min counts: include current-week progress for weekly streaks so counts update per action. */
+      const countDates = isWeekly
+        ? Array.from(
+            new Set(
+              currentStreakDates.concat(getCurrentWeekProgressDatesWeekly(streakEntries, today, weeklyMask)),
+            ),
+          ).sort()
+        : currentStreakDates
+
+      const { targetCount, minimumCount } = countTargetVsMinimumInCurrentStreak(streakEntries, countDates)
       return {
         ...habit,
         currentStreak,

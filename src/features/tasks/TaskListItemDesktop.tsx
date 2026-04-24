@@ -153,6 +153,7 @@ function getPriorityLabel(priority: TaskPriority): string {
  */
 export function TaskListItemDesktopLayout({
   task,
+  parentTaskTitle = null,
   hasSubtasks = false,
   incompleteSubtaskCount = 0,
   checklistSummary,
@@ -370,7 +371,7 @@ export function TaskListItemDesktopLayout({
           </Tooltip>
         </div>
         
-        {/* Task name and dependency icons: Grouped together to keep dependency icons next to name; or inline edit input when renaming */}
+        {/* Task name + subtask indicator + dependency icons: keep the dependency icons next to the name */}
         <div className="flex min-w-0 items-center gap-1.5">
           {inlineEditTitle ? (
             <InlineTitleInput
@@ -385,6 +386,19 @@ export function TaskListItemDesktopLayout({
               status={task.status} 
               maxWidth={availableWidth}
             />
+          )}
+
+          {/* Subtask indicator: show when this task belongs to a parent (appears as its own row in filtered views) */}
+          {task.parent_id && (
+            <Tooltip
+              content={`Subtask of ${parentTaskTitle ?? 'parent task'}`}
+              position="top"
+              size="sm"
+            >
+              <span className="shrink-0 rounded-md border border-bonsai-slate-200 bg-bonsai-slate-50 px-2 py-0.5 text-xs text-bonsai-slate-600">
+                Subtask
+              </span>
+            </Tooltip>
           )}
           
           {/* Dependency icons: Clickable to open Task Dependencies popover */}

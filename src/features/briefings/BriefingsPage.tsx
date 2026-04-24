@@ -31,9 +31,9 @@ import { getDueStatus } from '../tasks/utils/date'
 import { getAvailableTasksFromList } from '../tasks/utils/available'
 import { isoInstantToLocalCalendarYMD } from '../../lib/localCalendarDate'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
-import { HabitGrid } from '../habits/HabitGrid'
 import { AddEditHabitModal } from '../habits/AddEditHabitModal'
 import { isSelectedWeekday } from '../../lib/streaks'
+import { getRandomReflectionEntryYearsAgoToday } from '../../lib/supabase/reflections'
 
 /** Total steps in the flow (greeting + overdue + inbox review + plan + 4 reflection + completion) */
 const TOTAL_STEPS = 9
@@ -71,6 +71,24 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
   const [savedEntryTitle, setSavedEntryTitle] = useState<string | null>(null)
   /* Save guard: prevent double-submit races that can create duplicate morning briefings */
   const [isSavingEntry, setIsSavingEntry] = useState(false)
+
+  /* Years ago today: optional random entry shown on the greeting step */
+  const [yearsAgoEntry, setYearsAgoEntry] = useState<Awaited<
+    ReturnType<typeof getRandomReflectionEntryYearsAgoToday>
+  > | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    getRandomReflectionEntryYearsAgoToday()
+      .then((result) => {
+        if (!cancelled) setYearsAgoEntry(result)
+      })
+      .catch(() => {
+        if (!cancelled) setYearsAgoEntry(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   /* Today's Lineup: date-scoped, shared with Tasks section */
   const [lineUpTaskIds, setLineUpTaskIds] = useState<Set<string>>(new Set())
@@ -119,7 +137,6 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
   const {
     habitsWithStreaks,
     entriesByHabit,
-    dateRange,
     setDateRange,
     todayYMD,
     setEntry: setHabitEntry,
@@ -185,6 +202,18 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     error: inboxError,
     deleteItem: deleteInboxItem,
   } = useInbox()
+
+  /* Inbox skip: when there are no inbox items, omit the inbox review step entirely */
+  const shouldSkipInboxStep = useMemo(() => {
+    return !inboxLoading && !inboxError && inboxItems.length === 0
+  }, [inboxError, inboxItems.length, inboxLoading])
+
+  /* Step guard: if the user reaches inbox step with an empty inbox, automatically advance to planning */
+  useEffect(() => {
+    if (step === 2 && shouldSkipInboxStep) {
+      setStep(3)
+    }
+  }, [shouldSkipInboxStep, step])
 
   /* Blocked/blocking task IDs for "available" filter */
   const [blockedTaskIds, setBlockedTaskIds] = useState<Set<string>>(new Set())
@@ -295,13 +324,33 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
 
   /* Overdue linked habit tasks */
   const overdueHabitReminders = useMemo(() => {
+    /* Due-date normalization: interpret task.due_date as a calendar day in the user's time zone */
+    const dueYMDInZone = (dueDate: string | null | undefined): string | null => {
+      if (!dueDate) return null
+
+      /* Date-only due dates are already a civil YYYY-MM-DD in the user's zone */
+      if (!dueDate.includes('T')) return dueDate
+
+      /* Legacy / date-only encoded as midnight ISO: treat as the date-part only (avoid zone shifting) */
+      const timeMatch = dueDate.match(/T(\d{2}):(\d{2})/)
+      const hasExplicitTime = !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
+      if (!hasExplicitTime) {
+        const datePart = dueDate.slice(0, 10)
+        return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : null
+      }
+
+      /* Timed due dates: convert the instant into the user's zone then take the local calendar day */
+      const dt = DateTime.fromISO(dueDate, { setZone: true }).setZone(timeZone)
+      return dt.isValid ? dt.toISODate() : null
+    }
+
     return tasks
       .filter(
         (t) =>
           !!t.habit_id &&
           !!t.due_date &&
           !['completed', 'archived', 'deleted'].includes(t.status) &&
-          getDueStatus(t.due_date, timeZone) === 'overdue',
+          dueYMDInZone(t.due_date) === yesterdayYMD,
       )
       .map((task) => {
         const habit = habitsWithStreaks.find((h) => h.id === task.habit_id)
@@ -309,7 +358,19 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
         return { habit, task, remindAt: task.due_date }
       })
       .filter((x): x is { habit: HabitWithStreaks; task: Task; remindAt: string | null } => x != null)
-  }, [tasks, habitsWithStreaks, timeZone])
+  }, [habitsWithStreaks, tasks, timeZone, yesterdayYMD])
+
+  /* Overdue skip: when there is nothing overdue to review, omit this step entirely */
+  const shouldSkipOverdueStep = useMemo(() => {
+    return !tasksLoading && overdueTasks.length === 0 && overdueHabitReminders.length === 0
+  }, [overdueHabitReminders.length, overdueTasks.length, tasksLoading])
+
+  /* Step guard: if the user reaches overdue step with nothing to review, automatically advance */
+  useEffect(() => {
+    if (step === 1 && shouldSkipOverdueStep) {
+      setStep(2)
+    }
+  }, [shouldSkipOverdueStep, step])
 
   /* Available tasks: use shared helper so semantics match Available view and Upcoming widgets */
   const availableTasks = useMemo(
@@ -405,11 +466,18 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
   }, [isSavingEntry, reflectionAnswers, savedEntryId, timeZone])
 
   /* Progress bar: adjust total/current when accountability questions are skipped */
-  const effectiveTotalSteps = allHabitsTargetYesterday ? TOTAL_STEPS - 2 : TOTAL_STEPS
-  const effectiveCurrentStep =
-    allHabitsTargetYesterday && step >= 8
-      ? step - 2
-      : step
+  const effectiveTotalSteps =
+    TOTAL_STEPS -
+    (allHabitsTargetYesterday ? 2 : 0) -
+    (shouldSkipInboxStep ? 1 : 0) -
+    (shouldSkipOverdueStep ? 1 : 0)
+  const effectiveCurrentStep = useMemo(() => {
+    /* Step offset: account for optional step skips so progress stays accurate */
+    const overdueOffset = shouldSkipOverdueStep && step >= 2 ? 1 : 0
+    const inboxOffset = shouldSkipInboxStep && step >= 3 ? 1 : 0
+    const habitsOffset = allHabitsTargetYesterday && step >= 8 ? 2 : 0
+    return step - overdueOffset - inboxOffset - habitsOffset
+  }, [allHabitsTargetYesterday, shouldSkipInboxStep, shouldSkipOverdueStep, step])
 
   /* View overview: show saved entry; create or update today's entry first so we never create duplicates */
   const handleViewOverview = useCallback(async () => {
@@ -474,6 +542,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
           calendarEventCount={effectiveCalendarEventCount}
           calendarLoading={effectiveCalendarLoading}
           calendarError={effectiveCalendarError}
+          yearsAgoEntry={yearsAgoEntry}
           onBegin={() => setStep(1)}
         />
       )}
@@ -517,7 +586,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
           error={inboxError}
           onConvertToTask={openConvertInboxItem}
           onDeleteItem={deleteInboxItem}
-          onBack={goToPreviousStep}
+          onBack={() => setStep(shouldSkipOverdueStep ? 0 : 1)}
           onNext={() => setStep(3)}
         />
       )}
@@ -532,7 +601,18 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
           onEditTask={openEditTask}
           onAddToLineUp={addToLineUp}
           onRemoveFromLineUp={removeFromLineUp}
-          onBack={goToPreviousStep}
+          onBack={() => {
+            /* Back navigation: account for optional step skips (inbox + overdue) */
+            if (!shouldSkipInboxStep) {
+              setStep(2)
+              return
+            }
+            if (!shouldSkipOverdueStep) {
+              setStep(1)
+              return
+            }
+            setStep(0)
+          }}
           onNext={() => setStep(4)}
         />
       )}
@@ -553,14 +633,33 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
                     )
                   : (
                       <div className="w-full">
-                        {/* Yesterday habits: reuse the HabitsPage card grid UI (single-day dateRange) */}
-                        <HabitGrid
-                          habits={habitsWithStreaks}
-                          entriesByHabit={entriesByHabit}
-                          selectedDateYMD={dateRange.start}
-                          onSetEntry={setHabitEntry}
-                          onEditHabit={(habit) => setHabitBeingEdited(habit)}
-                        />
+                        {/* Habit accountability summary: show only habits marked "skipped" yesterday (text-only) */}
+                        {(() => {
+                          const skipped = habitsWithStreaks
+                            .map((habit) => {
+                              const entries = entriesByHabit[habit.id] ?? []
+                              const entry = entries.find((x) => x.entry_date === yesterdayYMD)
+                              return entry?.status === 'skipped' ? habit : null
+                            })
+                            .filter((h): h is HabitWithStreaks => h != null)
+
+                          return skipped.length === 0 ? (
+                            <p className="text-secondary text-bonsai-slate-600">
+                              No habits were marked as skipped yesterday.
+                            </p>
+                          ) : (
+                            <div className="space-y-1">
+                              <p className="text-secondary font-medium text-bonsai-slate-700">
+                                Habits you skipped yesterday:
+                              </p>
+                              <ul className="list-disc pl-5 text-body text-bonsai-slate-800">
+                                {skipped.map((habit) => (
+                                  <li key={habit.id}>{habit.name}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )
+                        })()}
                       </div>
                     )
               : undefined

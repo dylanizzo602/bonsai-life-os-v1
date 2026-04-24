@@ -32,6 +32,7 @@ function isDone(status: 'completed' | 'skipped' | 'minimum' | undefined): boolea
 }
 
 function toMap(entries: StreakEntry[]): Map<string, 'completed' | 'skipped' | 'minimum'> {
+  /* Indexing: convert sparse entry list into a date->status map for fast lookups. */
   const map = new Map<string, 'completed' | 'skipped' | 'minimum'>()
   for (const e of entries) map.set(e.date, e.status)
   return map
@@ -168,6 +169,7 @@ export function getCurrentStreakDatesWeekly(
   todayYMD: string,
   weekDayBitmask: number,
 ): string[] {
+  /* Streak window: include selected weekdays within each fully-complete week of the current weekly streak. */
   const map = toMap(entries)
   let w = getWeekStart(todayYMD)
   if (!isWeekComplete(w, map, weekDayBitmask)) {
@@ -181,6 +183,36 @@ export function getCurrentStreakDatesWeekly(
     }
     w = addDays(w, -7)
   }
+  return dates.sort()
+}
+
+/**
+ * Weekly progress dates (for counts): selected weekdays in the current week up to today that are already logged
+ * as completed/minimum.
+ *
+ * This is intentionally separate from `getCurrentStreakDatesWeekly`, because weekly streak length is counted in
+ * fully-complete weeks, but users expect Target/Min counts to update immediately per action as the current week
+ * progresses.
+ */
+export function getCurrentWeekProgressDatesWeekly(
+  entries: StreakEntry[],
+  todayYMD: string,
+  weekDayBitmask: number,
+): string[] {
+  /* Progress window: only include scheduled days in the current week that are <= today and done. */
+  const map = toMap(entries)
+  const weekStart = getWeekStart(todayYMD)
+  const today = new Date(todayYMD + 'T12:00:00')
+  const dates: string[] = []
+
+  for (let i = 0; i < 7; i++) {
+    if ((weekDayBitmask & (1 << i)) === 0) continue
+    const date = addDays(weekStart, i)
+    const d = new Date(date + 'T12:00:00')
+    if (d.getTime() > today.getTime()) continue
+    if (isDone(map.get(date))) dates.push(date)
+  }
+
   return dates.sort()
 }
 
@@ -205,6 +237,7 @@ export function getHabitCurrentStreakDates(
   frequency: string,
   frequencyTarget: number | null,
 ): string[] {
+  /* Calendar shading: weekly uses only fully-complete weeks; daily uses consecutive done days. */
   const weeklyMask = typeof frequencyTarget === 'number' ? frequencyTarget : 0
   const isWeekly = frequency === 'weekly' && weeklyMask >= 1 && weeklyMask <= 127
   if (isWeekly) {

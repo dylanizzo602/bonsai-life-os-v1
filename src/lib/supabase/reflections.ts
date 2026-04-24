@@ -452,20 +452,22 @@ export async function saveOrUpdateWeeklyBriefingEntryForThisWeek(
  * Looks in a window of 7 days around that date and returns the entry whose created_at is closest.
  */
 export async function getReflectionEntryOneYearAgo(): Promise<ReflectionEntry | null> {
-  const now = new Date()
-  const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate())
+  /* Inputs: interpret "today" in the user's time zone to avoid UTC rollover issues */
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+  /* Target day: one calendar year ago in the user's local time zone */
+  const targetDay = DateTime.now().setZone(timeZone).minus({ years: 1 }).startOf('day')
+
+  /* Window range: ±7 days around the target day, queried in UTC */
   const windowDays = 7
-  const from = new Date(oneYearAgo)
-  from.setDate(from.getDate() - windowDays)
-  const to = new Date(oneYearAgo)
-  to.setDate(to.getDate() + windowDays + 1)
-  const fromStr = from.toISOString()
-  const toStr = to.toISOString()
-  const targetMs = oneYearAgo.getTime()
+  const fromStr = targetDay.minus({ days: windowDays }).toUTC().toISO()!
+  const toStr = targetDay.plus({ days: windowDays + 1 }).toUTC().toISO()!
+  const targetMs = targetDay.toUTC().toMillis()
 
   const { data, error } = await supabase
     .from('reflection_entries')
     .select('*')
+    .eq('type', 'morning_briefing')
     .gte('created_at', fromStr)
     .lt('created_at', toStr)
     .order('created_at', { ascending: true })

@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "notes": "Mapping is optional. Use it when your JSON keys or CSV headers don't match Bonsai's templates.",
+  "json": {
+    "itemsPath": "tasks",
+    "fields": {
+      "external_id": "id",
+      "parent_external_id": "parentId",
+      "title": "name",
+      "description": "notes",
+      "start_date": "start",
+      "due_date": "due",
+      "priority": "priority",
+      "status": "status",
+      "category": "category",
+      "time_estimate": "estimateMinutes",
+      "recurrence_pattern": "recurrence",
+      "tags": "labels",
+      "attachments": "attachments",
+      "checklists": "checklists",
+      "dependencies": "dependencies",
+      "subtasks": "subtasks"
+    }
+  },
+  "csv": {
+    "headers": {
+      "external_id": "id",
+      "parent_external_id": "parentId",
+      "title": "name",
+      "description": "notes",
+      "start_date": "start",
+      "due_date": "due",
+      "priority": "priority",
+      "status": "status",
+      "category": "category",
+      "time_estimate": "estimateMinutes",
+      "recurrence_pattern": "recurrence",
+      "attachments_json": "attachments",
+      "tags_csv": "labels",
+      "checklists_json": "checklists",
+      "dependencies_json": "dependencies",
+      "extra_json": "extra"
+    }
+  }
+}
+

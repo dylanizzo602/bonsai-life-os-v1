@@ -30,7 +30,11 @@ export function useTasks(initialFilters?: TaskFilters) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [filters, setFilters] = useState<TaskFilters>(initialFilters ?? {})
+  /* Default filters: include subtasks so filtered views can surface them independently */
+  const [filters, setFilters] = useState<TaskFilters>({
+    includeAllTasks: true,
+    ...(initialFilters ?? {}),
+  })
 
   /* Fetch tasks with current filters */
   const fetchTasks = useCallback(async () => {
@@ -70,30 +74,17 @@ export function useTasks(initialFilters?: TaskFilters) {
     [],
   )
 
-  /* Update an existing task and keep top-level vs subtask visibility consistent in the main list */
+  /* Update an existing task and keep list state in sync (tasks includes subtasks by default). */
   const handleUpdateTask = useCallback(async (id: string, input: UpdateTaskInput) => {
     try {
       setError(null)
       const updatedTask = await updateTask(id, input)
-      /* Update task list:
-       * - When present, replace the task and, if it just became a subtask (parent_id set), remove it from the top-level list.
-       * - When a previously hidden task (e.g. subtask) becomes top-level (parent_id cleared), insert it into the main list. */
+      /* Update task list: replace when present; otherwise insert so UI stays current without a full refetch. */
       setTasks((prev) => {
-        const previousTask = prev.find((task) => task.id === id)
-        const exists = Boolean(previousTask)
-
-        if (exists) {
-          /* If a top-level task was just linked as a subtask, remove it from the main list so it only appears under its parent. */
-          if (previousTask?.parent_id === null && updatedTask.parent_id !== null) {
-            return prev.filter((task) => task.id !== id)
-          }
-          return prev.map((task) => (task.id === id ? updatedTask : task))
-        }
-
-        if (updatedTask.parent_id === null && updatedTask.status !== 'deleted') {
-          return [updatedTask, ...prev]
-        }
-        return prev
+        const exists = prev.some((task) => task.id === id)
+        if (exists) return prev.map((task) => (task.id === id ? updatedTask : task))
+        if (updatedTask.status === 'deleted') return prev
+        return [updatedTask, ...prev]
       })
       return updatedTask
     } catch (err) {
@@ -150,7 +141,10 @@ export function useTasks(initialFilters?: TaskFilters) {
     async (parentId: string, input: Omit<CreateTaskInput, 'parent_id'>) => {
       try {
         setError(null)
-        return await createSubtask(parentId, input)
+        /* Create: insert into local list so filtered views can surface it immediately when eligible. */
+        const created = await createSubtask(parentId, input)
+        setTasks((prev) => [created, ...prev])
+        return created
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : 'Failed to create subtask'

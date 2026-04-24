@@ -51,7 +51,7 @@ export function OverdueScreen({
             Way to go — you're all caught up.
           </p>
           <p className="text-secondary text-bonsai-slate-600 mb-6">
-            No overdue tasks or habit reminders from before today.
+            No overdue tasks or incomplete habit reminders due yesterday.
           </p>
         </>
       ) : (
@@ -60,7 +60,7 @@ export function OverdueScreen({
             What you were supposed to do yesterday (tasks and habits)
           </p>
           <p className="text-body font-medium text-bonsai-slate-700 mb-4">
-            Here are overdue items from before today. Clear or update them, then continue.
+            Here are overdue tasks from before today, plus incomplete habit reminders due yesterday. Clear or update them, then continue.
           </p>
           <div className="space-y-2 mb-4">
             {overdueTasks.map((task) => (

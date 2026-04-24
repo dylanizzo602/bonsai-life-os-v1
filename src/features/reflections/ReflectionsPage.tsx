@@ -1,6 +1,6 @@
 /* Reflections page: List reflection entries (e.g. morning briefings); open one to view overview and show right-click menu for delete */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Button } from '../../components/Button'
 import {
   getReflectionEntriesPage,
@@ -10,17 +10,10 @@ import {
   getHasCompletedWeeklyBriefingThisWeek,
   getMorningBriefingStreak,
   getWeeklyBriefingStreak,
-  getAllMorningBriefingEntries,
-  bulkInsertMorningBriefingEntries,
 } from '../../lib/supabase/reflections'
 import type { ReflectionEntry, MorningBriefingResponses } from './types'
 import { ReflectionEntryView } from './ReflectionEntryView'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
-import {
-  downloadCsv,
-  exportMorningBriefingEntriesToCsv,
-  parseMorningBriefingCsvFile,
-} from './utils/morningBriefingCsv'
 
 interface ReflectionsPageProps {
   /** Optional handler to open the morning briefing flow */
@@ -38,16 +31,6 @@ export function ReflectionsPage({ onOpenMorningBriefing, onOpenWeeklyBriefing }:
   const PAGE_SIZE = 25
   const [page, setPage] = useState(1)
   const [totalEntries, setTotalEntries] = useState(0)
-
-  /* Import/export: file picker ref and UI state for parsing + insert progress */
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const [importLoading, setImportLoading] = useState(false)
-  const [importSummary, setImportSummary] = useState<{
-    totalRows: number
-    validRows: number
-    errorCount: number
-    firstErrors: string[]
-  } | null>(null)
 
   /* List of entries for the current page (newest first) */
   const [entries, setEntries] = useState<ReflectionEntry[]>([])
@@ -108,60 +91,6 @@ export function ReflectionsPage({ onOpenMorningBriefing, onOpenWeeklyBriefing }:
       setLoading(false)
     }
   }, [])
-
-  /* Export handler: download all morning briefings as CSV */
-  const handleExportCsv = useCallback(async () => {
-    try {
-      setError(null)
-      const all = await getAllMorningBriefingEntries()
-      const csvText = exportMorningBriefingEntriesToCsv(all)
-      downloadCsv('reflections-morning-briefing-export.csv', csvText)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to export CSV')
-      console.error('Error exporting morning briefing CSV:', err)
-    }
-  }, [])
-
-  /* Import handler: parse CSV file, validate, insert, and refresh the list */
-  const handleImportFile = useCallback(
-    async (file: File) => {
-      try {
-        setImportLoading(true)
-        setError(null)
-        setImportSummary(null)
-
-        const { rows, errors, totalRows } = await parseMorningBriefingCsvFile(file)
-        const firstErrors = errors.slice(0, 5).map((e) => (e.rowNumber ? `Row ${e.rowNumber}: ${e.message}` : e.message))
-        setImportSummary({
-          totalRows,
-          validRows: rows.length,
-          errorCount: errors.length,
-          firstErrors,
-        })
-
-        if (errors.length > 0) return
-        if (rows.length === 0) return
-
-        await bulkInsertMorningBriefingEntries(
-          rows.map((r) => ({
-            title: r.title,
-            responses: r.responses as Record<string, unknown>,
-            created_at: r.created_at,
-          })),
-        )
-
-        /* Refresh: show newest items (page 1) after import */
-        setPage(1)
-        await fetchEntries(1)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to import CSV')
-        console.error('Error importing morning briefing CSV:', err)
-      } finally {
-        setImportLoading(false)
-      }
-    },
-    [fetchEntries],
-  )
 
   useEffect(() => {
     fetchEntries(page)
@@ -300,61 +229,6 @@ export function ReflectionsPage({ onOpenMorningBriefing, onOpenWeeklyBriefing }:
             Open weekly briefing
           </Button>
         </div>
-      </div>
-
-      {/* Import / Export: download template, export all, and import CSV */}
-      <div className="mb-6 rounded-lg border border-bonsai-slate-200 bg-white px-4 py-3">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-body font-medium text-bonsai-brown-700">Import / Export</p>
-          <a
-            className="text-secondary text-bonsai-sage-700 hover:underline"
-            href="/templates/reflections-morning-briefing-template.csv"
-            download
-          >
-            Download template
-          </a>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="secondary" size="sm" onClick={handleExportCsv}>
-            Export CSV
-          </Button>
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importLoading}
-          >
-            {importLoading ? 'Importing…' : 'Import CSV'}
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0] ?? null
-              e.target.value = ''
-              if (f) void handleImportFile(f)
-            }}
-          />
-        </div>
-
-        {importSummary && (
-          <div className="mt-3 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-3 py-2">
-            <p className="text-secondary text-bonsai-slate-700">
-              Rows: {importSummary.totalRows} • Valid: {importSummary.validRows}
-              {importSummary.errorCount > 0 ? ` • Errors: ${importSummary.errorCount}` : ''}
-            </p>
-            {importSummary.firstErrors.length > 0 && (
-              <ul className="mt-1 list-disc pl-5 text-secondary text-red-700">
-                {importSummary.firstErrors.map((msg) => (
-                  <li key={msg}>{msg}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
       </div>
 
       {error && (

@@ -48,6 +48,7 @@ export function HabitReminderItem({
   reminderTime,
   onTargetComplete,
   onMinimum,
+  onSkip,
   actionsDisabled = false,
   density = 'default',
   showStreakBreakdown = true,
@@ -117,6 +118,7 @@ export function HabitReminderItem({
 
       {/* Row 3 (mobile): action buttons */}
       <div className="flex flex-wrap items-center gap-2 w-full justify-start sm:col-span-2 sm:justify-end">
+        {/* Target: mark the habit as completed for this occurrence */}
         <Button
           type="button"
           variant="secondary"
@@ -146,6 +148,20 @@ export function HabitReminderItem({
             Minimum
           </Button>
         )}
+        {/* Skip: mark the habit as skipped for this occurrence (always available so reminders can be dismissed intentionally). */}
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={actionsDisabled}
+          onClick={(e) => {
+            e.stopPropagation()
+            onSkip()
+          }}
+          className="border-2 border-red-500 text-red-700 bg-white hover:bg-red-50 focus:ring-red-500"
+        >
+          Skip
+        </Button>
       </div>
     </div>
   )

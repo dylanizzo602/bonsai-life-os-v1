@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "exported_at": "2026-04-24T00:00:00.000Z",
+  "tasks": [
+    {
+      "external_id": "task_parent_1",
+      "title": "Plan weekend project",
+      "description": "Example parent task showing subtasks, tags, checklists, dependencies, and attachments.",
+      "start_date": "2026-04-25",
+      "due_date": "2026-04-27",
+      "priority": "medium",
+      "status": "active",
+      "category": "Personal",
+      "time_estimate": 90,
+      "recurrence_pattern": null,
+      "attachments": [
+        {
+          "url": "https://example.com/spec.pdf",
+          "name": "spec.pdf",
+          "type": "application/pdf"
+        }
+      ],
+      "tags": [
+        { "name": "Weekend", "color": "mint" },
+        { "name": "Planning", "color": "blue" }
+      ],
+      "checklists": [
+        {
+          "title": "Prep",
+          "items": [
+            { "title": "Outline steps", "completed": false, "sort_order": 1 }
+          ]
+        }
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocking": [{ "blocked_external_id": "task_sub_2" }]
+      },
+      "subtasks": [
+        {
+          "external_id": "task_sub_1",
+          "title": "Gather materials",
+          "description": null,
+          "start_date": null,
+          "due_date": null,
+          "priority": "low",
+          "status": "active",
+          "category": null,
+          "time_estimate": 30,
+          "recurrence_pattern": null,
+          "attachments": [],
+          "tags": [{ "name": "Planning", "color": "blue" }],
+          "checklists": [],
+          "dependencies": { "blocked_by": [], "blocking": [] },
+          "subtasks": []
+        },
+        {
+          "external_id": "task_sub_2",
+          "title": "Write first draft",
+          "description": null,
+          "start_date": null,
+          "due_date": null,
+          "priority": "high",
+          "status": "active",
+          "category": null,
+          "time_estimate": 60,
+          "recurrence_pattern": null,
+          "attachments": [],
+          "tags": [],
+          "checklists": [
+            {
+              "title": "Draft checklist",
+              "items": [
+                { "title": "Write intro", "completed": false, "sort_order": 1 },
+                { "title": "Write conclusion", "completed": false, "sort_order": 2 }
+              ]
+            }
+          ],
+          "dependencies": { "blocked_by": [{ "blocker_external_id": "task_parent_1" }], "blocking": [] },
+          "subtasks": []
+        }
+      ]
+    }
+  ]
+}
+

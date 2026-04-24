@@ -349,6 +349,18 @@ export function TaskList({
     return items
   }, [tasks, habitReminders, viewMode, effectiveSortBy])
 
+  /* Subtask rendering mode: in filtered views, subtasks appear as their own rows in the main list. */
+  const showInlineSubtaskLists = viewMode === 'lineup'
+
+  /* Parent title lookup: used to label subtasks when they appear as independent rows. */
+  const taskTitleById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const t of tasks) {
+      map.set(t.id, t.title ?? '')
+    }
+    return map
+  }, [tasks])
+
   return (
     <div className="space-y-6">
       {/* Error messages */}
@@ -421,6 +433,9 @@ export function TaskList({
                   <TaskListItem
                     layout="responsive"
                     task={task}
+                    parentTaskTitle={
+                      task.parent_id ? taskTitleById.get(task.parent_id) ?? 'Parent task' : null
+                    }
                     onClick={() => editingNameTaskId !== task.id && onOpenEditModal?.(task)}
                     onContextMenu={(e) => {
                       e.preventDefault()
@@ -499,7 +514,13 @@ export function TaskList({
                     onRemoveDependency={onRemoveDependency}
                     onDependenciesChanged={loadEnrichment}
                   />
-                  {isExpanded && fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete && (
+                  {showInlineSubtaskLists &&
+                    isExpanded &&
+                    fetchSubtasks &&
+                    createSubtask &&
+                    updateTask &&
+                    deleteTask &&
+                    toggleComplete && (
                     <div className="ml-4 pl-3 border-l-2 border-bonsai-slate-200 lg:ml-8 lg:pl-4">
                       <SubtaskList
                         taskId={task.id}

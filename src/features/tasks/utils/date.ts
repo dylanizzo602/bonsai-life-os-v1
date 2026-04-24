@@ -265,13 +265,23 @@ function formatDateWithOptionalTime(
   isoString: string | null | undefined,
   timeZone: string,
 ): string | null {
+  /* Date parse: normalize the ISO string into a user's zoned DateTime */
   const d = toZonedDateTime(isoString, timeZone)
   if (!d) return null
+
+  /* Relative-weekday display: for upcoming dates in the next 7 days, show "Mon/Tue/..." instead of "Jan 22" */
+  const nowDay = DateTime.now().setZone(timeZone).startOf('day')
+  const targetDay = d.startOf('day')
+  const daysAhead = Math.round(targetDay.diff(nowDay, 'days').days)
+  const isWithinNextWeek = daysAhead >= 0 && daysAhead <= 7
+
   const hasT = isoString?.includes('T')
   const explicit = hasT && hasExplicitTimeInString(isoString ?? '')
   const isDateOnly = !hasT || !explicit
 
-  const dateStr = d.toLocaleString({ month: 'short', day: 'numeric' })
+  const dateStr = isWithinNextWeek
+    ? d.toLocaleString({ weekday: 'short' })
+    : d.toLocaleString({ month: 'short', day: 'numeric' })
   if (isDateOnly) return dateStr
 
   const timeStr = formatWallTimeInZone(isoString, timeZone)

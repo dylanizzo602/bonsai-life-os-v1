@@ -8,6 +8,8 @@ export type TaskListItemLayoutMode = 'responsive' | 'compact' | 'tablet' | 'full
 export interface TaskListItemProps {
   /** Task data to display */
   task: Task
+  /** When this task is a subtask, the parent task title for display (e.g. "Subtask of Project X") */
+  parentTaskTitle?: string | null
   /**
    * Layout strategy: `responsive` follows viewport (mobile=compact, tablet=stacked, desktop=full row).
    * Use `compact` in sidebars/widgets; `tablet` for subtask rows; `full` to always use the wide desktop row.

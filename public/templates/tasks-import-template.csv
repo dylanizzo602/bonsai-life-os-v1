@@ -1,0 +1,5 @@
+external_id,parent_external_id,title,description,start_date,due_date,priority,status,category,time_estimate,recurrence_pattern,attachments_json,tags_csv,checklists_json,dependencies_json,extra_json
+task_parent_1,,Plan weekend project,"Example parent task showing subtasks, tags, checklists, dependencies, and attachments.",2026-04-25,2026-04-27,medium,active,Personal,90,,"[{""url"":""https://example.com/spec.pdf"",""name"":""spec.pdf"",""type"":""application/pdf""}]","Weekend,Planning","[{""title"":""Prep"",""items"":[{""title"":""Outline steps"",""completed"":false,""sort_order"":1}]}]","{""blocked_by"":[],""blocking"":[{""blocked_external_id"":""task_sub_2""}]}","{}"
+task_sub_1,task_parent_1,Gather materials,,,,low,active,,30,,[],"Planning",[],"{""blocked_by"":[],""blocking"":[]}","{}"
+task_sub_2,task_parent_1,Write first draft,,,,high,active,,60,,[],,"[{""title"":""Draft checklist"",""items"":[{""title"":""Write intro"",""completed"":false,""sort_order"":1},{""title"":""Write conclusion"",""completed"":false,""sort_order"":2}]}]","{""blocked_by"":[{""blocker_external_id"":""task_parent_1""}],""blocking"":[]}","{}"
+
