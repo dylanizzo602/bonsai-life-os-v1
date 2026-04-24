@@ -434,7 +434,8 @@ export function SettingsPage() {
             {tasksMappingError && (
               <p className="text-secondary text-red-600 mt-3">{tasksMappingError}</p>
             )}
-            {tasksMapping && !tasksMappingError && (
+            {/* Mapping status: show success text when a mapping object is loaded */}
+            {Boolean(tasksMapping) && !tasksMappingError && (
               <p className="text-secondary text-bonsai-slate-600 mt-3">
                 Mapping loaded. Imports will apply your field/header mapping.
               </p>
