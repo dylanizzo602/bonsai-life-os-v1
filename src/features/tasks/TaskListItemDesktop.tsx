@@ -155,6 +155,7 @@ export function TaskListItemDesktopLayout({
   task,
   parentTaskTitle = null,
   hasSubtasks = false,
+  subtaskCount,
   incompleteSubtaskCount = 0,
   checklistSummary,
   totalTimeWithSubtasks,
@@ -182,6 +183,11 @@ export function TaskListItemDesktopLayout({
   /* Settings / device time zone for due labels and tooltips */
   const timeZone = useUserTimeZone()
   const displayStatus = getDisplayStatus(task.status)
+  /* Subtask display: show completed/total when total is available (matches checklist "x/y") */
+  const subtaskSummary =
+    hasSubtasks && (subtaskCount ?? 0) > 0
+      ? `${Math.max(0, (subtaskCount ?? 0) - incompleteSubtaskCount)}/${subtaskCount}`
+      : null
   /* Modal state: Track whether status picker modal is open */
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
   /* Modal state: Track whether unresolved-items confirm modal is open (when completing with open subtasks/checklist) */
@@ -449,11 +455,11 @@ export function TaskListItemDesktopLayout({
         
         {/* Left icons after task name: Subtask count, description, checklist, tag, shared */}
         <div ref={leftIconsAfterRef} className="flex shrink-0 items-center gap-2">
-          {/* Subtask count: Badge shows only incomplete subtasks (completed ones are excluded) */}
-          {hasSubtasks && incompleteSubtaskCount > 0 && (
+          {/* Subtasks: completed/total when available, otherwise falls back to incomplete count */}
+          {hasSubtasks && (
             <span className="flex shrink-0 items-center gap-0.5 text-secondary text-bonsai-slate-600">
               <TasksIcon className="w-4 h-4 md:w-5 md:h-5" />
-              <span className="text-xs md:text-sm">{incompleteSubtaskCount}</span>
+              <span className="text-xs md:text-sm">{subtaskSummary ?? incompleteSubtaskCount}</span>
             </span>
           )}
           {/* Description icon: Shows tooltip with description on hover when there is visible text */}

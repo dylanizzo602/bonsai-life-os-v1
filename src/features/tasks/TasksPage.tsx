@@ -30,7 +30,7 @@ import {
   saveTodaysLineupTaskIds,
 } from '../../lib/todaysLineup'
 import type { HabitWithStreaks } from '../habits/types'
-import { habitReminderEffectiveInstant } from './utils/date'
+import { habitReminderEffectiveInstant, taskDateToComparableMs } from './utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
 import { isoInstantToLocalCalendarYMD } from '../../lib/localCalendarDate'
 
@@ -223,6 +223,7 @@ function evaluateFilterCondition(
   t: Task,
   blockedIds: Set<string>,
   blockingIds: Set<string>,
+  timeZone: string,
 ): boolean {
   const val = (c.value ?? '').trim()
   const valLower = val.toLowerCase()
@@ -275,7 +276,8 @@ function evaluateFilterCondition(
   }
 
   if (c.field === 'start_date') {
-    const iso = t.start_date ? new Date(t.start_date).getTime() : null
+    /* Date compare: avoid UTC parsing for YYYY-MM-DD (prevents 8pm "tomorrow" availability). */
+    const iso = taskDateToComparableMs(t.start_date, timeZone)
     if (c.operator === 'is_set') return iso != null
     if (c.operator === 'is_not_set') return iso == null
     if (valLower === 'no date' && (c.operator === 'is' || c.operator === 'is_not')) {
@@ -305,7 +307,8 @@ function evaluateFilterCondition(
   }
 
   if (c.field === 'due_date') {
-    const iso = t.due_date ? new Date(t.due_date).getTime() : null
+    /* Date compare: avoid UTC parsing for YYYY-MM-DD (keeps due day aligned to user zone). */
+    const iso = taskDateToComparableMs(t.due_date, timeZone)
     if (c.operator === 'is_set') return iso != null
     if (c.operator === 'is_not_set') return iso == null
     if (valLower === 'no date' && (c.operator === 'is' || c.operator === 'is_not')) {
@@ -453,18 +456,20 @@ function evaluateFilterConditionForReminder(c: FilterCondition, r: ScheduleLikeR
   return true
 }
 
-/* Shared helper: apply sortBy configuration to a task list (used by All and Custom views) */
-function sortTasksWithSortBy(tasks: Task[], sortBy: SortByEntry[]): Task[] {
+/* Shared helper: apply sortBy configuration to a task list (used by All and Custom views). */
+function sortTasksWithSortBy(tasks: Task[], sortBy: SortByEntry[], timeZone: string): Task[] {
   return [...tasks].sort((a, b) => {
     for (const { field, direction } of sortBy) {
       let cmp = 0
       if (field === 'due_date') {
-        const av = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER
-        const bv = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER
+        /* Due sort: treat date-only due as local-day boundary to avoid UTC day shifts. */
+        const av = taskDateToComparableMs(a.due_date, timeZone) ?? Number.MAX_SAFE_INTEGER
+        const bv = taskDateToComparableMs(b.due_date, timeZone) ?? Number.MAX_SAFE_INTEGER
         cmp = av - bv
       } else if (field === 'start_date') {
-        const av = a.start_date ? new Date(a.start_date).getTime() : Number.MAX_SAFE_INTEGER
-        const bv = b.start_date ? new Date(b.start_date).getTime() : Number.MAX_SAFE_INTEGER
+        /* Start sort: treat date-only starts as local-day boundary to avoid UTC day shifts. */
+        const av = taskDateToComparableMs(a.start_date, timeZone) ?? Number.MAX_SAFE_INTEGER
+        const bv = taskDateToComparableMs(b.start_date, timeZone) ?? Number.MAX_SAFE_INTEGER
         cmp = av - bv
       } else if (field === 'priority') {
         cmp = (PRIORITY_ORDER[a.priority] ?? 0) - (PRIORITY_ORDER[b.priority] ?? 0)
@@ -845,7 +850,7 @@ export function TasksPage() {
           let result = false
           for (let i = 0; i < conditions.length; i++) {
             const c = conditions[i]
-            const match = evaluateFilterCondition(c, t, blockedTaskIds, blockingTaskIds)
+            const match = evaluateFilterCondition(c, t, blockedTaskIds, blockingTaskIds, timeZone)
             const combine = i === 0 ? undefined : (c.combineWithPrevious ?? 'and')
             if (i === 0) result = match
             else result = combine === 'or' ? result || match : result && match
@@ -857,8 +862,9 @@ export function TasksPage() {
           const aUrgent = a.priority === 'urgent' ? 1 : 0
           const bUrgent = b.priority === 'urgent' ? 1 : 0
           if (bUrgent !== aUrgent) return bUrgent - aUrgent
-          const aDue = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER
-          const bDue = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER
+          /* Due sort: treat date-only due as local-day boundary to avoid 8pm "previous day" shifts. */
+          const aDue = taskDateToComparableMs(a.due_date, timeZone) ?? Number.MAX_SAFE_INTEGER
+          const bDue = taskDateToComparableMs(b.due_date, timeZone) ?? Number.MAX_SAFE_INTEGER
           if (aDue !== bDue) return aDue - bDue
           const aPri = PRIORITY_ORDER[a.priority] ?? 0
           const bPri = PRIORITY_ORDER[b.priority] ?? 0
@@ -888,7 +894,7 @@ export function TasksPage() {
           let result = false
           for (let i = 0; i < conditions.length; i++) {
             const c = conditions[i]
-            const match = evaluateFilterCondition(c, t, blockedTaskIds, blockingTaskIds)
+            const match = evaluateFilterCondition(c, t, blockedTaskIds, blockingTaskIds, timeZone)
             const combine = i === 0 ? undefined : (c.combineWithPrevious ?? 'and')
             if (i === 0) result = match
             else result = combine === 'or' ? result || match : result && match
@@ -899,7 +905,7 @@ export function TasksPage() {
         /* All Tasks view sort: use user-defined sort when present, otherwise fall back to All default sort (due date then start date) so behavior matches Sort modal semantics */
         {
           const effectiveSortBy = sortBy.length > 0 ? sortBy : ALL_DEFAULT_SORT
-          viewTasks = sortTasksWithSortBy(viewTasks, effectiveSortBy)
+          viewTasks = sortTasksWithSortBy(viewTasks, effectiveSortBy, timeZone)
           habitRemindersFiltered = sortHabitReminderItemsWithSortBy(
             habitRemindersFiltered,
             effectiveSortBy,
@@ -917,7 +923,7 @@ export function TasksPage() {
             let result = false
             for (let i = 0; i < filterConditions.length; i++) {
               const c = filterConditions[i]
-              const match = evaluateFilterCondition(c, t, blockedTaskIds, blockingTaskIds)
+              const match = evaluateFilterCondition(c, t, blockedTaskIds, blockingTaskIds, timeZone)
               const combine = i === 0 ? undefined : (c.combineWithPrevious ?? 'and')
               if (i === 0) result = match
               else result = combine === 'or' ? result || match : result && match
@@ -957,7 +963,7 @@ export function TasksPage() {
         }
         /* Apply user sort when in custom and sortBy has entries (shared helper for consistency with All view). */
         if (sortBy.length > 0) {
-          viewTasks = sortTasksWithSortBy(viewTasks, sortBy)
+          viewTasks = sortTasksWithSortBy(viewTasks, sortBy, timeZone)
           habitRemindersFiltered = sortHabitReminderItemsWithSortBy(habitRemindersFiltered, sortBy, timeZone)
         }
         break
@@ -968,7 +974,7 @@ export function TasksPage() {
       viewTasks.filter((t) => {
         if (t.status === 'archived' || t.status === 'deleted') return false
         for (const c of AVAILABLE_DEFAULT_FILTER_CONDITIONS) {
-          if (!evaluateFilterCondition(c, t, blockedTaskIds, blockingTaskIds)) return false
+          if (!evaluateFilterCondition(c, t, blockedTaskIds, blockingTaskIds, timeZone)) return false
         }
         return true
       }).map((t) => t.id),

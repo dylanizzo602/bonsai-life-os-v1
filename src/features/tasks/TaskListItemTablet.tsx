@@ -141,6 +141,7 @@ export function TaskListItemTabletLayout({
   blockedByCount: _blockedByCount = 0,
   isShared = false,
   hasSubtasks = false,
+  subtaskCount,
   incompleteSubtaskCount = 0,
   onClick,
   onContextMenu,
@@ -172,6 +173,12 @@ export function TaskListItemTabletLayout({
   const isDueSoon = dueStatus === 'dueSoon'
   const isRecurring = Boolean(task.recurrence_pattern)
   const priority: TaskPriority = task.priority ?? 'medium'
+
+  /* Subtask display: show completed/total when total is available (matches checklist "x/y") */
+  const subtaskSummary =
+    hasSubtasks && (subtaskCount ?? 0) > 0
+      ? `${Math.max(0, (subtaskCount ?? 0) - incompleteSubtaskCount)}/${subtaskCount}`
+      : null
 
   /* Modal state: Track whether status picker modal is open on tablet */
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
@@ -312,11 +319,11 @@ export function TaskListItemTabletLayout({
             )}
           </div>
         )}
-        {/* Subtask count indicator: incomplete subtasks only (completed not counted) */}
-        {hasSubtasks && incompleteSubtaskCount > 0 && (
+        {/* Subtasks indicator: completed/total when available, otherwise falls back to incomplete count */}
+        {hasSubtasks && (
           <span className="flex shrink-0 items-center gap-0.5 text-bonsai-slate-600">
             <TasksIcon className="w-3.5 h-3.5" />
-            <span>{incompleteSubtaskCount}</span>
+            <span>{subtaskSummary ?? incompleteSubtaskCount}</span>
           </span>
         )}
         {/* Description icon: No tooltip in tablet view */}

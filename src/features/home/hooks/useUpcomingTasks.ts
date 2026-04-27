@@ -5,6 +5,7 @@ import { useTasks } from '../../tasks/hooks/useTasks'
 import { getDependenciesForTaskIds } from '../../../lib/supabase/tasks'
 import type { Task } from '../../tasks/types'
 import { getAvailableTasksFromList } from '../../tasks/utils/available'
+import { useUserTimeZone } from '../../settings/useUserTimeZone'
 
 /**
  * Returns the first 5 available tasks (incomplete, not blocked, start <= now), sorted like Tasks page Available view.
@@ -12,6 +13,7 @@ import { getAvailableTasksFromList } from '../../tasks/utils/available'
  */
 export function useUpcomingTasks(): Task[] {
   const { tasks } = useTasks()
+  const timeZone = useUserTimeZone()
   const [blockedTaskIds, setBlockedTaskIds] = useState<Set<string>>(new Set())
 
   /* Parent status lookup: used to hide subtasks whose parent is in Archive/Trash (prevents leaking into widgets). */
@@ -48,10 +50,14 @@ export function useUpcomingTasks(): Task[] {
     })
 
     /* Availability + sort: reuse the same Available view logic from Tasks page */
-    const availableSorted = getAvailableTasksFromList(withoutArchivedOrDeletedParents, blockedTaskIds)
+    const availableSorted = getAvailableTasksFromList(
+      withoutArchivedOrDeletedParents,
+      blockedTaskIds,
+      timeZone,
+    )
     /* Home widget filter: hide habit reminders (habit-linked tasks) */
     const nonHabit = availableSorted.filter((t) => !t.habit_id)
     /* Truncate: keep widget compact */
     return nonHabit.slice(0, 5)
-  }, [tasks, taskById, blockedTaskIds])
+  }, [tasks, taskById, blockedTaskIds, timeZone])
 }

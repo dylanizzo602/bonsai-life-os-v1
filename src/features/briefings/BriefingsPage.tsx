@@ -374,8 +374,8 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
 
   /* Available tasks: use shared helper so semantics match Available view and Upcoming widgets */
   const availableTasks = useMemo(
-    () => getAvailableTasksFromList(tasks, blockedTaskIds),
-    [tasks, blockedTaskIds],
+    () => getAvailableTasksFromList(tasks, blockedTaskIds, timeZone),
+    [tasks, blockedTaskIds, timeZone],
   )
 
   /* Briefing-only filter: Today's Lineup picker should not include habit-linked reminder tasks */

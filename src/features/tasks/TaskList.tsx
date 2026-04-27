@@ -131,6 +131,12 @@ export function TaskList({
   viewMode,
   effectiveSortBy,
 }: TaskListProps) {
+  /* Main list tasks: hide subtasks when their parent is also visible (subtasks render under parent instead) */
+  const mainListTasks = useMemo(() => {
+    const visibleTaskIds = new Set(tasks.map((t) => t.id))
+    return tasks.filter((t) => !(t.parent_id && visibleTaskIds.has(t.parent_id)))
+  }, [tasks])
+
   /* Viewport bucket for habit row density (matches TaskListItem breakpoints) */
   const taskListViewport = useTaskListLayout()
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
@@ -164,7 +170,7 @@ export function TaskList({
     const enrichment: typeof taskEnrichment = {}
     try {
       await Promise.all(
-        tasks.map(async (task) => {
+        mainListTasks.map(async (task) => {
           try {
             const [checklists, subtasksResult, deps] = await Promise.all([
               getTaskChecklists(task.id).catch((err) => {
@@ -224,19 +230,19 @@ export function TaskList({
   }
 
   useEffect(() => {
-    if (tasks.length > 0) {
+    if (mainListTasks.length > 0) {
       loadEnrichment()
     } else {
       setTaskEnrichment({})
       setEnrichmentLoading(false)
     }
-  }, [tasks, fetchSubtasks])
+  }, [mainListTasks, fetchSubtasks])
 
   /* When enrichment first loads for current tasks: default-expand tasks that are available and have subtasks (so "all can be worked on" shows expanded). Only apply once per task set so user collapse is not overwritten. */
   const taskIdsRef = useRef<string>('')
   const appliedDefaultExpandRef = useRef(false)
   useEffect(() => {
-    const taskIds = tasks.map((t) => t.id).join(',')
+    const taskIds = mainListTasks.map((t) => t.id).join(',')
     if (taskIds !== taskIdsRef.current) {
       taskIdsRef.current = taskIds
       appliedDefaultExpandRef.current = false
@@ -245,13 +251,13 @@ export function TaskList({
     appliedDefaultExpandRef.current = true
     setExpandedTasks((prev) => {
       const next = new Set(prev)
-      for (const task of tasks) {
+      for (const task of mainListTasks) {
         const en = taskEnrichment[task.id]
         if (en?.hasSubtasks && availableTaskIds.has(task.id)) next.add(task.id)
       }
       return next
     })
-  }, [taskEnrichment, tasks, availableTaskIds])
+  }, [taskEnrichment, mainListTasks, availableTaskIds])
 
   const toggleExpand = (taskId: string) => {
     setExpandedTasks((prev) => {
@@ -280,7 +286,7 @@ export function TaskList({
     let sourceIndex = 0
 
     /* Add tasks in their current order (already sorted by TasksPage) */
-    tasks.forEach((task) => {
+    mainListTasks.forEach((task) => {
       items.push({
         type: 'task',
         id: task.id,
@@ -347,19 +353,19 @@ export function TaskList({
     }
 
     return items
-  }, [tasks, habitReminders, viewMode, effectiveSortBy])
+  }, [mainListTasks, habitReminders, viewMode, effectiveSortBy])
 
-  /* Subtask rendering mode: in filtered views, subtasks appear as their own rows in the main list. */
-  const showInlineSubtaskLists = viewMode === 'lineup'
+  /* Subtask rendering mode: show subtasks under their parent when the parent is visible. */
+  const showInlineSubtaskLists = true
 
   /* Parent title lookup: used to label subtasks when they appear as independent rows. */
   const taskTitleById = useMemo(() => {
     const map = new Map<string, string>()
-    for (const t of tasks) {
+    for (const t of mainListTasks) {
       map.set(t.id, t.title ?? '')
     }
     return map
-  }, [tasks])
+  }, [mainListTasks])
 
   return (
     <div className="space-y-6">
@@ -376,7 +382,7 @@ export function TaskList({
       )}
 
       {/* Empty state */}
-      {!loading && tasks.length === 0 && habitReminders.length === 0 && (
+      {!loading && mainListTasks.length === 0 && habitReminders.length === 0 && (
         <div className="text-center py-12">
           <p className="text-bonsai-slate-600 text-lg">No tasks found</p>
           <p className="text-bonsai-slate-500 text-sm mt-2">
@@ -456,6 +462,7 @@ export function TaskList({
                         : undefined
                     }
                     hasSubtasks={enrichment.hasSubtasks}
+                    subtaskCount={enrichment.subtaskCount}
                     incompleteSubtaskCount={enrichment.incompleteSubtaskCount}
                     checklistSummary={enrichment.checklistSummary}
                     totalTimeWithSubtasks={totalTimeWithSubtasks}

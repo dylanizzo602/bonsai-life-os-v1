@@ -109,6 +109,7 @@ export function TaskListItemCompactLayout({
   task,
   parentTaskTitle = null,
   hasSubtasks = false,
+  subtaskCount,
   incompleteSubtaskCount = 0,
   expanded = false,
   onToggleExpand,
@@ -150,6 +151,12 @@ export function TaskListItemCompactLayout({
               ? 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800'
               : 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-bonsai-slate-100 text-bonsai-slate-700'
     : ''
+
+  /* Subtask display: show completed/total when total is available (matches checklist "x/y") */
+  const subtaskSummary =
+    hasSubtasks && (subtaskCount ?? 0) > 0
+      ? `${Math.max(0, (subtaskCount ?? 0) - incompleteSubtaskCount)}/${subtaskCount}`
+      : null
 
   /* Priority flag: same interactive pattern as other TaskListItem layouts when onUpdateTask is set */
   const priorityControl = onUpdateTask ? (
@@ -275,11 +282,11 @@ export function TaskListItemCompactLayout({
       <div className="mt-2 flex min-w-0 flex-nowrap items-center gap-1 text-xs text-bonsai-slate-600 overflow-x-auto">
         {/* Tag: show first tag if available; shrink-0 so row stays single line */}
         {(tagDisplay != null ? <span className={tagPillClass}>{tagDisplay.name}</span> : null)}
-        {/* Subtask count indicator: incomplete subtasks only (completed not counted) */}
-        {hasSubtasks && incompleteSubtaskCount > 0 && (
+        {/* Subtasks indicator: completed/total when available, otherwise falls back to incomplete count */}
+        {hasSubtasks && (
           <span className="flex shrink-0 items-center gap-0.5 text-bonsai-slate-600">
             <TasksIcon className="w-3.5 h-3.5" aria-hidden />
-            <span>{incompleteSubtaskCount}</span>
+            <span>{subtaskSummary ?? incompleteSubtaskCount}</span>
           </span>
         )}
         {/* Description icon when task has description (consistent with main task list) */}

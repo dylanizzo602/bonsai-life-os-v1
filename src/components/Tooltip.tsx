@@ -244,7 +244,8 @@ export function Tooltip({
         ref={triggerRef}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        style={{ display: 'inline-block', width: '100%' }}
+        /* Trigger sizing: size to content by default so it doesn't steal space in flex rows */
+        style={{ display: 'inline-block' }}
       >
         {children}
       </span>

@@ -17,6 +17,8 @@ export interface TaskListItemProps {
   layout?: TaskListItemLayoutMode
   /** Whether this task has subtasks (shows chevron and allows expand) */
   hasSubtasks?: boolean
+  /** Total number of subtasks (used for completed/total display) */
+  subtaskCount?: number
   /** Number of subtasks not yet completed (icon badge + unresolved-items confirm modal) */
   incompleteSubtaskCount?: number
   /** Checklist completed/total when task has checklists */

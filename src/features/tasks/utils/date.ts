@@ -2,6 +2,51 @@
 import { DateTime } from 'luxon'
 
 /**
+ * Convert a task ISO date string into a comparable millisecond value in `timeZone`.
+ * This is used for filtering/sorting/availability where we must avoid JS `new Date('YYYY-MM-DD')`
+ * interpreting date-only strings as UTC midnight (which shifts to the previous local evening).
+ *
+ * Rules:
+ * - Plain `YYYY-MM-DD` is treated as that civil date in `timeZone` at local midnight.
+ * - ISO strings with a `T00:00` "midnight placeholder" (legacy) are treated as date-only too.
+ * - ISO strings with an explicit clock time compare as instants.
+ */
+export function taskDateToComparableMs(
+  isoString: string | null | undefined,
+  timeZone: string,
+): number | null {
+  if (isoString == null || isoString === '') return null
+
+  /* Date-only or legacy midnight: compare on the local calendar day boundary. */
+  const hasT = isoString.includes('T')
+  const explicit = hasT && hasExplicitTimeInString(isoString)
+  if (!hasT || !explicit) {
+    const d = toZonedDateTime(isoString, timeZone)
+    if (!d) return null
+    return d.startOf('day').toMillis()
+  }
+
+  /* Explicit time: compare as an instant, preserving the encoded offset/zone. */
+  const instant = DateTime.fromISO(isoString, { setZone: true })
+  if (!instant.isValid) return null
+  return instant.toMillis()
+}
+
+/**
+ * Availability: returns true when startDate is unset or start boundary has passed.
+ * Date-only start dates become available at the start of that civil day in `timeZone`.
+ */
+export function isStartAvailableNow(
+  startDate: string | null | undefined,
+  timeZone: string,
+): boolean {
+  if (startDate == null || startDate === '') return true
+  const startMs = taskDateToComparableMs(startDate, timeZone)
+  if (startMs == null) return true
+  return startMs <= Date.now()
+}
+
+/**
  * Map an ISO due/start string to a DateTime in the user's zone for calendar-day and display logic.
  * Plain YYYY-MM-DD is that civil date in `timeZone`.
  * UTC midnight (T00:00:00Z) with no real wall time is treated as the **date part only** (matches date picker),

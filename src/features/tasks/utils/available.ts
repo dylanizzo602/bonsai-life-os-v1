@@ -1,6 +1,7 @@
 /* Available tasks helpers: shared filter/sort for Available view and upcoming widgets */
 
 import type { Task } from '../types'
+import { isStartAvailableNow, taskDateToComparableMs } from './date'
 
 /** Priority order for sort: higher index = higher priority (urgent last so it sorts first when desc) */
 const PRIORITY_ORDER: Record<Task['priority'], number> = {
@@ -21,15 +22,16 @@ const PRIORITY_ORDER: Record<Task['priority'], number> = {
 export function getAvailableTasksFromList(
   tasks: Task[],
   blockedTaskIds: Set<string>,
+  timeZone: string,
 ): Task[] {
   /* Filter: only tasks that are incomplete, not blocked, and available to start now */
-  const nowMs = Date.now()
   const available = tasks.filter((t) => {
     if (t.status === 'archived' || t.status === 'deleted' || t.status === 'completed') {
       return false
     }
     if (blockedTaskIds.has(t.id)) return false
-    if (t.start_date != null && new Date(t.start_date).getTime() > nowMs) return false
+    /* Start date availability: date-only start dates become available at local midnight (not UTC). */
+    if (!isStartAvailableNow(t.start_date, timeZone)) return false
     return true
   })
 
@@ -39,8 +41,9 @@ export function getAvailableTasksFromList(
     const bUrgent = b.priority === 'urgent' ? 1 : 0
     if (bUrgent !== aUrgent) return bUrgent - aUrgent
 
-    const aDue = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER
-    const bDue = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER
+    /* Due sort: treat date-only due as local-day boundary to avoid 8pm "previous day" shifts. */
+    const aDue = taskDateToComparableMs(a.due_date, timeZone) ?? Number.MAX_SAFE_INTEGER
+    const bDue = taskDateToComparableMs(b.due_date, timeZone) ?? Number.MAX_SAFE_INTEGER
     if (aDue !== bDue) return aDue - bDue
 
     const aPri = PRIORITY_ORDER[a.priority] ?? 0
