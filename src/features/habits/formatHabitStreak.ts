@@ -13,6 +13,13 @@ export function isWeeklyStreakHabit(
   )
 }
 
+/** True when habit uses monthly streak math (scheduled day-of-month occurrences). */
+export function isMonthlyStreakHabit(
+  habit: Pick<Habit, 'frequency'>,
+): boolean {
+  return habit.frequency === 'monthly'
+}
+
 /** Pluralize a unit label (“1 day” vs “2 days”). */
 function pluralize(n: number, singular: string, plural: string): string {
   return `${n} ${n === 1 ? singular : plural}`
@@ -23,7 +30,9 @@ export function formatHabitStreakCount(
   habit: Pick<Habit, 'frequency' | 'frequency_target'>,
   count: number,
 ): string {
-  /* Unit choice: weekly-bitmask habits measure “complete weeks”, everything else uses calendar days. */
+  /* Unit choice: weekly-bitmask → weeks; monthly → months; otherwise days. */
   const isWeekly = isWeeklyStreakHabit(habit)
-  return isWeekly ? pluralize(count, 'week', 'weeks') : pluralize(count, 'day', 'days')
+  if (isWeekly) return pluralize(count, 'week', 'weeks')
+  if (habit.frequency === 'monthly') return pluralize(count, 'month', 'months')
+  return pluralize(count, 'day', 'days')
 }

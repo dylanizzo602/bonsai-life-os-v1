@@ -531,6 +531,7 @@ export function TaskList({
                     <div className="ml-4 pl-3 border-l-2 border-bonsai-slate-200 lg:ml-8 lg:pl-4">
                       <SubtaskList
                         taskId={task.id}
+                        parentTaskTitle={task.title}
                         fetchSubtasks={fetchSubtasks}
                         onCreateSubtask={(taskId, title) => createSubtask(taskId, { title })}
                         onUpdateTask={updateTask}

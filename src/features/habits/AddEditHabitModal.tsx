@@ -16,6 +16,7 @@ import type {
 const FREQUENCY_OPTIONS: { value: HabitFrequency; label: string }[] = [
   { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
 ]
 
 /** Day-of-week for weekly frequency: 0=Sun … 6=Sat; stored as bitmask in frequency_target (1<<d) */
@@ -27,6 +28,16 @@ const DAYS_OF_WEEK: { value: number; label: string }[] = [
   { value: 4, label: 'Thu' },
   { value: 5, label: 'Fri' },
   { value: 6, label: 'Sat' },
+]
+
+/** Day-of-month options for monthly frequency: 1..31 plus last (-1) */
+const DAYS_OF_MONTH: { value: number; label: string }[] = [
+  { value: -1, label: 'Last day' },
+  ...Array.from({ length: 31 }, (_, i) => {
+    const d = i + 1
+    const suffix = d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'
+    return { value: d, label: `${d}${suffix}` }
+  }),
 ]
 
 const COLOR_OPTIONS: HabitColorId[] = [
@@ -81,6 +92,9 @@ export function AddEditHabitModal({
   const [minimumAction, setMinimumAction] = useState('')
   const [frequency, setFrequency] = useState<HabitFrequency>('daily')
   const [frequencyTarget, setFrequencyTarget] = useState<number | ''>(1)
+  /* Form state: monthly schedule fields (interval + day-of-month) */
+  const [monthlyInterval, setMonthlyInterval] = useState(1)
+  const [monthlyDay, setMonthlyDay] = useState<number>(1)
   const [addToTodos, setAddToTodos] = useState(false)
   const [reminderTime, setReminderTime] = useState('09:00')
   /* Form state: additional reminder offsets relative to reminderTime */
@@ -98,8 +112,11 @@ export function AddEditHabitModal({
         setName(habit.name)
         setDesiredAction(habit.desired_action ?? '')
         setMinimumAction(habit.minimum_action ?? '')
-        /* Only daily and weekly are offered; map legacy frequencies to daily */
-        const freq = habit.frequency === 'weekly' ? 'weekly' : 'daily'
+        /* Frequency normalization: allow daily/weekly/monthly; map other legacy codes to daily */
+        const freq =
+          habit.frequency === 'weekly' || habit.frequency === 'monthly'
+            ? habit.frequency
+            : 'daily'
         setFrequency(freq)
         /* For weekly, frequency_target is a day-of-week bitmask; default to Monday (2) if null/invalid */
         if (freq === 'weekly') {
@@ -107,8 +124,24 @@ export function AddEditHabitModal({
           setFrequencyTarget(
             typeof v === 'number' && v >= 1 && v <= 127 ? v : 2
           )
+        } else if (freq === 'monthly') {
+          setFrequencyTarget('')
+          /* Monthly interval/day: keep safe defaults when missing/invalid */
+          const interval =
+            typeof habit.monthly_interval === 'number' && Number.isFinite(habit.monthly_interval)
+              ? Math.max(1, Math.trunc(habit.monthly_interval))
+              : 1
+          const dayRaw =
+            typeof habit.monthly_day === 'number' && Number.isFinite(habit.monthly_day)
+              ? Math.trunc(habit.monthly_day)
+              : 1
+          const day = dayRaw === -1 ? -1 : Math.max(1, Math.min(31, dayRaw))
+          setMonthlyInterval(interval)
+          setMonthlyDay(day)
         } else {
           setFrequencyTarget('')
+          setMonthlyInterval(1)
+          setMonthlyDay(1)
         }
         setAddToTodos(habit.add_to_todos)
         setReminderTime(habit.reminder_time ?? '09:00')
@@ -124,6 +157,8 @@ export function AddEditHabitModal({
         setMinimumAction('')
         setFrequency('daily')
         setFrequencyTarget(1)
+        setMonthlyInterval(1)
+        setMonthlyDay(1)
         setAddToTodos(true)
         setReminderTime('09:00')
         setAdditionalReminderOffsets([])
@@ -154,12 +189,18 @@ export function AddEditHabitModal({
             ? frequencyTarget
             : 2)
         : null
+    /* For monthly, clamp interval/day to safe ranges and store explicitly */
+    const monthlyIntervalSafe = Math.max(1, Math.min(12, Math.trunc(monthlyInterval || 1)))
+    const monthlyDaySafe =
+      monthlyDay === -1 ? -1 : Math.max(1, Math.min(31, Math.trunc(monthlyDay || 1)))
     const input: CreateHabitInput | UpdateHabitInput = {
       name: name.trim(),
       desired_action: desiredAction.trim() || null,
       minimum_action: minimumAction.trim() || null,
       frequency,
       frequency_target: numTarget,
+      monthly_interval: frequency === 'monthly' ? monthlyIntervalSafe : undefined,
+      monthly_day: frequency === 'monthly' ? monthlyDaySafe : undefined,
       add_to_todos: addToTodos,
       reminder_time: addToTodos ? reminderTime : null,
       additional_reminder_offsets_mins: addToTodos ? additionalReminderOffsets : [],
@@ -296,6 +337,12 @@ export function AddEditHabitModal({
                     const v = frequencyTarget
                     if (typeof v !== 'number' || v < 0 || v > 127) setFrequencyTarget(2)
                   }
+                  /* When switching to monthly, ensure safe defaults exist */
+                  if (opt.value === 'monthly') {
+                    setFrequencyTarget('')
+                    setMonthlyInterval((v) => Math.max(1, Math.trunc(v || 1)))
+                    setMonthlyDay((v) => (v === -1 ? -1 : Math.max(1, Math.min(31, Math.trunc(v || 1)))))
+                  }
                 }}
                 className={`py-2 px-3 rounded-lg border text-body font-medium transition-colors ${
                   frequency === opt.value
@@ -338,6 +385,57 @@ export function AddEditHabitModal({
                     </label>
                   )
                 })}
+              </div>
+            </div>
+          )}
+          {/* Monthly: interval + day-of-month (stored in monthly_interval/monthly_day) */}
+          {frequency === 'monthly' && (
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Monthly interval: every N months */}
+              <div>
+                <label className="block text-secondary font-medium text-bonsai-slate-700 mb-1">
+                  Every
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  step={1}
+                  value={monthlyInterval}
+                  onChange={(e) => {
+                    const next = Math.max(1, Math.min(12, Math.trunc(Number(e.target.value) || 1)))
+                    setMonthlyInterval(next)
+                  }}
+                  className="w-full px-3 py-2 md:px-4 md:py-2.5 border border-bonsai-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent text-body bg-white"
+                />
+                <p className="text-secondary text-bonsai-slate-500 mt-1">
+                  Month{monthlyInterval === 1 ? '' : 's'}
+                </p>
+              </div>
+
+              {/* Monthly day-of-month: 1st..last */}
+              <div>
+                <label className="block text-secondary font-medium text-bonsai-slate-700 mb-1">
+                  On
+                </label>
+                <select
+                  value={monthlyDay}
+                  onChange={(e) => {
+                    const raw = Math.trunc(Number(e.target.value))
+                    const next = raw === -1 ? -1 : Math.max(1, Math.min(31, raw))
+                    setMonthlyDay(next)
+                  }}
+                  className="w-full px-3 py-2 md:px-4 md:py-2.5 border border-bonsai-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent text-body bg-white"
+                >
+                  {DAYS_OF_MONTH.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-secondary text-bonsai-slate-500 mt-1">
+                  If the month is shorter, it will use the last day of that month.
+                </p>
               </div>
             </div>
           )}

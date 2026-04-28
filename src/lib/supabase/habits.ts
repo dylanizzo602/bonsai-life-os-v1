@@ -3,9 +3,8 @@ import { supabase } from './client'
 import { upsertLinkedTaskForHabit } from '../habitLinkedTask'
 import {
   advanceTodoRemindAtIfDueOn,
-  computeInitialTodoRemindAt,
+  computeInitialTodoRemindAtForHabit,
   shouldScheduleHabitTodo,
-  habitReminderInstantForLocalToday,
 } from '../habitTodoSchedule'
 import type {
   Habit,
@@ -73,17 +72,22 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
       minimum_action: input.minimum_action ?? null,
     })
   ) {
-    todoRemindAt =
-      computeInitialTodoRemindAt(
-        {
-          reminder_time: input.reminder_time ?? null,
-          desired_action: input.desired_action ?? null,
-          minimum_action: input.minimum_action ?? null,
-        },
-        todayLocalYMD(),
-      ) ?? habitReminderInstantForLocalToday(input.reminder_time ?? '09:00:00')
+    /* Initial schedule: set todo_remind_at to the next occurrence date (on/after today). */
+    todoRemindAt = computeInitialTodoRemindAtForHabit(
+      {
+        reminder_time: input.reminder_time ?? null,
+        desired_action: input.desired_action ?? null,
+        minimum_action: input.minimum_action ?? null,
+        frequency: input.frequency ?? 'daily',
+        frequency_target: input.frequency_target ?? null,
+        monthly_interval: input.monthly_interval ?? null,
+        monthly_day: input.monthly_day ?? null,
+      },
+      todayLocalYMD(),
+    )
   }
 
+  /* Insert payload: include monthly schedule fields when relevant */
   const insertData: Record<string, unknown> = {
     name: input.name,
     description: input.description ?? null,
@@ -92,6 +96,17 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
     sort_order: input.sort_order ?? 0,
     frequency: input.frequency ?? 'daily',
     frequency_target: input.frequency_target ?? null,
+    monthly_interval:
+      input.frequency === 'monthly'
+        ? Math.max(1, Math.trunc(input.monthly_interval ?? 1))
+        : undefined,
+    monthly_day:
+      input.frequency === 'monthly'
+        ? (() => {
+            const raw = Math.trunc(input.monthly_day ?? 1)
+            return raw === -1 ? -1 : Math.max(1, Math.min(31, raw))
+          })()
+        : undefined,
     add_to_todos: addToTodos,
     reminder_time: input.reminder_time ?? null,
     additional_reminder_offsets_mins: additionalOffsets,
@@ -169,6 +184,8 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
     input.reminder_time !== undefined ||
     input.frequency !== undefined ||
     input.frequency_target !== undefined ||
+    input.monthly_interval !== undefined ||
+    input.monthly_day !== undefined ||
     input.desired_action !== undefined ||
     input.minimum_action !== undefined
 
@@ -177,15 +194,19 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
   if (!addToTodos || !shouldScheduleHabitTodo(synthetic)) {
     todoRemindAt = null
   } else if (scheduleAffectingChanged || !todoRemindAt) {
-    const initial = computeInitialTodoRemindAt(
+    /* Recompute schedule: move todo_remind_at to the next occurrence date (on/after today). */
+    todoRemindAt = computeInitialTodoRemindAtForHabit(
       {
         reminder_time: reminderTime,
         desired_action: desiredAction,
         minimum_action: minimumAction,
+        frequency: input.frequency ?? habit.frequency,
+        frequency_target: input.frequency_target ?? habit.frequency_target,
+        monthly_interval: input.monthly_interval ?? habit.monthly_interval,
+        monthly_day: input.monthly_day ?? habit.monthly_day,
       },
       todayLocalYMD(),
     )
-    todoRemindAt = initial ?? habitReminderInstantForLocalToday(reminderTime ?? '09:00:00')
   }
 
   const updateData: Record<string, unknown> = {}
@@ -196,6 +217,14 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
   if (input.sort_order !== undefined) updateData.sort_order = input.sort_order
   if (input.frequency !== undefined) updateData.frequency = input.frequency
   if (input.frequency_target !== undefined) updateData.frequency_target = input.frequency_target
+  /* Monthly schedule: store only when explicitly provided (keeps existing values for non-monthly edits) */
+  if (input.monthly_interval !== undefined) {
+    updateData.monthly_interval = Math.max(1, Math.trunc(input.monthly_interval))
+  }
+  if (input.monthly_day !== undefined) {
+    const raw = Math.trunc(input.monthly_day)
+    updateData.monthly_day = raw === -1 ? -1 : Math.max(1, Math.min(31, raw))
+  }
   if (input.add_to_todos !== undefined) updateData.add_to_todos = input.add_to_todos
   if (input.reminder_time !== undefined) updateData.reminder_time = input.reminder_time
   /* Keep offsets in sync; also clear them when add_to_todos is turned off */

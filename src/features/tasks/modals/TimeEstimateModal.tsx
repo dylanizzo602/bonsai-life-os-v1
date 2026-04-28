@@ -33,8 +33,8 @@ function parseTimeInput(input: string): number | null {
   const trimmed = input.trim().toLowerCase()
   let totalMinutes = 0
 
-  /* Match hours: "1h", "1.5h", "2h", etc. */
-  const hourMatch = trimmed.match(/(\d+(?:\.\d+)?)\s*h(?:ours?)?/i)
+  /* Match hours: "1h", "1hr", "1.5h", "2 hours", etc. */
+  const hourMatch = trimmed.match(/(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\b/i)
   if (hourMatch) {
     const hours = parseFloat(hourMatch[1])
     if (!isNaN(hours)) {
@@ -42,8 +42,8 @@ function parseTimeInput(input: string): number | null {
     }
   }
 
-  /* Match minutes: "30m", "15m", etc. (but not if already matched as part of hours) */
-  const minuteMatch = trimmed.match(/(\d+)\s*m(?:in(?:utes?)?)?/i)
+  /* Match minutes: "30m", "15min", "15 minutes", etc. */
+  const minuteMatch = trimmed.match(/(\d+)\s*(?:m|min|mins|minute|minutes)\b/i)
   if (minuteMatch) {
     const minutes = parseInt(minuteMatch[1], 10)
     if (!isNaN(minutes)) {

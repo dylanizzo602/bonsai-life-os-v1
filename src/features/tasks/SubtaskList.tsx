@@ -13,6 +13,8 @@ import type { TaskOption } from '../../components/TaskSearchSelect'
 interface SubtaskListProps {
   /** Parent task ID */
   taskId: string
+  /** Parent task title (used for edit-subtask modal header context) */
+  parentTaskTitle?: string | null
   /** Fetch subtasks (tasks where parent_id = taskId) */
   fetchSubtasks: (taskId: string) => Promise<Task[]>
   /** Create subtask */
@@ -52,6 +54,7 @@ interface SubtaskListProps {
  */
 export function SubtaskList({
   taskId,
+  parentTaskTitle = null,
   fetchSubtasks,
   onCreateSubtask,
   onUpdateTask,
@@ -308,6 +311,7 @@ export function SubtaskList({
           isOpen={editModalOpen}
           onClose={closeEditModal}
           subtask={editingSubtask}
+          parentTaskTitle={parentTaskTitle}
           onUpdateTask={async (id, input) => {
             const updated = await onUpdateTask(id, input)
             await handleSubtaskUpdated()
