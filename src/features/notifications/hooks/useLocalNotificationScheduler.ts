@@ -38,6 +38,16 @@ function getDeviceTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone
 }
 
+/**
+ * Resolve the best timezone to use for time-of-day gates like "noon".
+ * Prefer the app's effective user timezone (used for "today" semantics across the app).
+ * Fall back to device timezone only when the app timezone is the non-IANA placeholder 'local'.
+ */
+function resolveNoonGateTimeZone(notificationTimeZone: string): string {
+  if (notificationTimeZone && notificationTimeZone !== 'local') return notificationTimeZone
+  return getDeviceTimeZone()
+}
+
 /** Race a promise against a timeout to avoid hanging tick loops */
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return await new Promise<T>((resolve, reject) => {
@@ -314,11 +324,11 @@ export function useLocalNotificationScheduler() {
       /* Rule: morning briefing incomplete by 12pm local time (once per day) */
       if (isEnabled('morning_briefing_incomplete_noon')) {
         if (!completedMorningBriefing) {
-          /* Noon gate: use device timezone so local-only notifications match the user's clock. */
-          const deviceTz = getDeviceTimeZone()
-          if (isWithinMorningBriefingNoonWindow(deviceTz)) {
-            const deviceDayKey = getDayKeyInTimeZone(deviceTz)
-            const dedupeKey = `morning_briefing_incomplete_noon:${deviceDayKey}`
+          /* Noon gate: use the app's effective timezone, falling back to device zone only when needed. */
+          const noonTz = resolveNoonGateTimeZone(notificationTimeZone)
+          if (isWithinMorningBriefingNoonWindow(noonTz)) {
+            const dayKey = getDayKeyInTimeZone(noonTz)
+            const dedupeKey = `morning_briefing_incomplete_noon:${dayKey}`
             if (!wasNotified(dedupeKey, sessionDedupe)) {
               markNotified(dedupeKey, sessionDedupe)
               await showLocalNotification({
