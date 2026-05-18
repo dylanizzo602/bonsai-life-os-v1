@@ -1,6 +1,7 @@
 /* habitStreaks: Integer habit streaks — completed and minimum both count as “done”.
  * Daily: consecutive calendar days (today open → streak can end at yesterday).
- * Weekly: consecutive complete weeks (every selected weekday has completed|minimum). */
+ * Weekly: consecutive complete weeks (every selected weekday has completed|minimum).
+ * Monthly (every_x_days ~28–31): consecutive calendar months with at least one done entry. */
 
 import type { StreakEntry } from './streaks'
 
@@ -29,6 +30,100 @@ function getWeekStart(ymd: string): string {
 /** Target or minimum counts toward streak; skipped or missing does not */
 function isDone(status: 'completed' | 'skipped' | 'minimum' | undefined): boolean {
   return status === 'completed' || status === 'minimum'
+}
+
+/** every_x_days with interval ~one month (e.g. 30-day “monthly” habits like Follow budget). */
+export function isMonthlyIntervalHabit(frequency: string, frequencyTarget: number | null): boolean {
+  return (
+    frequency === 'every_x_days' &&
+    typeof frequencyTarget === 'number' &&
+    frequencyTarget >= 28 &&
+    frequencyTarget <= 31
+  )
+}
+
+/** YYYY-MM from YYYY-MM-DD */
+function monthKey(ymd: string): string {
+  return ymd.slice(0, 7)
+}
+
+/** Previous calendar month as YYYY-MM */
+function prevMonthKey(ym: string): string {
+  const [y, m] = ym.split('-').map(Number)
+  if (m === 1) return `${(y ?? 0) - 1}-12`
+  return `${y}-${String((m ?? 1) - 1).padStart(2, '0')}`
+}
+
+/** Months (YYYY-MM) that have at least one completed or minimum entry */
+function monthsWithDone(entries: StreakEntry[]): Set<string> {
+  const months = new Set<string>()
+  for (const e of entries) {
+    if (isDone(e.status)) months.add(monthKey(e.date))
+  }
+  return months
+}
+
+/**
+ * Monthly streak: consecutive calendar months with ≥1 done entry, ending at current month
+ * or the prior month if the current month has no completion yet.
+ */
+export function getStreaksMonthly(entries: StreakEntry[], todayYMD: string): HabitStreakResult {
+  const doneMonths = monthsWithDone(entries)
+  if (doneMonths.size === 0) {
+    return { currentStreak: 0, longestStreak: 0 }
+  }
+
+  let anchorMonth = monthKey(todayYMD)
+  if (!doneMonths.has(anchorMonth)) {
+    anchorMonth = prevMonthKey(anchorMonth)
+  }
+
+  let current = 0
+  let ym = anchorMonth
+  while (doneMonths.has(ym)) {
+    current++
+    ym = prevMonthKey(ym)
+  }
+
+  /* Longest: scan all done months in order */
+  const sorted = [...doneMonths].sort()
+  let longest = 0
+  let run = 0
+  let prev: string | null = null
+  for (const ymKey of sorted) {
+    if (prev != null && prevMonthKey(ymKey) === prev) {
+      run++
+    } else {
+      run = 1
+    }
+    if (run > longest) longest = run
+    prev = ymKey
+  }
+
+  return { currentStreak: current, longestStreak: Math.max(longest, current) }
+}
+
+/** Dates in months that form the current monthly streak (for shading / counts) */
+export function getCurrentStreakDatesMonthly(entries: StreakEntry[], todayYMD: string): string[] {
+  const doneMonths = monthsWithDone(entries)
+  if (doneMonths.size === 0) return []
+
+  let anchorMonth = monthKey(todayYMD)
+  if (!doneMonths.has(anchorMonth)) {
+    anchorMonth = prevMonthKey(anchorMonth)
+  }
+
+  const streakMonths = new Set<string>()
+  let ym = anchorMonth
+  while (doneMonths.has(ym)) {
+    streakMonths.add(ym)
+    ym = prevMonthKey(ym)
+  }
+
+  return entries
+    .filter((e) => isDone(e.status) && streakMonths.has(monthKey(e.date)))
+    .map((e) => e.date)
+    .sort()
 }
 
 function toMap(entries: StreakEntry[]): Map<string, 'completed' | 'skipped' | 'minimum'> {
@@ -216,7 +311,7 @@ export function getCurrentWeekProgressDatesWeekly(
   return dates.sort()
 }
 
-/** Dispatch: weekly bitmask habits vs daily-style streak */
+/** Dispatch: weekly bitmask, monthly interval, or daily-style streak */
 export function getHabitStreaks(
   entries: StreakEntry[],
   todayYMD: string,
@@ -227,6 +322,9 @@ export function getHabitStreaks(
   const isWeekly = frequency === 'weekly' && weeklyMask >= 1 && weeklyMask <= 127
   if (isWeekly) {
     return getStreaksWeekly(entries, todayYMD, weeklyMask)
+  }
+  if (isMonthlyIntervalHabit(frequency, frequencyTarget)) {
+    return getStreaksMonthly(entries, todayYMD)
   }
   return getStreaksDaily(entries, todayYMD)
 }
@@ -242,6 +340,9 @@ export function getHabitCurrentStreakDates(
   const isWeekly = frequency === 'weekly' && weeklyMask >= 1 && weeklyMask <= 127
   if (isWeekly) {
     return getCurrentStreakDatesWeekly(entries, todayYMD, weeklyMask)
+  }
+  if (isMonthlyIntervalHabit(frequency, frequencyTarget)) {
+    return getCurrentStreakDatesMonthly(entries, todayYMD)
   }
   return getCurrentStreakDatesDaily(entries, todayYMD)
 }

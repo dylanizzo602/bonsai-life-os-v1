@@ -46,5 +46,17 @@ export function useMorningBriefingBanner() {
   }, [])
 
   const showBanner = completedToday === false && !dismissedToday
-  return { showBanner, dismiss }
+  const needsMorningBriefing = completedToday === false
+  const hasCompletedMorningBriefingToday = completedToday === true
+
+  return {
+    showBanner,
+    dismiss,
+    /** True when today's morning briefing is not finished yet */
+    needsMorningBriefing,
+    /** True when today's morning briefing is done */
+    hasCompletedMorningBriefingToday,
+    /** True while completion status is loading */
+    isLoading: completedToday === null,
+  }
 }

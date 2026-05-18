@@ -1,63 +1,82 @@
-/* GoalsWidget: 3 random goals with name and progress gauge */
+/* GoalsWidget: Active goals with progress bars on the dashboard */
 
 import { useMemo } from 'react'
-import { DashboardWidget } from './DashboardWidget'
+import { DashboardBentoCard } from './DashboardBentoCard'
 import { useGoals } from '../../goals/hooks/useGoals'
-import { GoalGauge } from '../../goals/GoalGauge'
-
-function shuffle<T>(arr: T[]): T[] {
-  const out = [...arr]
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[out[i], out[j]] = [out[j], out[i]]
-  }
-  return out
-}
+import { GoalsIcon, TrophyIcon } from '../../../components/icons'
 
 export interface GoalsWidgetProps {
   onViewAll: () => void
 }
 
 /**
- * Goals widget: 3 random active goals with gauge and name.
- * Inactive goals remain visible only in the main Goals section.
+ * Active goals bento widget: up to two goals with progress bars.
  */
 export function GoalsWidget({ onViewAll }: GoalsWidgetProps) {
   const { goals } = useGoals()
-  /* Pick up to three active goals (inactive goals are excluded from the widget) */
-  const three = useMemo(
-    () => shuffle(goals.filter((g) => g.is_active !== false)).slice(0, 3),
+
+  /* Active goals sorted by progress descending */
+  const two = useMemo(
+    () =>
+      [...goals]
+        .filter((g) => g.is_active !== false)
+        .sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0))
+        .slice(0, 2),
     [goals],
   )
 
   return (
-    <DashboardWidget
-      title="Goals"
+    <DashboardBentoCard
+      title="Active Goals"
+      titleIcon={<GoalsIcon className="h-6 w-6" />}
       actions={
         <button
           type="button"
           onClick={onViewAll}
-          className="text-secondary font-medium text-bonsai-sage-700 hover:underline"
+          className="text-secondary font-medium text-primary hover:underline"
         >
-          View All
+          View all
         </button>
       }
     >
-      {three.length === 0 ? (
-        <p className="text-secondary text-bonsai-slate-500">No goals yet.</p>
+      {two.length === 0 ? (
+        <p className="text-secondary text-on-surface-variant">No active goals yet.</p>
       ) : (
-        <div className="flex flex-wrap gap-4">
-          {three.map((goal) => (
-            <div
-              key={goal.id}
-              className="flex flex-col items-center rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50/50 p-4"
-            >
-              <GoalGauge progress={goal.progress ?? 0} size={80} className="mb-2" />
-              <p className="text-body font-medium text-bonsai-brown-700 text-center">{goal.name}</p>
-            </div>
-          ))}
+        <div className="flex flex-col gap-6">
+          {two.map((goal) => {
+            const pct = Math.round(Math.min(100, Math.max(0, goal.progress ?? 0)))
+            return (
+              <button
+                key={goal.id}
+                type="button"
+                onClick={onViewAll}
+                className="flex w-full items-center gap-6 rounded-xl p-4 text-left transition-colors hover:bg-surface-container-low"
+              >
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary-fixed/30 text-bonsai-sage-400">
+                  <TrophyIcon className="h-8 w-8" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-2 flex items-end justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="mb-0.5 block text-xs font-bold uppercase tracking-wider text-on-surface-variant/70">
+                        Goal
+                      </span>
+                      <h4 className="truncate font-medium text-on-surface">{goal.name}</h4>
+                    </div>
+                    <span className="shrink-0 text-body font-semibold text-bonsai-sage-400">{pct}%</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-container-high">
+                    <div
+                      className="h-full rounded-full bg-bonsai-sage-400 shadow-[0_0_8px_rgba(125,140,124,0.3)]"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              </button>
+            )
+          })}
         </div>
       )}
-    </DashboardWidget>
+    </DashboardBentoCard>
   )
 }

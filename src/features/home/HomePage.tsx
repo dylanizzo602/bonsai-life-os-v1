@@ -1,52 +1,30 @@
-/* Home page: Dashboard with widgets; greeting, morning briefing banner, lineup, inbox, upcoming tasks, habits, goals, reflections, misc */
+/* Home page: Dashboard bento layout with greeting, briefing card, and widgets */
 
 import { useState, useCallback } from 'react'
 import type { NavigationSection } from '../layout/hooks/useNavigation'
-import { useMorningBriefingBanner } from './hooks/useMorningBriefingBanner'
-import { useWeeklyBriefingBanner } from './hooks/useWeeklyBriefingBanner'
-import { useHomeWidgetConfig, type HomeWidgetId } from './hooks/useHomeWidgetConfig'
 import { useTasks } from '../tasks/hooks/useTasks'
 import { useInbox } from './hooks/useInbox'
-import { AddEditTaskModal } from '../tasks/AddEditTaskModal'
-import { LineUpWidget } from './components/LineUpWidget'
-import { InboxWidget } from './components/InboxWidget'
+import { HomeGreeting } from './components/HomeGreeting'
+import { MorningBriefingCard } from './components/MorningBriefingCard'
 import { UpcomingTasksWidget } from './components/UpcomingTasksWidget'
+import { InboxWidget } from './components/InboxWidget'
 import { HabitsWidget } from './components/HabitsWidget'
 import { GoalsWidget } from './components/GoalsWidget'
-import { ReflectionsWidget } from './components/ReflectionsWidget'
-import { MiscWidget } from './components/MiscWidget'
-import { Button } from '../../components/Button'
+import { InspirationWidget } from './components/InspirationWidget'
+import { AddEditTaskModal } from '../tasks/AddEditTaskModal'
 import type { Task } from '../tasks/types'
 import type { InboxItem } from './types'
 
-const WIDGET_LABELS: Record<HomeWidgetId, string> = {
-  lineup: 'Line Up',
-  inbox: 'Inbox',
-  habits: 'Habits',
-  reflections: 'Reflections',
-  upcoming: 'Upcoming Tasks',
-  goals: 'Goals',
-  misc: 'Misc',
-}
-
 export interface HomePageProps {
-  /** Navigate to another section (e.g. tasks, briefings, reflections) */
+  /** Navigate to another section (e.g. tasks, briefings) */
   onNavigate?: (section: NavigationSection) => void
 }
 
 /**
- * Home page component.
- * Dashboard with greeting, morning briefing banner, and widget grid (line up, inbox, upcoming tasks, habits, goals, reflections, misc).
+ * Home dashboard: greeting, morning briefing CTA, and fixed bento widget grid.
  */
 export function HomePage({ onNavigate }: HomePageProps) {
-  /* Briefing banners: show prompts when briefings are incomplete */
-  const { showBanner: showMorningBriefingBanner, dismiss: dismissMorningBriefingBanner } =
-    useMorningBriefingBanner()
-  const { showBanner: showWeeklyBriefingBanner, dismiss: dismissWeeklyBriefingBanner } =
-    useWeeklyBriefingBanner()
-  const { order, hidden, toggleHidden, moveUp, moveDown } = useHomeWidgetConfig()
   const {
-    tasks,
     createTask,
     updateTask,
     refetch: refetchTasks,
@@ -66,9 +44,6 @@ export function HomePage({ onNavigate }: HomePageProps) {
     addItem: addInboxItem,
     deleteItem: deleteInboxItem,
   } = useInbox()
-
-  /* Customize widgets: show move up/down and hide controls */
-  const [isCustomizing, setIsCustomizing] = useState(false)
 
   /* Task modal state: edit task, or add with optional initial title (from inbox) */
   const [editTask, setEditTask] = useState<Task | null>(null)
@@ -118,167 +93,52 @@ export function HomePage({ onNavigate }: HomePageProps) {
     [createTask, inboxItemToRemoveOnCreate, deleteInboxItem, refetchTasks, closeModal],
   )
 
+  const handleToggleComplete = useCallback(
+    (taskId: string) => {
+      void toggleComplete(taskId, true)
+    },
+    [toggleComplete],
+  )
+
   return (
-    <div className="min-h-full">
-      {/* Header: Greeting, optional morning briefing banner, and customize widgets */}
-      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <h1 className="text-page-title font-bold text-bonsai-brown-700">Welcome.</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant={isCustomizing ? 'primary' : 'ghost'}
-            size="sm"
-            onClick={() => setIsCustomizing((v) => !v)}
-          >
-            {isCustomizing ? 'Done' : 'Customize widgets'}
-          </Button>
-          {showMorningBriefingBanner && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-4 py-3 md:justify-end">
-            <p className="text-body text-bonsai-slate-700">
-              Looks like you didn&apos;t finish your morning briefing.
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="primary"
-                size="sm"
-                onClick={() => onNavigate?.('briefings')}
-              >
-                Review morning briefing &gt;
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={dismissMorningBriefingBanner}
-              >
-                Dismiss
-              </Button>
-            </div>
-          </div>
-          )}
-          {showWeeklyBriefingBanner && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-4 py-3 md:justify-end">
-              <p className="text-body text-bonsai-slate-700">
-                It&apos;s Sunday — time for your weekly briefing.
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  onClick={() => onNavigate?.('weekly-briefing')}
-                >
-                  Start weekly briefing &gt;
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={dismissWeeklyBriefingBanner}
-                >
-                  Dismiss
-                </Button>
-              </div>
-            </div>
-          )}
+    <div className="mx-auto min-h-full w-full max-w-[1200px] px-2 py-6 md:px-4 md:py-10">
+      <HomeGreeting />
+
+      <MorningBriefingCard
+        onStartMorningBriefing={() => onNavigate?.('briefings')}
+        onStartWeeklyBriefing={() => onNavigate?.('weekly-briefing')}
+      />
+
+      {/* Bento grid */}
+      <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
+        <div className="md:col-span-7">
+          <UpcomingTasksWidget
+            onAddTask={openAdd}
+            onOpenEditTask={openEdit}
+            onToggleComplete={handleToggleComplete}
+          />
+        </div>
+        <div className="md:col-span-5">
+          <InboxWidget
+            items={inboxItems}
+            loading={inboxLoading}
+            error={inboxError}
+            onAddItem={addInboxItem}
+            onDeleteItem={deleteInboxItem}
+            onConvertToTask={openConvertToTask}
+          />
+        </div>
+        <div className="md:col-span-6">
+          <HabitsWidget onViewAll={() => onNavigate?.('habits')} />
+        </div>
+        <div className="md:col-span-6">
+          <GoalsWidget onViewAll={() => onNavigate?.('goals')} />
+        </div>
+        <div className="md:col-span-12">
+          <InspirationWidget />
         </div>
       </div>
 
-      {/* Widget grid: order and visibility from useHomeWidgetConfig; rows stretch so widgets share height */}
-      <div className="grid auto-rows-fr grid-cols-1 gap-4 lg:grid-cols-2">
-        {order
-          .filter((id) => !hidden.has(id))
-          .map((id, index) => {
-            const isLineup = id === 'lineup'
-            const colSpan = isLineup ? 'lg:col-span-2' : ''
-            const visibleOrder = order.filter((i) => !hidden.has(i))
-            return (
-              <div key={id} className={`${colSpan} flex h-full flex-col gap-1`}>
-                {isCustomizing && (
-                  <div className="flex flex-wrap items-center gap-2 rounded border border-bonsai-slate-200 bg-bonsai-slate-50 px-2 py-1.5 text-secondary text-bonsai-slate-600">
-                    <span className="font-medium">{WIDGET_LABELS[id]}</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => moveUp(id)}
-                      disabled={index === 0}
-                      aria-label="Move up"
-                    >
-                      ↑
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => moveDown(id)}
-                      disabled={index === visibleOrder.length - 1}
-                      aria-label="Move down"
-                    >
-                      ↓
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => toggleHidden(id)}
-                      aria-label="Hide widget"
-                    >
-                      Hide
-                    </Button>
-                  </div>
-                )}
-                {id === 'lineup' && <LineUpWidget tasks={tasks} onOpenEditTask={openEdit} />}
-                {id === 'inbox' && (
-                  <InboxWidget
-                    items={inboxItems}
-                    loading={inboxLoading}
-                    error={inboxError}
-                    onAddItem={addInboxItem}
-                    onDeleteItem={deleteInboxItem}
-                    onConvertToTask={openConvertToTask}
-                  />
-                )}
-                {id === 'habits' && <HabitsWidget onViewAll={() => onNavigate?.('habits')} />}
-                {id === 'reflections' && (
-                  <ReflectionsWidget onReadEntry={() => onNavigate?.('reflections')} />
-                )}
-                {id === 'upcoming' && (
-                  <UpcomingTasksWidget
-                    onViewAll={() => onNavigate?.('tasks')}
-                    onAddTask={openAdd}
-                    onOpenEditTask={openEdit}
-                  />
-                )}
-                {id === 'goals' && <GoalsWidget onViewAll={() => onNavigate?.('goals')} />}
-                {id === 'misc' && <MiscWidget />}
-              </div>
-            )
-          })}
-      </div>
-
-      {/* Hidden widgets: show in customize mode so user can restore */}
-      {isCustomizing && [...hidden].length > 0 && (
-        <div className="mt-4 rounded-lg border border-dashed border-bonsai-slate-300 bg-bonsai-slate-50 p-3">
-          <p className="text-secondary font-medium text-bonsai-slate-600 mb-2">Hidden widgets</p>
-          <div className="flex flex-wrap gap-2">
-            {[...hidden].map((id) => (
-              <Button
-                key={id}
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => toggleHidden(id)}
-              >
-                Show {WIDGET_LABELS[id]}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Add/Edit task modal (shared by lineup, upcoming, inbox convert) */}
       <AddEditTaskModal
         isOpen={modalOpen}
         onClose={closeModal}

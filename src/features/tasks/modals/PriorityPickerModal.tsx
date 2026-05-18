@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { FlagIcon } from '../../../components/icons'
 import type { TaskPriority } from '../types'
+import { getPriorityFlagClasses } from '../utils/priority'
 
 export interface PriorityPickerModalProps {
   /** Whether the popover is open */
@@ -30,20 +31,9 @@ const OPTIONS: { value: TaskPriority; label: string }[] = [
  * none = black stroke/white fill, low = grey, medium = blue, high = yellow, urgent = red
  */
 function PriorityFlag({ priority, size = 16 }: { priority: TaskPriority; size?: number }) {
-  const getFlagClasses = (p: TaskPriority): string => {
-    const map: Record<TaskPriority, string> = {
-      none: 'stroke-bonsai-slate-800 fill-white',
-      low: 'stroke-bonsai-slate-400 fill-bonsai-slate-100 text-bonsai-slate-500',
-      medium: 'stroke-blue-500 fill-blue-50 text-blue-600',
-      high: 'stroke-yellow-500 fill-yellow-100 text-yellow-600',
-      urgent: 'stroke-red-500 fill-red-100 text-red-600',
-    }
-    return map[p] ?? map.none
-  }
-
   const sizeClass = size === 16 ? 'w-4 h-4' : size === 20 ? 'w-5 h-5' : 'w-4 h-4'
   return (
-    <FlagIcon className={`${sizeClass} shrink-0 ${getFlagClasses(priority)}`} aria-hidden />
+    <FlagIcon className={`${sizeClass} shrink-0 ${getPriorityFlagClasses(priority)}`} aria-hidden />
   )
 }
 

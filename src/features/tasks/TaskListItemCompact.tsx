@@ -22,6 +22,7 @@ import { getDueStatus, formatStartDueDisplay } from './utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
 import type { TaskListItemProps } from './taskListItemTypes'
 import type { TaskPriority, TaskStatus } from './types'
+import { getPriorityFlagClasses } from './utils/priority'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
 type DisplayStatus = 'open' | 'in_progress' | 'complete'
@@ -88,18 +89,6 @@ function TaskStatusIndicator({ status }: { status: DisplayStatus }) {
       />
     </svg>
   )
-}
-
-/** Priority flag color classes: none, low, normal (medium), high, urgent */
-function getPriorityFlagClasses(priority: TaskPriority): string {
-  const map: Record<TaskPriority, string> = {
-    none: 'stroke-bonsai-slate-800 fill-white',
-    low: 'stroke-bonsai-slate-400 fill-bonsai-slate-100 text-bonsai-slate-500',
-    medium: 'stroke-blue-500 fill-blue-50 text-blue-600',
-    high: 'stroke-yellow-500 fill-yellow-100 text-yellow-600',
-    urgent: 'stroke-red-500 fill-red-100 text-red-600',
-  }
-  return map[priority] ?? map.none
 }
 
 /**

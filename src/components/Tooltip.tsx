@@ -14,8 +14,10 @@ interface TooltipProps {
   position?: 'top' | 'bottom' | 'left' | 'right'
   /** Optional fixed size; when omitted, tooltip uses responsive sizing */
   size?: 'sm' | 'md' | 'lg'
-  /** Additional CSS classes */
+  /** Additional CSS classes on the tooltip panel */
   className?: string
+  /** Optional classes on the hover trigger wrapper (use for flex truncation layouts) */
+  triggerClassName?: string
 }
 
 /**
@@ -30,6 +32,7 @@ export function Tooltip({
   position = 'bottom',
   size,
   className = '',
+  triggerClassName,
 }: TooltipProps) {
   /* State management: Track hover state, tooltip position, and arrow offset so arrow stays aligned with trigger after viewport clamp */
   const [isVisible, setIsVisible] = useState(false)
@@ -244,8 +247,9 @@ export function Tooltip({
         ref={triggerRef}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        /* Trigger sizing: size to content by default so it doesn't steal space in flex rows */
-        style={{ display: 'inline-block' }}
+        className={triggerClassName}
+        /* Default inline-block for icons; truncation layouts pass triggerClassName with block + min-w-0 */
+        style={triggerClassName ? undefined : { display: 'inline-block' }}
       >
         {children}
       </span>

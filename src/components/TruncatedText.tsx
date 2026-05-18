@@ -117,23 +117,20 @@ export function TruncatedText({
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
-    minWidth: 0, // Allow element to shrink in flex containers
-    flexShrink: 1, // Allow flex shrinking
-    flexGrow: 0, // Prevent flex growing beyond maxWidth
-    // Block display ensures maxWidth constraint is respected in flex containers
-    display: style?.maxWidth ? 'block' : 'inline-block',
+    minWidth: 0,
+    display: 'block',
+    width: '100%',
+    maxWidth: style?.maxWidth ?? '100%',
   }
 
   return (
-    <Tooltip 
-      content={isTruncated ? tooltipContent : ''} 
+    <Tooltip
+      content={isTruncated ? tooltipContent : ''}
       position={tooltipPosition}
+      /* Block trigger fills flex row width so ellipsis can measure against available space */
+      triggerClassName="block min-w-0 w-full max-w-full overflow-hidden"
     >
-      <span 
-        ref={textRef} 
-        className={className} 
-        style={computedStyle}
-      >
+      <span ref={textRef} className={className} style={computedStyle}>
         {children}
       </span>
     </Tooltip>

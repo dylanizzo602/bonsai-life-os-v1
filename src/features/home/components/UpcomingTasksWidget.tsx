@@ -1,70 +1,70 @@
-/* UpcomingTasksWidget: First 5 available tasks in compact view; View All and Add task */
+/* UpcomingTasksWidget: First 5 available tasks in dashboard bento layout */
 
-import { useCallback } from 'react'
-import { CompactTaskItem } from '../../tasks/CompactTaskItem'
-import { DashboardWidget } from './DashboardWidget'
+import { useCallback, useMemo } from 'react'
+import { DashboardBentoCard } from './DashboardBentoCard'
+import { DashboardTaskRow } from './DashboardTaskRow'
 import { useUpcomingTasks } from '../hooks/useUpcomingTasks'
-import { formatStartDueDisplay } from '../../tasks/utils/date'
-import { useUserTimeZone } from '../../settings/useUserTimeZone'
+import { useDashboardTaskEnrichment } from '../hooks/useDashboardTaskEnrichment'
+import { useTasks } from '../../tasks/hooks/useTasks'
+import { PlusIcon, TasksIcon } from '../../../components/icons'
 import type { Task } from '../../tasks/types'
-import { Button } from '../../../components/Button'
 
 export interface UpcomingTasksWidgetProps {
-  onViewAll: () => void
   onAddTask: () => void
   onOpenEditTask?: (task: Task) => void
+  onToggleComplete?: (taskId: string) => void
 }
 
 /**
- * Upcoming tasks widget: 5 available tasks (compact), View All, Add task.
+ * Upcoming tasks bento widget: up to 5 available tasks with dashboard row styling.
  */
 export function UpcomingTasksWidget({
-  onViewAll,
   onAddTask,
   onOpenEditTask,
+  onToggleComplete,
 }: UpcomingTasksWidgetProps) {
-  const timeZone = useUserTimeZone()
-  /* Task source: first 5 available tasks (same logic as Tasks → Available view) */
   const upcomingTasks = useUpcomingTasks()
+  const { fetchSubtasks } = useTasks()
 
-  /* Due formatting: keep the same shared display as other task rows */
-  const formatDue = (iso: string | null | undefined) => formatStartDueDisplay(iso, null, timeZone)
+  const upcomingIds = useMemo(() => upcomingTasks.map((t) => t.id), [upcomingTasks])
+  const enrichment = useDashboardTaskEnrichment(upcomingIds, fetchSubtasks)
 
-  /* Task row click: open edit modal if provided */
   const handleTaskClick = useCallback((task: Task) => onOpenEditTask?.(task), [onOpenEditTask])
 
   return (
-    <DashboardWidget
+    <DashboardBentoCard
       title="Upcoming Tasks"
+      titleIcon={<TasksIcon className="h-6 w-6" />}
       actions={
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="ghost" size="sm" onClick={onViewAll}>
-            View All
-          </Button>
-          <Button type="button" variant="primary" size="sm" onClick={onAddTask}>
-            + Add task
-          </Button>
-        </div>
+        <button
+          type="button"
+          onClick={onAddTask}
+          className="rounded-full p-2 text-primary transition-colors hover:bg-surface-container"
+          aria-label="Add task"
+        >
+          <PlusIcon className="h-6 w-6" />
+        </button>
       }
     >
       {upcomingTasks.length === 0 ? (
-        <p className="text-secondary text-bonsai-slate-500">No upcoming tasks.</p>
+        <p className="text-secondary text-on-surface-variant">No upcoming tasks.</p>
       ) : (
-        <ul className="space-y-2">
+        <div className="flex flex-col gap-4">
           {upcomingTasks.map((task) => {
-            /* Render: compact task row (habit reminders are filtered out at the hook layer) */
+            const rowMeta = enrichment[task.id]
             return (
-              <li key={task.id}>
-                <CompactTaskItem
-                  task={task}
-                  formatDueDate={formatDue}
-                  onClick={() => handleTaskClick(task)}
-                />
-              </li>
+              <DashboardTaskRow
+                key={task.id}
+                task={task}
+                subtaskSummary={rowMeta?.subtaskSummary ?? null}
+                checklistSummary={rowMeta?.checklistSummary ?? null}
+                onClick={() => handleTaskClick(task)}
+                onToggleComplete={onToggleComplete}
+              />
             )
           })}
-        </ul>
+        </div>
       )}
-    </DashboardWidget>
+    </DashboardBentoCard>
   )
 }

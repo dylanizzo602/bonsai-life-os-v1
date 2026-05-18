@@ -55,6 +55,17 @@ export function useWeeklyBriefingBanner() {
   }, [])
 
   const showBanner = isSunday && completedThisWeek === false && !dismissedToday
-  return { showBanner, dismiss }
+  const needsWeeklyBriefing = isSunday && completedThisWeek === false
+  const hasCompletedWeeklyBriefingThisWeek = completedThisWeek === true
+
+  return {
+    showBanner,
+    dismiss,
+    isSunday,
+    /** True on Sunday when this week's weekly briefing is not finished */
+    needsWeeklyBriefing,
+    hasCompletedWeeklyBriefingThisWeek,
+    isLoading: isSunday && completedThisWeek === null,
+  }
 }
 

@@ -49,6 +49,9 @@
   --color-primary: #516051;
   --color-on-primary: #ffffff;
   --color-primary-container: #6a7869;
+  --color-primary-fixed: #d7e7d4;
+  --color-surface-variant: #e1e3e1;
+  --color-surface-container-high: #e7e8e6;
   --color-secondary: #4f5f7a;
   --color-error: #ba1a1a;
   --color-error-container: #ffdad6;
@@ -80,6 +83,9 @@ body {
   min-width: 300px;
   min-height: 100vh;
   height: 100%;
+  background-color: var(--color-surface);
+  color: var(--color-on-surface);
+  font-family: var(--font-body);
 }
 
 /* Root mount: fill viewport so layout flex children get correct height on mobile */
@@ -161,5 +167,9 @@ body {
   /* Auth reset modal: soft elevated card shadow */
   .ambient-shadow {
     box-shadow: 0 20px 40px -15px rgba(91, 107, 135, 0.12);
+  }
+  /* Dashboard bento cards: lighter ambient hover shadow */
+  .ambient-shadow-dashboard {
+    box-shadow: 0 12px 40px rgba(79, 95, 122, 0.08);
   }
 }
