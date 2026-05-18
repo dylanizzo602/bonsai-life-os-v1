@@ -12,6 +12,7 @@ import {
   getPushDiagnostics,
 } from '../../../lib/notifications/pushClient'
 import { supabase } from '../../../lib/supabase/client'
+import { registerServiceWorker, requestNotificationPermission } from '../../../lib/notifications/pushClient'
 
 /* Ordered list of notification types shown in the settings UI */
 const NOTIFICATION_TYPES: NotificationType[] = [
@@ -22,8 +23,8 @@ const NOTIFICATION_TYPES: NotificationType[] = [
   'reminder_due',
 ]
 
-/* Ordered list of channels shown in the settings UI: mobile PWA push only */
-const CHANNELS: NotificationChannel[] = ['push_mobile']
+/* Ordered list of channels shown in the settings UI (web, email, mobile) */
+const CHANNELS: NotificationChannel[] = ['push_web', 'email', 'push_mobile']
 
 interface UseNotificationSettingsState {
   /** Whether preferences are currently loading from Supabase */
@@ -107,6 +108,20 @@ export function useNotificationSettings(): UseNotificationSettingsState {
     try {
       const current = isEnabled(type, channel)
       const nextEnabled = !current
+      /* Web push: request browser permission when enabling */
+      if (channel === 'push_web' && nextEnabled) {
+        if (typeof window === 'undefined' || !('Notification' in window)) {
+          setError('Web notifications are not supported in this browser.')
+          return
+        }
+        await registerServiceWorker()
+        const permission = await requestNotificationPermission()
+        if (permission !== 'granted') {
+          setError('Web notifications were not granted. Check your browser settings.')
+          return
+        }
+      }
+
       /* Mobile PWA guard: only allow enabling mobile push from installed PWA context */
       if (channel === 'push_mobile' && nextEnabled) {
         const inStandaloneDisplay =

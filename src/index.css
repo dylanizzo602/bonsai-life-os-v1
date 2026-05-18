@@ -172,4 +172,25 @@ body {
   .ambient-shadow-dashboard {
     box-shadow: 0 12px 40px rgba(79, 95, 122, 0.08);
   }
+  /* Material Symbols (settings and zenith UI) */
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    user-select: none;
+  }
+  /* Settings section label: uppercase tracking */
+  .settings-section-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-outline);
+  }
+  /* Settings field label: uppercase micro label */
+  .settings-field-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-on-surface-variant);
+  }
 }
