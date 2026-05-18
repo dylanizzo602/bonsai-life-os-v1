@@ -2,6 +2,7 @@
 
 import type { NavigationSection } from '../hooks/useNavigation'
 import { BellIcon, BonsaiLogo, HamburgerIcon, SearchIcon, SettingsIcon } from '../../../components/icons'
+import { NotificationBellButton } from '../../notifications/components/NotificationBellButton'
 import { TOP_NAV_ITEMS } from './topNavConfig'
 
 interface TopNavProps {
@@ -16,13 +17,13 @@ interface TopNavProps {
  * Center links hidden below md; hamburger visible below md.
  */
 export function TopNav({ activeSection, onNavigate, onMenuToggle }: TopNavProps) {
-  /* Utility buttons: search and notifications are visual-only for now */
+  /* Utility buttons: search placeholder; notifications opens anchored popover */
   const utilityButtonClass =
     'rounded-full p-2 text-primary transition-colors hover:bg-surface-container-low active:scale-[0.98]'
 
   return (
     <header
-      className="fixed top-0 z-40 flex w-full items-center justify-between border-b border-outline-variant bg-surface px-4 py-4 md:px-6"
+      className="fixed top-0 z-40 flex w-full items-center justify-between border-b border-outline-variant/10 bg-surface-container-low px-4 py-4 md:px-6"
       aria-label="Site header"
     >
       {/* Brand: logo + wordmark navigates home */}
@@ -69,14 +70,9 @@ export function TopNav({ activeSection, onNavigate, onMenuToggle }: TopNavProps)
         <button type="button" className={utilityButtonClass} aria-label="Search" title="Coming soon">
           <SearchIcon className="h-6 w-6" />
         </button>
-        <button
-          type="button"
-          className={utilityButtonClass}
-          aria-label="Notifications"
-          title="Coming soon"
-        >
+        <NotificationBellButton className={utilityButtonClass}>
           <BellIcon className="h-6 w-6" />
-        </button>
+        </NotificationBellButton>
         <button
           type="button"
           className={utilityButtonClass}

@@ -351,11 +351,6 @@ export function SettingsPage() {
         </section>
       </div>
 
-      {/* Footer meta */}
-      <footer className="mt-24 pb-16 text-center">
-        <p className="mb-2 text-xs font-bold uppercase tracking-[0.05em] text-outline">Bonsai Life OS</p>
-        <p className="text-secondary text-on-surface-variant">Crafted with intentionality. Enjoy the stillness.</p>
-      </footer>
     </div>
   )
 }

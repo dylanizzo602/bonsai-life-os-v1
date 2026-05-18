@@ -8,8 +8,8 @@ import {
   SettingsUnderlineInput,
   SettingsUnderlineSelect,
 } from '../components'
+import { ResetPasswordModal } from '../../auth/ResetPasswordModal'
 import { PROFILE_TIME_ZONE_OPTIONS } from '../../../lib/timezone'
-import { sendPasswordResetEmail } from '../../../lib/supabase/auth'
 
 export interface ProfileSettingsSectionProps {
   firstName: string
@@ -41,7 +41,7 @@ export function ProfileSettingsSection({
   onSave,
   onAutofillLocation,
 }: ProfileSettingsSectionProps) {
-  const [passwordResetSending, setPasswordResetSending] = useState(false)
+  const [resetModalOpen, setResetModalOpen] = useState(false)
   const [passwordResetMessage, setPasswordResetMessage] = useState<string | null>(null)
 
   /* Avatar initials from profile name */
@@ -50,24 +50,6 @@ export function ProfileSettingsSection({
     const b = (lastName.trim()[0] ?? '').toUpperCase()
     return (a + b || '?').slice(0, 2)
   }, [firstName, lastName])
-
-  /* Password reset: email link via Supabase */
-  const handleResetPassword = async () => {
-    const trimmed = email.trim()
-    if (!trimmed) {
-      setPasswordResetMessage('Add an email address first.')
-      return
-    }
-    setPasswordResetSending(true)
-    setPasswordResetMessage(null)
-    const { error } = await sendPasswordResetEmail(trimmed)
-    setPasswordResetSending(false)
-    if (error) {
-      setPasswordResetMessage(error.message)
-      return
-    }
-    setPasswordResetMessage('Check your inbox for a password reset link.')
-  }
 
   return (
     <section>
@@ -154,27 +136,38 @@ export function ProfileSettingsSection({
           </div>
         </div>
 
-        {/* Password & security row */}
-        <div className="flex flex-col items-center justify-between gap-4 border-t border-outline-variant/20 pt-8 sm:flex-row">
-          <div>
+        {/* Password & security: centered on mobile, row layout on sm+ */}
+        <div className="flex flex-col items-center gap-4 border-t border-outline-variant/20 pt-8 text-center sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:text-left">
+          <div className="w-full min-w-0 sm:flex-1">
             <h3 className="text-body font-semibold text-on-surface">Password &amp; Security</h3>
-            <p className="text-secondary text-on-surface-variant">
+            <p className="text-secondary mx-auto mt-1 max-w-md text-on-surface-variant sm:mx-0">
               Secure your account by updating your credentials.
             </p>
             {passwordResetMessage ? (
-              <p className="text-secondary mt-2 text-primary">{passwordResetMessage}</p>
+              <p className="text-secondary mx-auto mt-2 max-w-md text-primary sm:mx-0">
+                {passwordResetMessage}
+              </p>
             ) : null}
           </div>
           <button
             type="button"
-            onClick={() => void handleResetPassword()}
-            disabled={disabled || passwordResetSending}
-            className="rounded-lg border border-primary px-6 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
+            onClick={() => {
+              setPasswordResetMessage(null)
+              setResetModalOpen(true)
+            }}
+            disabled={disabled}
+            className="w-full shrink-0 rounded-lg border border-primary px-6 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:opacity-50 sm:w-auto"
           >
-            {passwordResetSending ? 'Sending…' : 'Reset Password'}
+            Reset Password
           </button>
         </div>
       </SettingsCard>
+
+      <ResetPasswordModal
+        isOpen={resetModalOpen}
+        onClose={() => setResetModalOpen(false)}
+        onSuccess={(message) => setPasswordResetMessage(message)}
+      />
     </section>
   )
 }

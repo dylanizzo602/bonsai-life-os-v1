@@ -1,5 +1,6 @@
 /* Notes page: List/detail container; shows list view or document view based on selection */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
+import { consumeQuickAddIntent } from '../layout/quickAddIntent'
 import { useNotes } from './hooks/useNotes'
 import { NotesListView } from './NotesListView'
 import { NotesDocView } from './NotesDocView'
@@ -22,6 +23,11 @@ export function NotesPage() {
       /* Error already set in useNotes */
     }
   }, [createNote])
+
+  /* Mobile quick add: create note when navigated from nav */
+  useEffect(() => {
+    if (consumeQuickAddIntent() === 'note') void handleNewDoc()
+  }, [handleNewDoc])
 
   /* Open an existing note in doc view */
   const handleNoteClick = useCallback((id: string) => {

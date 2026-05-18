@@ -7,6 +7,7 @@ import { LoginErrorModal } from './LoginErrorModal'
 import { ResetPasswordModal } from './ResetPasswordModal'
 import { SignUpExistsErrorModal } from './SignUpExistsErrorModal'
 import { SignUpScreen } from './SignUpScreen'
+import { AppFooter } from '../../components/AppFooter'
 
 type AuthMode = 'signin' | 'signup'
 
@@ -84,7 +85,7 @@ export function AuthScreen() {
   }
 
   return (
-    <div className="bg-surface text-on-surface flex h-screen flex-col overflow-hidden font-body antialiased">
+    <div className="bg-surface text-on-surface flex min-h-screen flex-col font-body antialiased">
       {/* Background decorative blurs */}
       <div
         className="pointer-events-none fixed top-0 left-0 -z-10 h-full w-full overflow-hidden"
@@ -105,7 +106,7 @@ export function AuthScreen() {
           }}
         />
       ) : (
-        <main className="flex flex-grow items-center justify-center px-6">
+        <main className="flex items-center justify-center px-6 py-12">
           <div className="flex w-full max-w-[440px] flex-col items-center">
             {/* Brand identity */}
             <div className="mb-6 text-center">
@@ -240,37 +241,7 @@ export function AuthScreen() {
         </main>
       )}
 
-      <footer className="bg-surface border-outline-variant/10 mx-auto flex w-full max-w-7xl flex-col items-center justify-between gap-4 border-t px-8 py-6 opacity-80 transition-opacity hover:opacity-100 md:flex-row">
-        <div className="flex flex-col items-center gap-6 md:flex-row">
-          <span className="text-primary font-headline text-sm font-bold">Bonsai</span>
-          <div className="flex gap-6">
-            <a
-              className="text-on-surface-variant hover:text-secondary font-body text-xs transition-colors duration-200"
-              href="#"
-              onClick={(e) => e.preventDefault()}
-            >
-              Privacy Policy
-            </a>
-            <a
-              className="text-on-surface-variant hover:text-secondary font-body text-xs transition-colors duration-200"
-              href="#"
-              onClick={(e) => e.preventDefault()}
-            >
-              Terms of Service
-            </a>
-            <a
-              className="text-on-surface-variant hover:text-secondary font-body text-xs transition-colors duration-200"
-              href="#"
-              onClick={(e) => e.preventDefault()}
-            >
-              Help Center
-            </a>
-          </div>
-        </div>
-        <p className="text-on-surface-variant font-body text-xs">
-          © 2026 Bonsai Productivity. Mindfully crafted.
-        </p>
-      </footer>
+      <AppFooter />
 
       <ForgotPasswordModal
         isOpen={forgotModalOpen}

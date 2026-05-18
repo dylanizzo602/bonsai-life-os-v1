@@ -1,165 +1,175 @@
-/* Mobile side navigation: Overlay menu for tablet/mobile screens */
+/* MobileSideNav: Zenith full-screen overlay navigation for tablet/mobile */
+
 import { useEffect } from 'react'
-import { BonsaiLogo, CloseIcon } from '../../../components/icons'
-import { HomeIcon, TasksIcon, HabitsIcon, GoalsIcon, ReflectionsIcon, NotesIcon, SettingsIcon } from '../../../components/icons'
+import { MaterialIcon } from '../../../components/MaterialIcon'
+import { BonsaiLogo } from '../../../components/icons'
 import type { NavigationSection } from '../hooks/useNavigation'
+import { setQuickAddIntent } from '../quickAddIntent'
+import { TOP_NAV_ITEMS } from './topNavConfig'
+import { MOBILE_NAV_MATERIAL_ICONS } from './mobileNavConfig'
+import { MobileQuickAdd } from './MobileQuickAdd'
+import { MobileNavAccountSection } from './MobileNavAccountSection'
+import { NotificationBellButton } from '../../notifications/components/NotificationBellButton'
 
 interface MobileSideNavProps {
-  /** Whether the mobile menu is open */
   isOpen: boolean
-  /** Currently active navigation section */
   activeSection: NavigationSection
-  /** Callback when a navigation item is clicked */
   onNavigate: (section: NavigationSection) => void
-  /** Callback to close the mobile menu */
   onClose: () => void
 }
 
-/* Navigation item configuration: Icons and labels for each section */
-const navItems: Array<{
-  id: NavigationSection
-  icon: React.ComponentType<{ className?: string }>
-  label: string
-}> = [
-  { id: 'home', icon: HomeIcon, label: 'Home' },
-  { id: 'goals', icon: GoalsIcon, label: 'Goals' },
-  { id: 'tasks', icon: TasksIcon, label: 'Tasks' },
-  { id: 'habits', icon: HabitsIcon, label: 'Habits' },
-  { id: 'reflections', icon: ReflectionsIcon, label: 'Reflections' },
-  { id: 'notes', icon: NotesIcon, label: 'Notes' },
-]
+const headerIconClass =
+  'rounded-full p-2 text-secondary transition-colors hover:bg-surface-container-low hover:text-primary'
 
 /**
- * Mobile side navigation component
- * Displays as an overlay menu on tablet/mobile screens when hamburger menu is clicked
+ * Full-screen mobile navigation: header utilities, main links, Quick Add, account section at bottom.
  */
 export function MobileSideNav({ isOpen, activeSection, onNavigate, onClose }: MobileSideNavProps) {
-  /* Effect: Prevent body scroll when menu is open */
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden'
     } else {
       document.body.style.overflow = ''
     }
-
     return () => {
       document.body.style.overflow = ''
     }
   }, [isOpen])
 
-  /* Effect: Close menu on escape key press */
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose()
-      }
+      if (e.key === 'Escape' && isOpen) onClose()
     }
-
     document.addEventListener('keydown', handleEscape)
-    return () => {
-      document.removeEventListener('keydown', handleEscape)
-    }
+    return () => document.removeEventListener('keydown', handleEscape)
   }, [isOpen, onClose])
 
-  /* Event handlers: Handle navigation item clicks */
   const handleNavClick = (section: NavigationSection) => {
     onNavigate(section)
-    onClose() // Close menu after navigation
+    onClose()
+  }
+
+  const handleQuickAddTask = () => {
+    setQuickAddIntent('task')
+    handleNavClick('tasks')
+  }
+
+  const handleQuickAddNote = () => {
+    setQuickAddIntent('note')
+    handleNavClick('notes')
+  }
+
+  const handleQuickAddInbox = () => {
+    setQuickAddIntent('inbox')
+    handleNavClick('home')
   }
 
   if (!isOpen) return null
 
   return (
-    <>
-      {/* Backdrop: Invisible so content behind stays visible; still closes menu on tap */}
-      <div
-        className="fixed inset-0 z-40 lg:hidden"
+    <div className="fixed inset-0 z-50 lg:hidden" role="presentation">
+      <button
+        type="button"
+        className="absolute inset-0 bg-on-surface/25"
         onClick={onClose}
-        aria-hidden="true"
+        aria-label="Close navigation menu"
       />
 
-      {/* Side navigation panel: Wide enough for full labels; no horizontal scroll */}
       <aside
-        className="fixed left-0 top-0 h-full w-72 min-w-[260px] max-w-[90vw] bg-white shadow-xl z-50 lg:hidden flex flex-col"
+        className="relative z-10 flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface"
         aria-label="Mobile navigation menu"
+        role="dialog"
+        aria-modal="true"
       >
-        {/* Header: Logo and close button */}
-        <div className="flex items-center justify-between h-14 sm:h-16 border-b border-bonsai-slate-200 px-3 sm:px-4 flex-shrink-0">
-          <BonsaiLogo iconSize="w-7 h-7 sm:w-8 sm:h-8" showText={true} textSize="text-base sm:text-lg" />
+        {/* Header: brand + search, notifications, close */}
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-outline-variant/10 bg-surface-container-low px-5 py-2.5">
           <button
             type="button"
-            onClick={onClose}
-            className="p-2 text-bonsai-slate-500 hover:text-bonsai-slate-700 hover:bg-bonsai-slate-100 rounded-lg transition-colors flex-shrink-0"
-            aria-label="Close navigation menu"
+            onClick={() => handleNavClick('home')}
+            className="flex min-w-0 items-center gap-2 rounded-lg transition-opacity hover:opacity-90"
+            aria-label="Bonsai home"
           >
-            <CloseIcon className="w-5 h-5 sm:w-6 sm:h-6" />
+            <BonsaiLogo iconSize="h-8 w-8" showText={false} />
+            <span className="font-headline truncate text-xl font-bold tracking-tight text-primary">
+              Bonsai
+            </span>
           </button>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              className={headerIconClass}
+              aria-label="Search"
+              title="Coming soon"
+              disabled
+            >
+              <MaterialIcon name="search" className="text-[22px]" />
+            </button>
+            <NotificationBellButton className={headerIconClass}>
+              <MaterialIcon name="notifications" className="text-[22px]" />
+            </NotificationBellButton>
+            <button
+              type="button"
+              onClick={onClose}
+              className={headerIconClass}
+              aria-label="Close navigation menu"
+            >
+              <MaterialIcon name="close" className="text-[22px]" />
+            </button>
+          </div>
         </div>
 
-        {/* Main navigation items: Icons at fixed size, labels never truncated */}
-        <nav
-          className="flex-1 py-4 px-3 overflow-y-auto overflow-x-hidden min-w-0"
-          aria-label="Navigation menu"
-        >
-          <ul className="space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon
-              const isActive = activeSection === item.id
+        {/* Body: main links, Quick Add (after Notes), Settings pinned to bottom */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pt-3 pb-4">
+          <nav className="shrink-0" aria-label="Main navigation">
+            <ul className="flex flex-col">
+              {TOP_NAV_ITEMS.map(({ id, label }) => {
+                const isActive = activeSection === id
+                const symbol = MOBILE_NAV_MATERIAL_ICONS[id]
 
-              return (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={() => handleNavClick(item.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left min-w-0 ${
-                      isActive
-                        ? 'bg-bonsai-sage-50 text-bonsai-sage-600'
-                        : 'text-bonsai-slate-500 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-700'
-                    }`}
-                    aria-label={item.label}
-                    aria-current={isActive ? 'page' : undefined}
-                  >
-                    <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
-                      <Icon className={`w-6 h-6 ${isActive ? 'text-bonsai-sage-600' : 'text-bonsai-slate-500'}`} />
-                    </span>
-                    <span
-                      className={`font-medium flex-shrink-0 whitespace-nowrap ${isActive ? 'text-bonsai-sage-600' : 'text-bonsai-slate-700'}`}
+                return (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      onClick={() => handleNavClick(id)}
+                      className={`flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors ${
+                        isActive
+                          ? 'border-l-[3px] border-primary bg-primary/10 font-semibold text-primary'
+                          : 'border-l-[3px] border-transparent text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
+                      }`}
+                      aria-current={isActive ? 'page' : undefined}
                     >
-                      {item.label}
-                    </span>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        </nav>
+                      {symbol ? (
+                        <MaterialIcon
+                          name={symbol}
+                          className={`text-[20px] ${isActive ? 'text-primary' : 'text-outline'}`}
+                        />
+                      ) : null}
+                      <span className="text-body font-medium">{label}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </nav>
 
-        {/* Bottom section: Settings link */}
-        <div className="border-t border-bonsai-slate-200 py-4 px-3 flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => handleNavClick('settings')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left min-w-0 ${
-              activeSection === 'settings'
-                ? 'bg-bonsai-sage-50 text-bonsai-sage-600'
-                : 'text-bonsai-slate-500 hover:bg-bonsai-slate-100 hover:text-bonsai-slate-700'
-            }`}
-            aria-label="Settings"
-            aria-current={activeSection === 'settings' ? 'page' : undefined}
-          >
-            <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
-              <SettingsIcon
-                className={`w-6 h-6 ${activeSection === 'settings' ? 'text-bonsai-sage-600' : 'text-bonsai-slate-500'}`}
-              />
-            </span>
-            <span
-              className={`font-medium flex-shrink-0 whitespace-nowrap ${activeSection === 'settings' ? 'text-bonsai-sage-600' : 'text-bonsai-slate-700'}`}
-            >
-              Settings
-            </span>
-          </button>
+          {/* Quick Add: directly below main nav (after Notes) */}
+          <div className="mt-3 shrink-0">
+            <MobileQuickAdd
+              onAddTask={handleQuickAddTask}
+              onAddNote={handleQuickAddNote}
+              onAddInbox={handleQuickAddInbox}
+            />
+          </div>
+
+          {/* Account: profile row + Settings / Log out */}
+          <div className="mt-auto shrink-0">
+            <MobileNavAccountSection
+              onOpenSettings={() => handleNavClick('settings')}
+              onClose={onClose}
+            />
+          </div>
         </div>
       </aside>
-    </>
+    </div>
   )
 }

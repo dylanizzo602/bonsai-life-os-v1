@@ -80,6 +80,7 @@ export function InboxWidget({
 
       <div className="relative z-10">
         <input
+          id="inbox-quick-capture-input"
           type="text"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

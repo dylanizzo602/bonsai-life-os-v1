@@ -1,6 +1,7 @@
 /* Tasks page: Section header, view toolbar (Today's Lineup / Available / All / Custom), Filter/Sort/Search, task list, Archive/Trash at bottom, Add/Edit modals */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { consumeQuickAddIntent } from '../layout/quickAddIntent'
 import { AddButton } from '../../components/AddButton'
 import {
   FilterIcon,
@@ -1033,6 +1034,11 @@ export function TasksPage() {
     setEditTask(null)
     setIsModalOpen(true)
   }
+
+  /* Mobile quick add: open add-task modal when navigated from nav */
+  useEffect(() => {
+    if (consumeQuickAddIntent() === 'task') openAdd()
+  }, [])
 
   const openEdit = (task: Task) => {
     setEditTask(task)

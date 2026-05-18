@@ -1,6 +1,7 @@
 /* Base layout: Top navigation shell with scrollable content and mobile overlay nav */
 import { useState } from 'react'
 import type { ReactNode } from 'react'
+import { AppFooter } from '../../components/AppFooter'
 import { TopNav } from './components/TopNav'
 import { MobileSideNav } from './components/MobileSideNav'
 import type { NavigationSection } from './hooks/useNavigation'
@@ -31,7 +32,7 @@ export function BaseLayout({ children, activeSection, onNavigate }: BaseLayoutPr
     setIsMobileMenuOpen(false)
   }
 
-  /* Shell: column layout with fixed top bar and padded scrollable main */
+  /* Shell: fixed top bar; footer at end of scrollable content (not viewport-pinned) */
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <TopNav
@@ -40,12 +41,13 @@ export function BaseLayout({ children, activeSection, onNavigate }: BaseLayoutPr
         onMenuToggle={handleToggleMobileMenu}
       />
 
-      {/* Main content: offset below fixed header (h-20 ≈ header height) */}
       <main className="flex min-h-0 min-w-0 flex-1 flex-col pt-20">
-        <div className="min-h-0 min-w-0 flex-1 overflow-auto p-4 md:p-6">{children}</div>
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+          <div className="p-4 md:p-6">{children}</div>
+          <AppFooter />
+        </div>
       </main>
 
-      {/* Mobile side navigation: Overlay menu for tablet/mobile */}
       <MobileSideNav
         isOpen={isMobileMenuOpen}
         activeSection={activeSection}

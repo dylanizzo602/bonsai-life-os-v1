@@ -1,14 +1,42 @@
-/* HomeGreeting: Time-based greeting with user's first name */
+/* HomeGreeting: Time-based greeting with user's first name and contextual subtitle */
 
 import { useMemo } from 'react'
 import { useAuth } from '../../auth/AuthContext'
 
-/** Pick morning / afternoon / evening label from local hour */
-function getTimeGreeting(): string {
+type DayPeriod = 'morning' | 'afternoon' | 'evening' | 'night'
+
+/** Copy for each part of the day */
+const PERIOD_COPY: Record<DayPeriod, { greeting: string; subtitle: string }> = {
+  morning: {
+    greeting: 'Good morning',
+    subtitle: "Let's find your focus for today.",
+  },
+  afternoon: {
+    greeting: 'Good afternoon',
+    subtitle: 'Keep it up.',
+  },
+  evening: {
+    greeting: 'Good evening',
+    subtitle: 'Wrap it up.',
+  },
+  night: {
+    greeting: 'Good night',
+    subtitle: 'Get some rest.',
+  },
+}
+
+/** Map local hour to morning / afternoon / evening / night */
+function getDayPeriod(hour: number): DayPeriod {
+  if (hour >= 5 && hour < 12) return 'morning'
+  if (hour >= 12 && hour < 17) return 'afternoon'
+  if (hour >= 17 && hour < 21) return 'evening'
+  return 'night'
+}
+
+/** Greeting line and subtitle for the current local time */
+function getHomeGreetingContent(): { greeting: string; subtitle: string } {
   const hour = new Date().getHours()
-  if (hour < 12) return 'Good morning'
-  if (hour < 17) return 'Good afternoon'
-  return 'Good evening'
+  return PERIOD_COPY[getDayPeriod(hour)]
 }
 
 /**
@@ -23,7 +51,7 @@ export function HomeGreeting() {
     return typeof raw === 'string' && raw.trim() ? raw.trim() : null
   }, [user])
 
-  const greeting = getTimeGreeting()
+  const { greeting, subtitle } = getHomeGreetingContent()
   const name = firstName ?? 'there'
 
   return (
@@ -31,9 +59,7 @@ export function HomeGreeting() {
       <h1 className="text-page-title font-semibold tracking-tight text-on-surface">
         {greeting}, {name}
       </h1>
-      <p className="mt-2 text-body font-light text-on-surface-variant">
-        Let&apos;s find your focus for today.
-      </p>
+      <p className="mt-2 text-body font-light text-on-surface-variant">{subtitle}</p>
     </div>
   )
 }

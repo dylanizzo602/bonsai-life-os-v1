@@ -1,6 +1,7 @@
 /* Home page: Dashboard bento layout with greeting, briefing card, and widgets */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
+import { consumeQuickAddIntent } from '../layout/quickAddIntent'
 import type { NavigationSection } from '../layout/hooks/useNavigation'
 import { useTasks } from '../tasks/hooks/useTasks'
 import { useInbox } from './hooks/useInbox'
@@ -57,6 +58,16 @@ export function HomePage({ onNavigate }: HomePageProps) {
     setInboxItemToRemoveOnCreate(null)
     setModalOpen(true)
   }, [])
+
+  /* Mobile quick add: focus inbox capture when opened from nav */
+  useEffect(() => {
+    const intent = consumeQuickAddIntent()
+    if (intent === 'inbox') {
+      requestAnimationFrame(() => {
+        document.getElementById('inbox-quick-capture-input')?.focus()
+      })
+    }
+  }, [openAdd])
 
   const openEdit = useCallback((task: Task) => {
     setEditTask(task)
