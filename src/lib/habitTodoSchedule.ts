@@ -5,7 +5,7 @@ import { parseRecurrencePattern, getNextOccurrence, serializeRecurrencePattern }
 import type { RecurrencePattern } from './recurrence'
 
 /** Matches habits.frequency / HabitFrequency in the app (kept in lib to avoid importing the feature layer). */
-type HabitFrequencyCode = 'daily' | 'weekly' | 'times_per_day' | 'every_x_days'
+type HabitFrequencyCode = 'daily' | 'weekly' | 'monthly' | 'times_per_day' | 'every_x_days'
 
 /** Day codes for recurrence byDay (Sunday = 0 … Saturday = 6); habit frequency_target bitmask uses same order */
 const RECURRENCE_DAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const
@@ -17,6 +17,8 @@ export const DEFAULT_HABIT_TODO_CLOCK = '09:00:00'
 export function recurrencePatternJsonForHabit(
   frequency: HabitFrequencyCode,
   frequencyTarget: number | null,
+  monthlyInterval?: number | null,
+  monthlyDay?: number | null,
 ): string | null {
   const pattern: RecurrencePattern = { freq: 'day', interval: 1 }
   if (frequency === 'daily' || frequency === 'times_per_day') {
@@ -34,6 +36,16 @@ export function recurrencePatternJsonForHabit(
   } else if (frequency === 'every_x_days' && frequencyTarget != null && frequencyTarget > 0) {
     pattern.freq = 'day'
     pattern.interval = frequencyTarget
+  } else if (frequency === 'monthly') {
+    /* Monthly recurrence: interval + day-of-month (1-31 or -1 for last day); clamping handled by recurrence engine */
+    pattern.freq = 'month'
+    pattern.interval =
+      typeof monthlyInterval === 'number' && Number.isFinite(monthlyInterval)
+        ? Math.max(1, Math.trunc(monthlyInterval))
+        : 1
+    const dayRaw =
+      typeof monthlyDay === 'number' && Number.isFinite(monthlyDay) ? Math.trunc(monthlyDay) : 1
+    pattern.byMonthDay = dayRaw === -1 ? -1 : Math.max(1, Math.min(31, dayRaw))
   }
   return serializeRecurrencePattern(pattern)
 }
@@ -44,6 +56,63 @@ function formatLocalYMD(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+/** Add n days to YYYY-MM-DD (local noon date math to avoid DST edges) */
+function addDaysYMD(ymd: string, n: number): string {
+  const d = new Date(ymd + 'T12:00:00')
+  d.setDate(d.getDate() + n)
+  return formatLocalYMD(d)
+}
+
+/** Clamp day-of-month to the valid range for that month; -1 means last day */
+function clampDayForMonth(year: number, month: number, day: number): number {
+  const last = new Date(year, month + 1, 0).getDate()
+  if (day === -1 || day > last) return last
+  return Math.max(1, Math.min(31, day))
+}
+
+/**
+ * Next occurrence date on or after todayYMD.
+ * Note: habits currently use interval=1 for weekly, but monthly can use N.
+ */
+function nextOccurrenceOnOrAfter(pattern: RecurrencePattern | null, todayYMD: string): string | null {
+  if (!pattern) return null
+  if (!todayYMD) return null
+
+  /* Daily-style: treat as today (reminder shows today). */
+  if (pattern.freq === 'day') return todayYMD
+
+  /* Weekly: choose the next selected weekday on/after today. */
+  if (pattern.freq === 'week') {
+    const days = Array.isArray(pattern.byDay) ? pattern.byDay : pattern.byDay ? [pattern.byDay] : []
+    if (days.length === 0) {
+      return todayYMD
+    }
+    const selected = new Set(days)
+    for (let i = 0; i < 14; i++) {
+      const d = addDaysYMD(todayYMD, i)
+      const dow = new Date(d + 'T12:00:00').getDay()
+      const code = RECURRENCE_DAY_CODES[dow]
+      if (code && selected.has(code)) return d
+    }
+    return todayYMD
+  }
+
+  /* Monthly: compute this month’s due day (clamped), else jump by interval months. */
+  if (pattern.freq === 'month') {
+    const [yS, mS] = todayYMD.split('-')
+    const y = Number(yS)
+    const m = Number(mS) - 1
+    const target = typeof pattern.byMonthDay === 'number' ? pattern.byMonthDay : 1
+    const dueDay = clampDayForMonth(y, m, target)
+    const dueThisMonth = `${y}-${String(m + 1).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`
+    if (dueThisMonth >= todayYMD) return dueThisMonth
+    return getNextOccurrence(pattern, dueThisMonth)
+  }
+
+  /* Fallback for other recurrence types: treat as today. */
+  return todayYMD
 }
 
 /**
@@ -119,6 +188,48 @@ export function computeInitialTodoRemindAt(
 }
 
 /**
+ * Initial todo_remind_at for create/update when add_to_todos is on:
+ * set the due instant to the NEXT habit occurrence date (on/after today).
+ */
+export function computeInitialTodoRemindAtForHabit(
+  h: {
+    reminder_time: string | null
+    desired_action: string | null
+    minimum_action: string | null
+    frequency: HabitFrequencyCode
+    frequency_target: number | null
+    monthly_interval?: number | null
+    monthly_day?: number | null
+  },
+  todayYmd: string,
+): string | null {
+  /* Guard: only schedule when we have reminder time or action text (matches shouldScheduleHabitTodo). */
+  const base = computeInitialTodoRemindAt(
+    {
+      reminder_time: h.reminder_time,
+      desired_action: h.desired_action,
+      minimum_action: h.minimum_action,
+    },
+    todayYmd,
+  )
+  if (!base) return null
+
+  /* Time-of-day: reuse reminder_time if present, else default clock from computeInitialTodoRemindAt. */
+  const clock = h.reminder_time && h.reminder_time.trim() !== '' ? h.reminder_time : DEFAULT_HABIT_TODO_CLOCK
+
+  /* Recurrence: pick next due date on/after today based on habit schedule. */
+  const patternStr = recurrencePatternJsonForHabit(
+    h.frequency,
+    h.frequency_target,
+    h.monthly_interval ?? null,
+    h.monthly_day ?? null,
+  )
+  const pattern = patternStr ? parseRecurrencePattern(patternStr) : null
+  const dueYMD = nextOccurrenceOnOrAfter(pattern, todayYmd) ?? todayYmd
+  return habitReminderInstantForLocalDay(dueYMD, clock)
+}
+
+/**
  * After complete/skip/minimum on entryDate: advance todo_remind_at to the next occurrence if the current due is on entryDate.
  * Returns the new ISO string to persist, or null if no change.
  */
@@ -127,6 +238,8 @@ export function advanceTodoRemindAtIfDueOn(
     todo_remind_at: string | null
     frequency: HabitFrequencyCode
     frequency_target: number | null
+    monthly_interval?: number | null
+    monthly_day?: number | null
   },
   entryDate: string,
 ): string | null {
@@ -138,7 +251,12 @@ export function advanceTodoRemindAtIfDueOn(
     return null
   }
 
-  const patternStr = recurrencePatternJsonForHabit(habit.frequency, habit.frequency_target)
+  const patternStr = recurrencePatternJsonForHabit(
+    habit.frequency,
+    habit.frequency_target,
+    habit.monthly_interval ?? null,
+    habit.monthly_day ?? null,
+  )
   const pattern = patternStr ? parseRecurrencePattern(patternStr) : null
   const dueYMDForNext = dueYMD
 

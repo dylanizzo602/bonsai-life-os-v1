@@ -1,7 +1,7 @@
 /* Habit types: TypeScript definitions for habits, entries, and inputs */
 
-/** Habit frequency: daily, weekly, times per day, or every N days */
-export type HabitFrequency = 'daily' | 'weekly' | 'times_per_day' | 'every_x_days'
+/** Habit frequency: daily, weekly, monthly, times per day, or every N days */
+export type HabitFrequency = 'daily' | 'weekly' | 'monthly' | 'times_per_day' | 'every_x_days'
 
 /**
  * For frequency 'weekly', frequency_target is a day-of-week bitmask:
@@ -33,6 +33,10 @@ export interface Habit {
   sort_order: number
   frequency: HabitFrequency
   frequency_target: number | null
+  /** Monthly interval (every N months). Only used when frequency='monthly'. */
+  monthly_interval: number
+  /** Monthly day-of-month (1-31) or -1 for last day. Only used when frequency='monthly'. */
+  monthly_day: number
   add_to_todos: boolean
   reminder_time: string | null
   /** Additional reminder offsets in minutes relative to the primary reminder_time (negative=before, positive=after). */
@@ -65,6 +69,10 @@ export interface CreateHabitInput {
   sort_order?: number
   frequency?: HabitFrequency
   frequency_target?: number | null
+  /** Monthly interval (every N months). Only used when frequency='monthly'. */
+  monthly_interval?: number
+  /** Monthly day-of-month (1-31) or -1 for last day. Only used when frequency='monthly'. */
+  monthly_day?: number
   add_to_todos?: boolean
   reminder_time?: string | null
   /** Additional reminder offsets in minutes relative to reminder_time (negative=before, positive=after). */
@@ -81,6 +89,10 @@ export interface UpdateHabitInput {
   sort_order?: number
   frequency?: HabitFrequency
   frequency_target?: number | null
+  /** Monthly interval (every N months). Only used when frequency='monthly'. */
+  monthly_interval?: number
+  /** Monthly day-of-month (1-31) or -1 for last day. Only used when frequency='monthly'. */
+  monthly_day?: number
   add_to_todos?: boolean
   reminder_time?: string | null
   /** Additional reminder offsets in minutes relative to reminder_time (negative=before, positive=after). */

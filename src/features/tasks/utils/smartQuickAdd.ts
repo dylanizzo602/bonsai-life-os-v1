@@ -4,7 +4,7 @@ import { serializeRecurrencePattern } from '../../../lib/recurrence'
 import type { RecurrencePattern } from '../../../lib/recurrence'
 import type { TaskPriority } from '../types'
 
-export type SmartQuickAddMatchKind = 'date' | 'recurrence' | 'tag' | 'priority' | 'holiday'
+export type SmartQuickAddMatchKind = 'date' | 'recurrence' | 'tag' | 'priority' | 'holiday' | 'estimate'
 
 export interface SmartQuickAddMatch {
   start: number
@@ -21,6 +21,8 @@ export interface SmartQuickAddResult {
   priority: TaskPriority | null
   /** Parsed due date: date-only (YYYY-MM-DD) or full ISO (with explicit time) */
   due_date: string | null
+  /** Parsed time estimate in minutes (e.g. "30m", "1h", "1hr 15m") */
+  time_estimate: number | null
   /** Recurrence pattern JSON string to store in tasks.recurrence_pattern */
   recurrence_pattern: string | null
   /** Highlight ranges for recognized tokens in the raw input */
@@ -102,6 +104,39 @@ function mapPriorityToken(token: string): TaskPriority | null {
   return null
 }
 
+function parseTimeEstimateMinutes(raw: string): {
+  minutes: number | null
+  ranges: Array<{ start: number; end: number }>
+} {
+  /* Estimate parsing: support "15m", "15min", "2h", "2hr", and combined "1h 30m" (sum). */
+  const lower = raw.toLowerCase()
+  let totalMinutes = 0
+  const ranges: Array<{ start: number; end: number }> = []
+
+  /* Hours: number immediately followed by h/hr (or hour/hours) */
+  for (const m of lower.matchAll(/\b(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours)\b/g)) {
+    if (m.index == null) continue
+    const n = parseFloat(m[1] ?? '0')
+    if (!Number.isFinite(n) || n <= 0) continue
+    totalMinutes += Math.round(n * 60)
+    ranges.push({ start: m.index, end: m.index + (m[0] ?? '').length })
+  }
+
+  /* Minutes: number immediately followed by m/min (or minute/minutes) */
+  for (const m of lower.matchAll(/\b(\d+)\s*(m|min|mins|minute|minutes)\b/g)) {
+    if (m.index == null) continue
+    const n = parseInt(m[1] ?? '0', 10)
+    if (!Number.isFinite(n) || n <= 0) continue
+    totalMinutes += n
+    ranges.push({ start: m.index, end: m.index + (m[0] ?? '').length })
+  }
+
+  return {
+    minutes: totalMinutes > 0 ? totalMinutes : null,
+    ranges,
+  }
+}
+
 function buildHolidayDate(now: Date, month: number, day: number): Date {
   const y = now.getFullYear()
   const candidate = new Date(y, month - 1, day, 9, 0, 0, 0)
@@ -153,6 +188,14 @@ export function parseSmartQuickAdd(input: string, opts: { now?: Date }): SmartQu
   const raw = input ?? ''
   const matches: SmartQuickAddMatch[] = []
   const rangesToRemove: Array<{ start: number; end: number }> = []
+
+  /* Time estimate: capture tokens like "15m"/"15min" and "2h"/"2hr" and mark them for highlighting/removal */
+  const estimateParsed = parseTimeEstimateMinutes(raw)
+  const time_estimate = estimateParsed.minutes
+  for (const r of estimateParsed.ranges) {
+    matches.push({ start: r.start, end: r.end, kind: 'estimate' })
+    rangesToRemove.push(r)
+  }
 
   /* Tags: capture @tag tokens and mark them for highlighting/removal */
   const tagNames: string[] = []
@@ -375,6 +418,7 @@ export function parseSmartQuickAdd(input: string, opts: { now?: Date }): SmartQu
     tagNames: uniqInOrder(tagNames),
     priority,
     due_date,
+    time_estimate,
     recurrence_pattern,
     matches: compactMatches,
   }

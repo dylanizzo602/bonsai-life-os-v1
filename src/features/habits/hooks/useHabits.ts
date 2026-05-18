@@ -176,6 +176,8 @@ export function useHabits(initialDateRange?: DateRange) {
         today,
         habit.frequency,
         habit.frequency_target,
+        habit.monthly_interval,
+        habit.monthly_day,
       )
 
       /* Calendar shading: streak dates are the "official" streak window (weekly = complete weeks only). */
@@ -184,6 +186,8 @@ export function useHabits(initialDateRange?: DateRange) {
         today,
         habit.frequency,
         habit.frequency_target,
+        habit.monthly_interval,
+        habit.monthly_day,
       )
 
       /* Target/min counts: include current-week progress for weekly streaks so counts update per action. */

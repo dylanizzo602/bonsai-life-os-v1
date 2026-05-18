@@ -177,6 +177,7 @@ export function TaskItem({
             {showSubtasks && (
               <SubtaskList
                 taskId={task.id}
+                parentTaskTitle={task.title}
                 fetchSubtasks={fetchSubtasks}
                 onCreateSubtask={onCreateSubtask}
                 onUpdateTask={onUpdateTask}

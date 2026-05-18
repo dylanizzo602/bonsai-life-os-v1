@@ -1,7 +1,7 @@
 /* HabitStreakSummary: Streak block — fire + streak length, target-day count, minimum-day count */
 
 import type { HabitWithStreaks } from './types'
-import { formatHabitStreakCount } from './formatHabitStreak'
+import { formatHabitStreakCount, isWeeklyStreakHabit } from './formatHabitStreak'
 
 export interface HabitStreakSummaryProps {
   habit: HabitWithStreaks
@@ -13,8 +13,10 @@ export interface HabitStreakSummaryProps {
   variant?: 'default' | 'compact'
 }
 
-/** “1 day” vs “5 days” for target/min lines */
-function daysLabel(n: number): string {
+/** Unit label for target/min lines (days, weeks, or months) */
+function unitLabel(habit: Pick<HabitWithStreaks, 'frequency' | 'frequency_target'>, n: number): string {
+  if (isWeeklyStreakHabit(habit)) return `${n} ${n === 1 ? 'week' : 'weeks'}`
+  if (habit.frequency === 'monthly') return `${n} ${n === 1 ? 'month' : 'months'}`
   return `${n} ${n === 1 ? 'day' : 'days'}`
 }
 
@@ -43,7 +45,7 @@ export function HabitStreakSummary({
     variant === 'compact' ? 'text-[10px] text-bonsai-slate-500 leading-tight' : 'text-secondary text-bonsai-slate-500'
 
   const ariaLabel = showTargetMinBreakdown
-    ? `Streak ${streakPrimary}. Target ${daysLabel(habit.currentStreakTargetCount)}, Min ${daysLabel(habit.currentStreakMinimumCount)}`
+    ? `Streak ${streakPrimary}. Target ${unitLabel(habit, habit.currentStreakTargetCount)}, Min ${unitLabel(habit, habit.currentStreakMinimumCount)}`
     : `Streak ${streakPrimary}`
 
   return (
@@ -52,10 +54,10 @@ export function HabitStreakSummary({
       {showTargetMinBreakdown ? (
         <>
           <span className={subClass}>
-            Target: {daysLabel(habit.currentStreakTargetCount)}
+            Target: {unitLabel(habit, habit.currentStreakTargetCount)}
           </span>
           <span className={subClass}>
-            Min: {daysLabel(habit.currentStreakMinimumCount)}
+            Min: {unitLabel(habit, habit.currentStreakMinimumCount)}
           </span>
         </>
       ) : null}

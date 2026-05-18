@@ -438,6 +438,7 @@ export function AddEditTaskModal({
       /* Field updates: only apply when parser found an explicit token. */
       if (parsed.priority) setPriority(parsed.priority)
       if (parsed.due_date) setDueDate(parsed.due_date)
+      if (parsed.time_estimate != null) setTimeEstimate(parsed.time_estimate)
       if (parsed.recurrence_pattern) setRecurrencePattern(parsed.recurrence_pattern)
     }, 200)
   }
@@ -569,6 +570,8 @@ export function AddEditTaskModal({
       const parsedOnSubmit = parseSmartQuickAdd(title, { now: new Date() })
       const cleanedTitle = parsedOnSubmit.cleanedTitle.trim() || title.trim()
       const submitTagNames = parsedOnSubmit.tagNames
+      /* Smart estimate: if an explicit estimate token was typed, prefer it at create time. */
+      const effectiveTimeEstimate = parsedOnSubmit.time_estimate != null ? parsedOnSubmit.time_estimate : time_estimate
 
       /* When saving a recurring task with no start/due, set to next instance from today */
       let effectiveStart = start_date || null
@@ -588,7 +591,7 @@ export function AddEditTaskModal({
         due_date: effectiveDue,
         recurrence_pattern: recurrence_pattern ?? null,
         priority,
-        time_estimate,
+        time_estimate: effectiveTimeEstimate,
         attachments: attachments.length ? attachments : undefined,
         status: getTaskStatus(status),
       }
@@ -2091,6 +2094,7 @@ export function AddEditTaskModal({
             ) : fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete ? (
               <SubtaskList
                 taskId={task.id}
+                parentTaskTitle={task.title}
                 fetchSubtasks={fetchSubtasks}
                 onCreateSubtask={(taskId, title) => createSubtask(taskId, { title })}
                 onUpdateTask={updateTask}

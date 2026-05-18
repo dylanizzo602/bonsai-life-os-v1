@@ -1,6 +1,7 @@
 /* habitStreaks: Integer habit streaks — completed and minimum both count as “done”.
  * Daily: consecutive calendar days (today open → streak can end at yesterday).
  * Weekly: consecutive complete weeks (every selected weekday has completed|minimum).
+ * Monthly (frequency=monthly): consecutive scheduled day-of-month occurrences.
  * Monthly (every_x_days ~28–31): consecutive calendar months with at least one done entry. */
 
 import type { StreakEntry } from './streaks'
@@ -25,6 +26,61 @@ function addDays(ymd: string, n: number): string {
 function getWeekStart(ymd: string): string {
   const d = new Date(ymd + 'T12:00:00')
   return addDays(ymd, -d.getDay())
+}
+
+/** Add n months to a YYYY-MM-DD (uses local calendar; keeps day clamped by Date) */
+function addMonths(ymd: string, n: number): string {
+  /* Month math: use local noon and always return YYYY-MM-DD in local calendar. */
+  const d = new Date(ymd + 'T12:00:00')
+  d.setMonth(d.getMonth() + n)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** Scheduled day in a given month, clamped to month length; -1 means last day */
+function monthDueYMDFor(
+  monthAnchorYMD: string,
+  monthlyDay: number,
+): string {
+  const d = new Date(monthAnchorYMD + 'T12:00:00')
+  const y = d.getFullYear()
+  const mo = d.getMonth()
+  const last = new Date(y, mo + 1, 0).getDate()
+  const day = monthlyDay === -1 ? last : Math.max(1, Math.min(31, Math.min(monthlyDay, last)))
+  const ymd = `${y}-${String(mo + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  return ymd
+}
+
+/** List occurrence dates for a monthly schedule in an inclusive [from, to] range */
+function monthlyOccurrencesInRange(
+  fromYMD: string,
+  toYMD: string,
+  intervalMonths: number,
+  monthlyDay: number,
+): string[] {
+  const interval = Math.max(1, Math.trunc(intervalMonths || 1))
+  const day = monthlyDay === -1 ? -1 : Math.max(1, Math.min(31, Math.trunc(monthlyDay || 1)))
+
+  /* Start search: first day of the from-month */
+  const fromMonthStart = fromYMD.slice(0, 7) + '-01'
+  let cursorMonthStart = fromMonthStart
+  let due = monthDueYMDFor(cursorMonthStart, day)
+
+  /* If due is before fromYMD, advance by interval until within range */
+  while (due < fromYMD) {
+    cursorMonthStart = addMonths(cursorMonthStart, interval)
+    due = monthDueYMDFor(cursorMonthStart, day)
+  }
+
+  const out: string[] = []
+  while (due <= toYMD) {
+    out.push(due)
+    cursorMonthStart = addMonths(cursorMonthStart, interval)
+    due = monthDueYMDFor(cursorMonthStart, day)
+  }
+  return out
 }
 
 /** Target or minimum counts toward streak; skipped or missing does not */
@@ -64,10 +120,13 @@ function monthsWithDone(entries: StreakEntry[]): Set<string> {
 }
 
 /**
- * Monthly streak: consecutive calendar months with ≥1 done entry, ending at current month
- * or the prior month if the current month has no completion yet.
+ * every_x_days (~monthly interval): consecutive calendar months with ≥1 done entry,
+ * ending at current month or the prior month if the current month has no completion yet.
  */
-export function getStreaksMonthly(entries: StreakEntry[], todayYMD: string): HabitStreakResult {
+export function getStreaksMonthlyIntervalHabit(
+  entries: StreakEntry[],
+  todayYMD: string,
+): HabitStreakResult {
   const doneMonths = monthsWithDone(entries)
   if (doneMonths.size === 0) {
     return { currentStreak: 0, longestStreak: 0 }
@@ -103,8 +162,11 @@ export function getStreaksMonthly(entries: StreakEntry[], todayYMD: string): Hab
   return { currentStreak: current, longestStreak: Math.max(longest, current) }
 }
 
-/** Dates in months that form the current monthly streak (for shading / counts) */
-export function getCurrentStreakDatesMonthly(entries: StreakEntry[], todayYMD: string): string[] {
+/** Dates in months that form the current every_x_days monthly-interval streak (for shading / counts) */
+export function getCurrentStreakDatesMonthlyIntervalHabit(
+  entries: StreakEntry[],
+  todayYMD: string,
+): string[] {
   const doneMonths = monthsWithDone(entries)
   if (doneMonths.size === 0) return []
 
@@ -238,7 +300,7 @@ export function getStreaksWeekly(
   if (allDates.length === 0) {
     return { currentStreak: current, longestStreak: current }
   }
-  let minD = allDates.reduce((a, b) => (a < b ? a : b))
+  const minD = allDates.reduce((a, b) => (a < b ? a : b))
   const maxD = [allDates.reduce((a, b) => (a > b ? a : b)), todayYMD].reduce((a, b) =>
     a > b ? a : b,
   )
@@ -311,20 +373,123 @@ export function getCurrentWeekProgressDatesWeekly(
   return dates.sort()
 }
 
-/** Dispatch: weekly bitmask, monthly interval, or daily-style streak */
+/**
+ * Monthly streaks (frequency=monthly): consecutive scheduled occurrences.
+ * A month counts only if the entry on the scheduled due date is completed|minimum.
+ *
+ * Today behavior mirrors daily:
+ * - If today is a due date and it's skipped → current streak is 0.
+ * - If today is a due date and it's empty → anchor the streak at the previous due date.
+ */
+export function getStreaksMonthly(
+  entries: StreakEntry[],
+  todayYMD: string,
+  monthlyInterval: number,
+  monthlyDay: number,
+): HabitStreakResult {
+  const map = toMap(entries)
+  const interval = Math.max(1, Math.trunc(monthlyInterval || 1))
+  const day = monthlyDay === -1 ? -1 : Math.max(1, Math.min(31, Math.trunc(monthlyDay || 1)))
+
+  const todayMonthStart = todayYMD.slice(0, 7) + '-01'
+  const dueThisMonth = monthDueYMDFor(todayMonthStart, day)
+  let anchorDue = dueThisMonth <= todayYMD ? dueThisMonth : monthDueYMDFor(addMonths(todayMonthStart, -interval), day)
+
+  const todayStatus = map.get(dueThisMonth)
+  if (dueThisMonth === todayYMD && todayStatus === 'skipped') {
+    return { currentStreak: 0, longestStreak: longestStreakMonthly(map, todayYMD, interval, day) }
+  }
+  if (dueThisMonth === todayYMD && !isDone(todayStatus)) {
+    anchorDue = monthDueYMDFor(addMonths(todayMonthStart, -interval), day)
+  }
+
+  let current = 0
+  let d = anchorDue
+  while (isDone(map.get(d))) {
+    current++
+    const prevMonthStart = addMonths(d.slice(0, 7) + '-01', -interval)
+    d = monthDueYMDFor(prevMonthStart, day)
+  }
+
+  return { currentStreak: current, longestStreak: Math.max(longestStreakMonthly(map, todayYMD, interval, day), current) }
+}
+
+function longestStreakMonthly(
+  map: Map<string, 'completed' | 'skipped' | 'minimum'>,
+  todayYMD: string,
+  intervalMonths: number,
+  monthlyDay: number,
+): number {
+  const keys = [...map.keys()]
+  if (keys.length === 0) return 0
+  const minD = keys.reduce((a, b) => (a < b ? a : b))
+  const maxD = [keys.reduce((a, b) => (a > b ? a : b)), todayYMD].reduce((a, b) => (a > b ? a : b))
+
+  const occurrences = monthlyOccurrencesInRange(minD, maxD, intervalMonths, monthlyDay)
+  let best = 0
+  let run = 0
+  for (const d of occurrences) {
+    if (isDone(map.get(d))) {
+      run++
+      if (run > best) best = run
+    } else {
+      run = 0
+    }
+  }
+  return best
+}
+
+/** Dates in the current monthly streak (scheduled due dates only), oldest first */
+export function getCurrentStreakDatesMonthly(
+  entries: StreakEntry[],
+  todayYMD: string,
+  monthlyInterval: number,
+  monthlyDay: number,
+): string[] {
+  const map = toMap(entries)
+  const interval = Math.max(1, Math.trunc(monthlyInterval || 1))
+  const day = monthlyDay === -1 ? -1 : Math.max(1, Math.min(31, Math.trunc(monthlyDay || 1)))
+
+  const todayMonthStart = todayYMD.slice(0, 7) + '-01'
+  const dueThisMonth = monthDueYMDFor(todayMonthStart, day)
+
+  const todayStatus = map.get(dueThisMonth)
+  if (dueThisMonth === todayYMD && todayStatus === 'skipped') return []
+
+  let anchorDue = dueThisMonth <= todayYMD ? dueThisMonth : monthDueYMDFor(addMonths(todayMonthStart, -interval), day)
+  if (dueThisMonth === todayYMD && !isDone(todayStatus)) {
+    anchorDue = monthDueYMDFor(addMonths(todayMonthStart, -interval), day)
+  }
+
+  const dates: string[] = []
+  let d = anchorDue
+  while (isDone(map.get(d))) {
+    dates.push(d)
+    const prevMonthStart = addMonths(d.slice(0, 7) + '-01', -interval)
+    d = monthDueYMDFor(prevMonthStart, day)
+  }
+  return dates.sort()
+}
+
+/** Dispatch: weekly bitmask, scheduled monthly, every_x_days monthly-interval, or daily */
 export function getHabitStreaks(
   entries: StreakEntry[],
   todayYMD: string,
   frequency: string,
   frequencyTarget: number | null,
+  monthlyInterval?: number | null,
+  monthlyDay?: number | null,
 ): HabitStreakResult {
   const weeklyMask = typeof frequencyTarget === 'number' ? frequencyTarget : 0
   const isWeekly = frequency === 'weekly' && weeklyMask >= 1 && weeklyMask <= 127
   if (isWeekly) {
     return getStreaksWeekly(entries, todayYMD, weeklyMask)
   }
+  if (frequency === 'monthly') {
+    return getStreaksMonthly(entries, todayYMD, monthlyInterval ?? 1, monthlyDay ?? 1)
+  }
   if (isMonthlyIntervalHabit(frequency, frequencyTarget)) {
-    return getStreaksMonthly(entries, todayYMD)
+    return getStreaksMonthlyIntervalHabit(entries, todayYMD)
   }
   return getStreaksDaily(entries, todayYMD)
 }
@@ -334,6 +499,8 @@ export function getHabitCurrentStreakDates(
   todayYMD: string,
   frequency: string,
   frequencyTarget: number | null,
+  monthlyInterval?: number | null,
+  monthlyDay?: number | null,
 ): string[] {
   /* Calendar shading: weekly uses only fully-complete weeks; daily uses consecutive done days. */
   const weeklyMask = typeof frequencyTarget === 'number' ? frequencyTarget : 0
@@ -341,8 +508,11 @@ export function getHabitCurrentStreakDates(
   if (isWeekly) {
     return getCurrentStreakDatesWeekly(entries, todayYMD, weeklyMask)
   }
+  if (frequency === 'monthly') {
+    return getCurrentStreakDatesMonthly(entries, todayYMD, monthlyInterval ?? 1, monthlyDay ?? 1)
+  }
   if (isMonthlyIntervalHabit(frequency, frequencyTarget)) {
-    return getCurrentStreakDatesMonthly(entries, todayYMD)
+    return getCurrentStreakDatesMonthlyIntervalHabit(entries, todayYMD)
   }
   return getCurrentStreakDatesDaily(entries, todayYMD)
 }

@@ -17,6 +17,13 @@ export function isWeeklyStreakHabit(
 /** Re-export for habit UI that only has frequency fields */
 export { isMonthlyIntervalHabit }
 
+/** True when habit uses monthly streak math (scheduled day-of-month occurrences). */
+export function isMonthlyStreakHabit(
+  habit: Pick<Habit, 'frequency'>,
+): boolean {
+  return habit.frequency === 'monthly'
+}
+
 /** Pluralize a unit label (“1 day” vs “2 days”). */
 function pluralize(n: number, singular: string, plural: string): string {
   return `${n} ${n === 1 ? singular : plural}`
@@ -30,7 +37,10 @@ export function formatHabitStreakCount(
   if (isWeeklyStreakHabit(habit)) {
     return pluralize(count, 'week', 'weeks')
   }
-  if (isMonthlyIntervalHabit(habit.frequency, habit.frequency_target)) {
+  if (
+    isMonthlyStreakHabit(habit) ||
+    isMonthlyIntervalHabit(habit.frequency, habit.frequency_target)
+  ) {
     return pluralize(count, 'month', 'months')
   }
   return pluralize(count, 'day', 'days')
@@ -44,7 +54,10 @@ export function formatHabitStreakBadge(
   if (isWeeklyStreakHabit(habit)) {
     return `${count}w`
   }
-  if (isMonthlyIntervalHabit(habit.frequency, habit.frequency_target)) {
+  if (
+    isMonthlyStreakHabit(habit) ||
+    isMonthlyIntervalHabit(habit.frequency, habit.frequency_target)
+  ) {
     return `${count}m`
   }
   return `${count}d`

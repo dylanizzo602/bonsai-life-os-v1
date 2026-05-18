@@ -157,6 +157,8 @@ export interface AddEditSubtaskModalProps {
   isOpen: boolean
   /** Called when the modal should close */
   onClose: () => void
+  /** Parent task title (shown in the modal header for context when editing a subtask) */
+  parentTaskTitle?: string | null
   /** Called when user submits Add Subtask; receives form data. May return the created task. */
   onCreateSubtask?: (input: CreateTaskInput) => Promise<unknown>
   /** If provided, after create this is called with the created task and the modal stays open in edit mode */
@@ -189,6 +191,7 @@ export interface AddEditSubtaskModalProps {
 export function AddEditSubtaskModal({
   isOpen,
   onClose,
+  parentTaskTitle = null,
   onCreateSubtask,
   onCreatedSubtask,
   subtask = null,
@@ -298,6 +301,7 @@ export function AddEditSubtaskModal({
       /* Field updates: only apply when parser found an explicit token. */
       if (parsed.priority) setPriority(parsed.priority)
       if (parsed.due_date) setDueDate(parsed.due_date)
+      if (parsed.time_estimate != null) setTimeEstimate(parsed.time_estimate)
       if (parsed.recurrence_pattern) setRecurrencePattern(parsed.recurrence_pattern)
     }, 200)
   }
@@ -386,6 +390,8 @@ export function AddEditSubtaskModal({
       const parsedOnSubmit = parseSmartQuickAdd(title, { now: new Date() })
       const cleanedTitle = parsedOnSubmit.cleanedTitle.trim() || title.trim()
       const submitTagNames = parsedOnSubmit.tagNames
+      /* Smart estimate: if an explicit estimate token was typed, prefer it at create time. */
+      const effectiveTimeEstimate = parsedOnSubmit.time_estimate != null ? parsedOnSubmit.time_estimate : time_estimate
 
       const input: CreateTaskInput = {
         title: cleanedTitle,
@@ -394,7 +400,7 @@ export function AddEditSubtaskModal({
         due_date: due_date || null,
         recurrence_pattern: recurrence_pattern ?? null,
         priority,
-        time_estimate,
+        time_estimate: effectiveTimeEstimate,
         attachments: attachments.length ? attachments : undefined,
         status: getTaskStatus(status),
       }
@@ -438,7 +444,17 @@ export function AddEditSubtaskModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={isEditMode ? 'Edit Subtask' : 'Add Subtask'}
+      title={
+        /* Modal header: show parent task name so users always know where this subtask belongs. */
+        <div className="flex flex-col gap-0.5">
+          <span>{isEditMode ? 'Edit Subtask' : 'Add Subtask'}</span>
+          {parentTaskTitle ? (
+            <span className="text-secondary font-normal text-bonsai-slate-600">
+              {parentTaskTitle}
+            </span>
+          ) : null}
+        </div>
+      }
       fullScreenOnMobile
       /* Footer: In edit mode, show auto-save message and Close button; in add mode, keep explicit Save/Add */
       footer={
