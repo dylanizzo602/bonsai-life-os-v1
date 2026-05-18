@@ -1,5 +1,6 @@
 /* Tailwind CSS v4: base layer, components, and utilities (replaces @tailwind directives) */
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap");
 
 /* Bonsai branding: Typography
  * Desktop (lg: ≥1024px): Page titles 36px, Body 18px, Secondary 16px
@@ -35,6 +36,26 @@
   --color-bonsai-slate-500: #4a5360;
   --color-bonsai-slate-600: #3d4550;
   --color-bonsai-slate-700: #2d333b;
+
+  /* Auth / Material-style tokens (login and future screens) */
+  --color-surface: #f9faf8;
+  --color-on-surface: #191c1b;
+  --color-on-surface-variant: #434842;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f3f4f2;
+  --color-surface-container: #edeeec;
+  --color-outline: #747872;
+  --color-outline-variant: #c4c8c0;
+  --color-primary: #516051;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #6a7869;
+  --color-secondary: #4f5f7a;
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+  --font-headline: Manrope, system-ui, sans-serif;
+  --font-body: Manrope, system-ui, sans-serif;
+  --font-label: Manrope, system-ui, sans-serif;
 }
 
 /* Base typography and layout defaults; responsive-friendly root */
@@ -118,5 +139,27 @@ body {
   }
   .notes-rich-editor .ProseMirror:focus {
     outline: none;
+  }
+  /* Auth inputs: bottom border focus style (zenith) */
+  .zenith-input {
+    font-family: var(--font-body);
+  }
+  .zenith-input:focus {
+    outline: none;
+    border-bottom-color: var(--color-primary) !important;
+    border-bottom-width: 2px !important;
+  }
+  .font-headline {
+    font-family: var(--font-headline);
+  }
+  .font-body {
+    font-family: var(--font-body);
+  }
+  .font-label {
+    font-family: var(--font-label);
+  }
+  /* Auth reset modal: soft elevated card shadow */
+  .ambient-shadow {
+    box-shadow: 0 20px 40px -15px rgba(91, 107, 135, 0.12);
   }
 }

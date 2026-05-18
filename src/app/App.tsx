@@ -45,7 +45,7 @@ function ScreenTooSmallMessage() {
  */
 function App() {
   /* Auth state: determine whether to show auth screen or main app */
-  const { session, loading } = useAuth()
+  const { session, loading, isPasswordRecovery } = useAuth()
   /* Timezone: ensures morning briefing completion checks align with the user's due-date semantics */
   const timeZone = useUserTimeZone()
 
@@ -149,8 +149,8 @@ function App() {
     )
   }
 
-  /* Conditional rendering: unauthenticated users see auth screen */
-  if (!session) {
+  /* Conditional rendering: auth screen for signed-out users and password recovery */
+  if (!session || isPasswordRecovery) {
     return <AuthScreen />
   }
 

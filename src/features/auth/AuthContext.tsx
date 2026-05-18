@@ -23,6 +23,10 @@ interface AuthContextValue {
   session: Session | null
   /** True while initial auth state is loading */
   loading: boolean
+  /** User arrived from password reset email link; show login + reset modal */
+  isPasswordRecovery: boolean
+  /** Clear recovery mode after password is updated or flow is cancelled */
+  clearPasswordRecovery: () => void
   /** Sign in with email/password */
   signIn: (email: string, password: string) => Promise<void>
   /** Sign up with email/password */
@@ -47,6 +51,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
+
+  const clearPasswordRecovery = useCallback(() => {
+    setIsPasswordRecovery(false)
+  }, [])
 
   /* Initial session load: fetch current session on mount */
   useEffect(() => {
@@ -63,9 +72,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     })()
 
     /* Subscribe to auth state changes */
-    const unsubscribe = onAuthStateChange((nextSession) => {
+    const unsubscribe = onAuthStateChange((nextSession, event) => {
       setSession(nextSession)
       setUser(nextSession?.user ?? null)
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true)
+      }
     })
 
     return () => {
@@ -102,6 +114,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     user,
     session,
     loading,
+    isPasswordRecovery,
+    clearPasswordRecovery,
     signIn: handleSignIn,
     signUp: handleSignUp,
     signOut: handleSignOut,

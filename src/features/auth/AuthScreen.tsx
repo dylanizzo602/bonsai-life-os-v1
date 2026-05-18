@@ -1,29 +1,56 @@
-/* Auth screen: Email/password sign-in and sign-up UI */
-import { useState } from 'react'
-import { Button } from '../../components/Button'
-import { Input } from '../../components/Input'
+/* Auth screen: Email/password sign-in and sign-up routing */
+import { useEffect, useState } from 'react'
 import { useAuth } from './AuthContext'
+import { GoogleIcon } from './components/GoogleIcon'
+import { ForgotPasswordModal } from './ForgotPasswordModal'
+import { LoginErrorModal } from './LoginErrorModal'
+import { ResetPasswordModal } from './ResetPasswordModal'
+import { SignUpExistsErrorModal } from './SignUpExistsErrorModal'
+import { SignUpScreen } from './SignUpScreen'
 
 type AuthMode = 'signin' | 'signup'
 
 /**
  * AuthScreen component
- * Allows users to sign in or sign up with email and password.
+ * Hosts login, sign-up, and auth-related modals.
  */
 export function AuthScreen() {
-  /* Local form state: mode, fields, loading, and error message */
+  /* Local form state: mode, fields, loading, and messages */
   const [mode, setMode] = useState<AuthMode>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [infoMessage, setInfoMessage] = useState<string | null>(null)
+  const [forgotModalOpen, setForgotModalOpen] = useState(false)
+  const [resetModalOpen, setResetModalOpen] = useState(false)
+  const [loginErrorModalOpen, setLoginErrorModalOpen] = useState(false)
+  const [signUpExistsModalOpen, setSignUpExistsModalOpen] = useState(false)
 
-  const { signIn, signUp } = useAuth()
+  const { signIn, isPasswordRecovery, clearPasswordRecovery, signOut } = useAuth()
 
-  /* Handle form submission for sign-in or sign-up */
-  const handleSubmit = async (event: React.FormEvent) => {
+  /* Open reset modal when user returns from password reset email link */
+  useEffect(() => {
+    if (isPasswordRecovery) {
+      setResetModalOpen(true)
+    }
+  }, [isPasswordRecovery])
+
+  /* Surface expired/invalid reset links from URL hash and clean the address bar */
+  useEffect(() => {
+    const hash = window.location.hash
+    if (!hash.includes('error=')) return
+
+    const params = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
+    const description = params.get('error_description')?.replace(/\+/g, ' ')
+    if (description) {
+      setInfoMessage(decodeURIComponent(description))
+    }
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+  }, [])
+
+  /* Handle sign-in form submission */
+  const handleSignInSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     setError(null)
     setInfoMessage(null)
@@ -33,133 +60,258 @@ export function AuthScreen() {
       return
     }
 
-    if (mode === 'signup' && password !== confirmPassword) {
-      setError('Passwords do not match.')
-      return
-    }
-
     try {
       setLoading(true)
-      if (mode === 'signin') {
-        await signIn(email, password)
-      } else {
-        await signUp(email, password)
-        setInfoMessage(
-          'Sign-up successful. If email confirmation is required, please check your inbox before signing in.',
-        )
-        setMode('signin')
-        setPassword('')
-        setConfirmPassword('')
-      }
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Authentication failed. Please try again.'
-      setError(message)
+      await signIn(email, password)
+    } catch {
+      setLoginErrorModalOpen(true)
+      setError(null)
     } finally {
       setLoading(false)
     }
   }
 
+  /* Switch auth mode and clear transient messages */
+  const switchMode = (nextMode: AuthMode) => {
+    setMode(nextMode)
+    setError(null)
+    setInfoMessage(null)
+  }
+
+  const goToSignIn = () => {
+    switchMode('signin')
+    setSignUpExistsModalOpen(false)
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bonsai-slate-50 px-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-bonsai-slate-200 p-6 md:p-8">
-        {/* Header: App name and mode toggle */}
-        <div className="mb-6 text-center">
-          <h1 className="text-page-title font-bold text-bonsai-brown-700 mb-1">
-            Bonsai Life OS
-          </h1>
-          <p className="text-secondary text-bonsai-slate-600">
-            {mode === 'signin'
-              ? 'Sign in to your workspace'
-              : 'Create an account to get started'}
-          </p>
-        </div>
-
-        {/* Mode toggle buttons */}
-        <div className="flex mb-6 rounded-lg bg-bonsai-slate-100 p-1">
-          <button
-            type="button"
-            className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
-              mode === 'signin'
-                ? 'bg-white text-bonsai-brown-700 shadow-sm'
-                : 'text-bonsai-slate-600 hover:text-bonsai-brown-700'
-            }`}
-            onClick={() => setMode('signin')}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
-              mode === 'signup'
-                ? 'bg-white text-bonsai-brown-700 shadow-sm'
-                : 'text-bonsai-slate-600 hover:text-bonsai-brown-700'
-            }`}
-            onClick={() => setMode('signup')}
-          >
-            Sign up
-          </button>
-        </div>
-
-        {/* Auth form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            autoComplete="email"
-            required
-          />
-          <Input
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-            required
-          />
-          {mode === 'signup' && (
-            <Input
-              label="Confirm password"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="new-password"
-              required
-            />
-          )}
-
-          {error && (
-            <p className="text-secondary text-red-600" role="alert">
-              {error}
-            </p>
-          )}
-          {infoMessage && (
-            <p className="text-secondary text-bonsai-sage-700" role="status">
-              {infoMessage}
-            </p>
-          )}
-
-          <Button
-            type="submit"
-            className="w-full mt-2"
-            disabled={loading}
-          >
-            {loading
-              ? mode === 'signin'
-                ? 'Signing in...'
-                : 'Creating account...'
-              : mode === 'signin'
-                ? 'Sign in'
-                : 'Sign up'}
-          </Button>
-        </form>
+    <div className="bg-surface text-on-surface flex h-screen flex-col overflow-hidden font-body antialiased">
+      {/* Background decorative blurs */}
+      <div
+        className="pointer-events-none fixed top-0 left-0 -z-10 h-full w-full overflow-hidden"
+        aria-hidden
+      >
+        <div className="absolute -top-[10%] -left-[10%] h-[40%] w-[40%] rounded-full bg-primary/5 blur-[120px]" />
+        <div className="absolute top-[60%] -right-[5%] h-[30%] w-[30%] rounded-full bg-secondary/5 blur-[100px]" />
       </div>
+
+      {mode === 'signup' ? (
+        <SignUpScreen
+          initialEmail={email}
+          onSwitchToSignIn={goToSignIn}
+          onEmailAlreadyExists={() => setSignUpExistsModalOpen(true)}
+          onSignUpSuccess={(message) => {
+            setInfoMessage(message)
+            setPassword('')
+          }}
+        />
+      ) : (
+        <main className="flex flex-grow items-center justify-center px-6">
+          <div className="flex w-full max-w-[440px] flex-col items-center">
+            {/* Brand identity */}
+            <div className="mb-6 text-center">
+              <div className="mb-4 flex items-center justify-center gap-3">
+                <img
+                  src="/bonsai-logo.png"
+                  alt="Bonsai Productivity"
+                  className="h-10 w-auto"
+                />
+                <span
+                  className="font-headline text-2xl font-semibold tracking-tight"
+                  style={{ color: '#7D8C7C' }}
+                >
+                  Bonsai
+                </span>
+              </div>
+              <h1 className="font-headline text-on-surface mb-1 text-xl leading-tight font-semibold tracking-tight">
+                Welcome back to your workspace.
+              </h1>
+              <p className="text-on-surface-variant font-body text-sm">
+                Continue your journey of slow productivity.
+              </p>
+            </div>
+
+            {/* Sign-in form card */}
+            <div className="border-outline-variant/30 bg-surface-container-lowest w-full rounded-xl border p-6 transition-all duration-500 ease-in-out">
+              <form onSubmit={handleSignInSubmit} className="space-y-4">
+                <div className="flex flex-col space-y-1">
+                  <label
+                    className="text-outline font-label text-[10px] font-bold tracking-widest uppercase"
+                    htmlFor="auth-email"
+                  >
+                    Email Address
+                  </label>
+                  <input
+                    id="auth-email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="jane@example.com"
+                    className="zenith-input text-on-surface placeholder:text-outline-variant/60 border-outline-variant w-full border-t-0 border-r-0 border-b border-l-0 bg-transparent px-1 py-2 transition-all duration-300 focus:ring-0"
+                  />
+                </div>
+
+                <div className="flex flex-col space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label
+                      className="text-outline font-label text-[10px] font-bold tracking-widest uppercase"
+                      htmlFor="auth-password"
+                    >
+                      Password
+                    </label>
+                    <button
+                      type="button"
+                      className="text-primary hover:text-primary-container text-sm transition-colors duration-200"
+                      onClick={() => {
+                        setError(null)
+                        setForgotModalOpen(true)
+                      }}
+                    >
+                      Forgot?
+                    </button>
+                  </div>
+                  <input
+                    id="auth-password"
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="zenith-input text-on-surface placeholder:text-outline-variant/60 border-outline-variant w-full border-t-0 border-r-0 border-b border-l-0 bg-transparent px-1 py-2 transition-all duration-300 focus:ring-0"
+                  />
+                </div>
+
+                {error && (
+                  <p className="text-sm text-error" role="alert">
+                    {error}
+                  </p>
+                )}
+                {infoMessage && (
+                  <p className="text-primary text-sm" role="status">
+                    {infoMessage}
+                  </p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="bg-primary text-on-primary hover:bg-primary-container w-full rounded-lg py-3 text-sm font-semibold shadow-sm transition-all duration-300 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading ? 'Signing in...' : 'Sign In'}
+                </button>
+              </form>
+
+              <div className="mt-6">
+                <div className="relative mb-4 flex items-center">
+                  <div className="border-outline-variant/30 flex-grow border-t" />
+                  <span className="text-on-surface-variant mx-4 flex-shrink text-xs">
+                    Or sign in with
+                  </span>
+                  <div className="border-outline-variant/30 flex-grow border-t" />
+                </div>
+                <button
+                  type="button"
+                  className="border-outline-variant/40 bg-surface-container-low hover:bg-surface-container flex w-full items-center justify-center gap-2 rounded-lg border py-3 transition-colors duration-200"
+                  aria-label="Sign in with Google (not yet available)"
+                >
+                  <GoogleIcon />
+                  <span className="text-on-surface text-sm font-medium">Google</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6 text-center">
+              <p className="text-on-surface-variant font-body text-sm">
+                Don&apos;t have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => switchMode('signup')}
+                  className="text-primary font-semibold underline-offset-4 transition-all hover:underline"
+                >
+                  Start your journey.
+                </button>
+              </p>
+            </div>
+          </div>
+        </main>
+      )}
+
+      <footer className="bg-surface border-outline-variant/10 mx-auto flex w-full max-w-7xl flex-col items-center justify-between gap-4 border-t px-8 py-6 opacity-80 transition-opacity hover:opacity-100 md:flex-row">
+        <div className="flex flex-col items-center gap-6 md:flex-row">
+          <span className="text-primary font-headline text-sm font-bold">Bonsai</span>
+          <div className="flex gap-6">
+            <a
+              className="text-on-surface-variant hover:text-secondary font-body text-xs transition-colors duration-200"
+              href="#"
+              onClick={(e) => e.preventDefault()}
+            >
+              Privacy Policy
+            </a>
+            <a
+              className="text-on-surface-variant hover:text-secondary font-body text-xs transition-colors duration-200"
+              href="#"
+              onClick={(e) => e.preventDefault()}
+            >
+              Terms of Service
+            </a>
+            <a
+              className="text-on-surface-variant hover:text-secondary font-body text-xs transition-colors duration-200"
+              href="#"
+              onClick={(e) => e.preventDefault()}
+            >
+              Help Center
+            </a>
+          </div>
+        </div>
+        <p className="text-on-surface-variant font-body text-xs">
+          © 2026 Bonsai Productivity. Mindfully crafted.
+        </p>
+      </footer>
+
+      <ForgotPasswordModal
+        isOpen={forgotModalOpen}
+        onClose={() => setForgotModalOpen(false)}
+        initialEmail={email}
+        onSuccess={(message) => {
+          setInfoMessage(message)
+          setError(null)
+        }}
+      />
+
+      <ResetPasswordModal
+        isOpen={resetModalOpen}
+        onClose={async () => {
+          setResetModalOpen(false)
+          if (isPasswordRecovery) {
+            clearPasswordRecovery()
+            await signOut()
+          }
+        }}
+        onSuccess={(message) => {
+          setInfoMessage(message)
+          setError(null)
+          clearPasswordRecovery()
+        }}
+      />
+
+      <LoginErrorModal
+        isOpen={loginErrorModalOpen}
+        onClose={() => setLoginErrorModalOpen(false)}
+        onCreateAccount={() => {
+          setLoginErrorModalOpen(false)
+          switchMode('signup')
+        }}
+      />
+
+      <SignUpExistsErrorModal
+        isOpen={signUpExistsModalOpen}
+        onClose={() => setSignUpExistsModalOpen(false)}
+        onSignIn={goToSignIn}
+      />
     </div>
   )
 }
-

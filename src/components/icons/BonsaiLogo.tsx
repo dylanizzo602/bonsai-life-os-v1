@@ -1,4 +1,4 @@
-/* Bonsai logo: Tree with checkmark and hexagonal foliage */
+/* Bonsai logo: Official B monogram mark with optional wordmark */
 
 interface BonsaiLogoProps {
   /** Size class for the icon */
@@ -11,15 +11,15 @@ interface BonsaiLogoProps {
 
 /**
  * Bonsai logo component with optional text label
- * Displays the Bonsai tree logo with "Bonsai" and "LifeOS" text
+ * Uses the official Bonsai Productivity monogram from `/bonsai-logo.png`.
  */
 export function BonsaiLogo({ iconSize = 'w-8 h-8', showText = false, textSize = 'text-lg' }: BonsaiLogoProps) {
   return (
     <div className="flex items-center gap-2">
-      {/* Logo image: Bonsai tree with checkmark base and hexagonal foliage */}
+      {/* Logo image: Official Bonsai monogram */}
       <img
         src="/bonsai-logo.png"
-        alt="Bonsai Logo"
+        alt="Bonsai Productivity"
         className={`${iconSize} object-contain`}
       />
       {/* Text labels: Show when expanded */}

@@ -18,4 +18,8 @@ if (!supabaseUrlRaw || !supabaseAnonKeyRaw) {
 export const supabaseUrl: string = supabaseUrlRaw
 
 /** Single Supabase client instance for auth, database, and storage. No queries or tables here. */
-export const supabase = createClient(supabaseUrlRaw, supabaseAnonKeyRaw)
+export const supabase = createClient(supabaseUrlRaw, supabaseAnonKeyRaw, {
+  auth: {
+    detectSessionInUrl: true,
+  },
+})

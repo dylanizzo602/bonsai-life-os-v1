@@ -1,5 +1,6 @@
 /* Auth helpers: thin wrappers around Supabase auth client for session and email/password flows */
 import type {
+  AuthChangeEvent,
   AuthError,
   Session,
   User,
@@ -52,7 +53,41 @@ export async function signUpWithEmail({
     console.error('Error signing up:', error)
     return { user: null, session: null, error }
   }
+  /* Supabase may return no error but empty identities when email already exists */
+  if (data.user && data.user.identities?.length === 0) {
+    const duplicateError = {
+      message: 'User already registered',
+      name: 'AuthApiError',
+      status: 422,
+    } as AuthError
+    return { user: null, session: null, error: duplicateError }
+  }
   return { user: data.user, session: data.session, error: null }
+}
+
+/* Send password reset email with link back to this app */
+export async function sendPasswordResetEmail(
+  email: string,
+): Promise<{ error: AuthError | null }> {
+  const redirectTo = `${window.location.origin}${window.location.pathname}`
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+  if (error) {
+    console.error('Error sending password reset email:', error)
+    return { error }
+  }
+  return { error: null }
+}
+
+/* Set a new password (requires active session, e.g. after recovery link) */
+export async function updatePassword(
+  password: string,
+): Promise<{ error: AuthError | null }> {
+  const { error } = await supabase.auth.updateUser({ password })
+  if (error) {
+    console.error('Error updating password:', error)
+    return { error }
+  }
+  return { error: null }
 }
 
 /* Sign out the current user */
@@ -67,10 +102,10 @@ export async function signOut(): Promise<AuthError | null> {
 
 /* Subscribe to auth state changes */
 export function onAuthStateChange(
-  callback: (session: Session | null) => void,
+  callback: (session: Session | null, event: AuthChangeEvent) => void,
 ): () => void {
-  const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-    callback(session)
+  const { data } = supabase.auth.onAuthStateChange((event, session) => {
+    callback(session, event)
   })
   return () => {
     data.subscription.unsubscribe()
