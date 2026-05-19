@@ -1,7 +1,27 @@
 /* IntegrationsSettingsSection: Google Calendar connect and coming-soon calendars */
 
 import type { ReactNode } from 'react'
+import { GoogleIcon } from '../../auth/components/GoogleIcon'
 import { MaterialIcon, SettingsCard, SettingsSectionHeader } from '../components'
+
+/** Fixed-size logo tile for integration rows (prevents flex shrink) */
+function IntegrationLogoBox({
+  children,
+  muted = false,
+}: {
+  children: ReactNode
+  muted?: boolean
+}) {
+  return (
+    <div
+      className={`flex size-10 shrink-0 items-center justify-center rounded-lg bg-white [&_.material-symbols-outlined]:text-[22px] [&_.material-symbols-outlined]:leading-none [&_svg]:size-6 ${
+        muted ? 'border border-outline-variant/10' : 'shadow-sm'
+      }`}
+    >
+      {children}
+    </div>
+  )
+}
 
 export interface IntegrationsSettingsSectionProps {
   connected: boolean
@@ -30,11 +50,9 @@ export function IntegrationsSettingsSection({
       <SettingsCard className="space-y-4">
         <div className="flex flex-col items-center justify-between gap-4 rounded-lg border border-outline-variant/10 bg-surface-container-low p-6 sm:flex-row">
           <div className="flex items-center gap-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white shadow-sm">
-              <span className="text-lg font-bold text-[#4285F4]" aria-hidden>
-                G
-              </span>
-            </div>
+            <IntegrationLogoBox>
+              <GoogleIcon />
+            </IntegrationLogoBox>
             <div>
               <h3 className="text-body font-semibold text-on-surface">Google Calendar</h3>
               <p className="text-secondary text-on-surface-variant">
@@ -93,9 +111,7 @@ function ComingSoonIntegration({
   return (
     <div className="flex flex-col items-center justify-between gap-4 rounded-lg border border-outline-variant/5 bg-surface-container-low/50 p-6 opacity-60 grayscale sm:flex-row">
       <div className="flex items-center gap-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-outline-variant/10 bg-white">
-          {icon}
-        </div>
+        <IntegrationLogoBox muted>{icon}</IntegrationLogoBox>
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-body font-semibold text-on-surface">{title}</h3>

@@ -18,11 +18,11 @@ export interface ProfileSettingsSectionProps {
   timeZone: string
   location: string
   saving: boolean
-  locating: boolean
+  /** When true, at least one profile field differs from the last saved values */
+  hasUnsavedChanges: boolean
   disabled: boolean
   onFieldChange: (field: 'firstName' | 'lastName' | 'email' | 'timeZone' | 'location', value: string) => void
   onSave: () => void
-  onAutofillLocation: () => void
 }
 
 /**
@@ -35,11 +35,10 @@ export function ProfileSettingsSection({
   timeZone,
   location,
   saving,
-  locating,
+  hasUnsavedChanges,
   disabled,
   onFieldChange,
   onSave,
-  onAutofillLocation,
 }: ProfileSettingsSectionProps) {
   const [resetModalOpen, setResetModalOpen] = useState(false)
   const [passwordResetMessage, setPasswordResetMessage] = useState<string | null>(null)
@@ -111,28 +110,22 @@ export function ProfileSettingsSection({
                 onChange={(e) => onFieldChange('location', e.target.value)}
                 placeholder="City, Country"
                 autoComplete="address-level2"
-                disabled={disabled || locating}
+                disabled={disabled}
               />
             </div>
 
-            <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => void onAutofillLocation()}
-                disabled={disabled || locating}
-                className="text-secondary font-medium text-primary hover:underline disabled:opacity-50"
-              >
-                {locating ? 'Finding location…' : 'Auto-fill location'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void onSave()}
-                disabled={disabled || saving}
-                className="rounded-lg bg-primary px-6 py-2 text-sm font-semibold text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
-              >
-                {saving ? 'Saving…' : 'Save changes'}
-              </button>
-            </div>
+            {hasUnsavedChanges ? (
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void onSave()}
+                  disabled={disabled || saving}
+                  className="rounded-lg bg-primary px-6 py-2 text-sm font-semibold text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  {saving ? 'Saving…' : 'Save changes'}
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
 

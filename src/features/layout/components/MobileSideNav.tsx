@@ -2,14 +2,12 @@
 
 import { useEffect } from 'react'
 import { MaterialIcon } from '../../../components/MaterialIcon'
-import { BonsaiLogo } from '../../../components/icons'
 import type { NavigationSection } from '../hooks/useNavigation'
 import { setQuickAddIntent } from '../quickAddIntent'
 import { TOP_NAV_ITEMS } from './topNavConfig'
 import { MOBILE_NAV_MATERIAL_ICONS } from './mobileNavConfig'
 import { MobileQuickAdd } from './MobileQuickAdd'
 import { MobileNavAccountSection } from './MobileNavAccountSection'
-import { NotificationBellButton } from '../../notifications/components/NotificationBellButton'
 
 interface MobileSideNavProps {
   isOpen: boolean
@@ -18,11 +16,8 @@ interface MobileSideNavProps {
   onClose: () => void
 }
 
-const headerIconClass =
-  'rounded-full p-2 text-secondary transition-colors hover:bg-surface-container-low hover:text-primary'
-
 /**
- * Full-screen mobile navigation: header utilities, main links, Quick Add, account section at bottom.
+ * Mobile navigation panel below the shared TopNav bar (TopNav stays visible with close X).
  */
 export function MobileSideNav({ isOpen, activeSection, onNavigate, onClose }: MobileSideNavProps) {
   useEffect(() => {
@@ -67,7 +62,7 @@ export function MobileSideNav({ isOpen, activeSection, onNavigate, onClose }: Mo
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 lg:hidden" role="presentation">
+    <div className="fixed inset-x-0 top-20 bottom-0 z-40 lg:hidden" role="presentation">
       <button
         type="button"
         className="absolute inset-0 bg-on-surface/25"
@@ -81,88 +76,55 @@ export function MobileSideNav({ isOpen, activeSection, onNavigate, onClose }: Mo
         role="dialog"
         aria-modal="true"
       >
-        {/* Header: brand + search, notifications, close */}
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-outline-variant/10 bg-surface-container-low px-5 py-2.5">
-          <button
-            type="button"
-            onClick={() => handleNavClick('home')}
-            className="flex min-w-0 items-center gap-2 rounded-lg transition-opacity hover:opacity-90"
-            aria-label="Bonsai home"
-          >
-            <BonsaiLogo iconSize="h-8 w-8" showText={false} />
-            <span className="font-headline truncate text-xl font-bold tracking-tight text-primary">
-              Bonsai
-            </span>
-          </button>
-          <div className="flex shrink-0 items-center gap-0.5">
-            <button
-              type="button"
-              className={headerIconClass}
-              aria-label="Search"
-              title="Coming soon"
-              disabled
-            >
-              <MaterialIcon name="search" className="text-[22px]" />
-            </button>
-            <NotificationBellButton className={headerIconClass}>
-              <MaterialIcon name="notifications" className="text-[22px]" />
-            </NotificationBellButton>
-            <button
-              type="button"
-              onClick={onClose}
-              className={headerIconClass}
-              aria-label="Close navigation menu"
-            >
-              <MaterialIcon name="close" className="text-[22px]" />
-            </button>
-          </div>
-        </div>
-
-        {/* Body: main links, Quick Add (after Notes), Settings pinned to bottom */}
+        {/* Body: nav + Quick Add evenly spaced at natural height; scroll if needed */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pt-3 pb-4">
-          <nav className="shrink-0" aria-label="Main navigation">
-            <ul className="flex flex-col">
-              {TOP_NAV_ITEMS.map(({ id, label }) => {
-                const isActive = activeSection === id
-                const symbol = MOBILE_NAV_MATERIAL_ICONS[id]
+          <div
+            className="flex min-h-0 flex-1 flex-col justify-evenly gap-3 overflow-y-auto overscroll-contain"
+            aria-label="Navigation and quick add"
+          >
+            <nav className="shrink-0" aria-label="Main navigation">
+              <ul className="flex flex-col gap-1">
+                {TOP_NAV_ITEMS.map(({ id, label }) => {
+                  const isActive = activeSection === id
+                  const symbol = MOBILE_NAV_MATERIAL_ICONS[id]
 
-                return (
-                  <li key={id}>
-                    <button
-                      type="button"
-                      onClick={() => handleNavClick(id)}
-                      className={`flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors ${
-                        isActive
-                          ? 'border-l-[3px] border-primary bg-primary/10 font-semibold text-primary'
-                          : 'border-l-[3px] border-transparent text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
-                      }`}
-                      aria-current={isActive ? 'page' : undefined}
-                    >
-                      {symbol ? (
-                        <MaterialIcon
-                          name={symbol}
-                          className={`text-[20px] ${isActive ? 'text-primary' : 'text-outline'}`}
-                        />
-                      ) : null}
-                      <span className="text-body font-medium">{label}</span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </nav>
+                  return (
+                    <li key={id} className="shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleNavClick(id)}
+                        className={`flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors ${
+                          isActive
+                            ? 'border-l-[3px] border-primary bg-primary/10 font-semibold text-primary'
+                            : 'border-l-[3px] border-transparent text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
+                        }`}
+                        aria-current={isActive ? 'page' : undefined}
+                      >
+                        {symbol ? (
+                          <MaterialIcon
+                            name={symbol}
+                            className={`shrink-0 text-[20px] ${isActive ? 'text-primary' : 'text-outline'}`}
+                          />
+                        ) : null}
+                        <span className="text-body font-medium">{label}</span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </nav>
 
-          {/* Quick Add: directly below main nav (after Notes) */}
-          <div className="mt-3 shrink-0">
-            <MobileQuickAdd
-              onAddTask={handleQuickAddTask}
-              onAddNote={handleQuickAddNote}
-              onAddInbox={handleQuickAddInbox}
-            />
+            <div className="shrink-0">
+              <MobileQuickAdd
+                onAddTask={handleQuickAddTask}
+                onAddNote={handleQuickAddNote}
+                onAddInbox={handleQuickAddInbox}
+              />
+            </div>
           </div>
 
           {/* Account: profile row + Settings / Log out */}
-          <div className="mt-auto shrink-0">
+          <div className="shrink-0 pt-4">
             <MobileNavAccountSection
               onOpenSettings={() => handleNavClick('settings')}
               onClose={onClose}

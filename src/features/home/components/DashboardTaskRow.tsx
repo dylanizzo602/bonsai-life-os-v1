@@ -1,53 +1,78 @@
-/* DashboardTaskRow: Single task row for the home upcoming-tasks bento card */
+/* DashboardTaskRow: Two-line task row for the home upcoming-tasks bento card */
 
-import { ChecklistIcon, FlagIcon, RepeatIcon, TasksIcon } from '../../../components/icons'
+import { MaterialIcon } from '../../../components/MaterialIcon'
+import { FlagIcon } from '../../../components/icons'
 import { TruncatedText } from '../../../components/TruncatedText'
-import { getDueStatus, formatStartDueDisplay } from '../../tasks/utils/date'
+import {
+  formatDashboardStartDueRange,
+  getDueStatus,
+} from '../../tasks/utils/date'
+import { getPriorityFlagClasses } from '../../tasks/utils/priority'
 import { useUserTimeZone } from '../../settings/useUserTimeZone'
-import type { Task } from '../../tasks/types'
+import type { Task, TaskPriority } from '../../tasks/types'
 import {
   getTaskDisplayStatus,
   getTaskStatusAriaLabel,
   TaskStatusIndicator,
 } from '../../tasks/TaskStatusIndicator'
-import { getPriorityFlagClasses } from '../../tasks/utils/priority'
 
 export interface DashboardTaskRowProps {
   task: Task
-  /** Subtask progress e.g. "3/5" */
-  subtaskSummary?: string | null
-  /** Checklist item progress when the task has checklists */
-  checklistSummary?: { completed: number; total: number } | null
   onClick?: () => void
   onToggleComplete?: (taskId: string) => void
 }
 
+/** Screen reader label for priority flag (icon-only in metadata) */
+function getPriorityAriaLabel(priority: TaskPriority): string {
+  const map: Record<TaskPriority, string> = {
+    none: 'No priority',
+    low: 'Low priority',
+    medium: 'Normal priority',
+    high: 'High priority',
+    urgent: 'Urgent priority',
+  }
+  return map[priority] ?? 'Priority'
+}
+
+/** Tag or category label for metadata */
+function getTaskTagLabel(task: Task): string | null {
+  const tag = task.tags[0]?.name?.trim()
+  if (tag) return tag
+  const category = task.category?.trim()
+  return category || null
+}
+
+type MetaSegment =
+  | { kind: 'text'; text: string; emphasizeDate?: boolean }
+  | { kind: 'priority' }
+
+/** Status control size — matches Upcoming Tasks card header icon (24px / text-[24px]) */
+const DASHBOARD_STATUS_SIZE_PX = 24
+const dashboardStatusSizeClass = 'h-6 w-6'
+
 /**
- * Dashboard-styled task row with checkbox, tag, subtask/checklist counts, due date, and priority flag.
+ * Zenith dashboard row: status icon, title, then metadata (tag • dates • priority flag).
  */
-export function DashboardTaskRow({
-  task,
-  subtaskSummary,
-  checklistSummary,
-  onClick,
-  onToggleComplete,
-}: DashboardTaskRowProps) {
+export function DashboardTaskRow({ task, onClick, onToggleComplete }: DashboardTaskRowProps) {
   const timeZone = useUserTimeZone()
-  const dueLabel = formatStartDueDisplay(task.due_date, task.start_date, timeZone)
+  const displayStatus = getTaskDisplayStatus(task.status)
+  const complete = displayStatus === 'complete'
+
+  const dateRange = formatDashboardStartDueRange(task.start_date, task.due_date, timeZone)
   const dueStatus = getDueStatus(task.due_date, timeZone)
-  const dueColor =
+  const dateColorClass =
     dueStatus === 'overdue'
       ? 'text-error'
       : dueStatus === 'dueSoon'
         ? 'text-amber-600'
         : 'text-on-surface-variant'
 
-  const categoryLabel = task.category?.trim() || task.tags[0]?.name || null
-  const displayStatus = getTaskDisplayStatus(task.status)
-  const complete = displayStatus === 'complete'
-  const hasProgress =
-    Boolean(subtaskSummary) ||
-    Boolean(checklistSummary && checklistSummary.total > 0)
+  /* Metadata segments: tag (if any), start–due, priority flag (if not none) */
+  const metaSegments: MetaSegment[] = []
+  const tagLabel = getTaskTagLabel(task)
+  if (tagLabel) metaSegments.push({ kind: 'text', text: tagLabel })
+  if (dateRange) metaSegments.push({ kind: 'text', text: dateRange, emphasizeDate: true })
+  if (task.priority !== 'none') metaSegments.push({ kind: 'priority' })
 
   const handleCircleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -71,79 +96,74 @@ export function DashboardTaskRow({
             }
           : undefined
       }
-      className="group flex cursor-pointer items-center gap-4 rounded-xl border border-transparent p-4 transition-colors hover:border-surface-variant hover:bg-surface-container-lowest"
+      className="group flex cursor-pointer items-start gap-4 rounded-xl border border-transparent px-1 py-3 transition-colors hover:border-surface-variant hover:bg-surface-container-lowest"
     >
-      {/* Status circle: open / in progress / complete colors match task list */}
+      {/* Status control */}
       <button
         type="button"
         onClick={handleCircleClick}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-80 disabled:cursor-default"
+        className={`mt-0.5 flex ${dashboardStatusSizeClass} shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:cursor-default`}
         aria-label={
           complete ? getTaskStatusAriaLabel(displayStatus) : 'Mark task complete'
         }
         disabled={complete || !onToggleComplete}
       >
-        <TaskStatusIndicator status={displayStatus} size={24} />
+        {complete ? (
+          <span
+            className={`flex ${dashboardStatusSizeClass} items-center justify-center rounded-full bg-primary text-on-primary`}
+          >
+            <MaterialIcon name="check" className="text-[15px]" />
+          </span>
+        ) : displayStatus === 'in_progress' ? (
+          <TaskStatusIndicator status={displayStatus} size={DASHBOARD_STATUS_SIZE_PX} />
+        ) : (
+          <span
+            className={`flex ${dashboardStatusSizeClass} items-center justify-center rounded-full border-2 border-outline-variant transition-colors group-hover:border-primary`}
+          />
+        )}
       </button>
 
-      {/* Title, tag, and progress counts */}
+      {/* Title + metadata */}
       <div className="min-w-0 flex-1">
-        <div className="mb-0.5 flex min-w-0 items-center gap-2">
-          {/* Title column: flex-1 + overflow-hidden so TruncatedText respects row width */}
-          <div className="min-w-0 flex-1 overflow-hidden">
-            <TruncatedText
-              fullText={task.title}
-              tooltipPosition="top"
-              className={`text-body font-medium leading-tight ${
-                complete ? 'text-on-surface-variant line-through' : 'text-on-surface'
-              }`}
-            >
-              {task.title}
-            </TruncatedText>
-          </div>
-          {task.recurrence_pattern ? (
-            <RepeatIcon className="h-4 w-4 shrink-0 text-on-surface-variant/60" aria-hidden />
-          ) : null}
-        </div>
+        <TruncatedText
+          fullText={task.title}
+          tooltipPosition="top"
+          className={`text-body font-semibold leading-snug ${
+            complete ? 'text-on-surface-variant line-through' : 'text-on-surface'
+          }`}
+        >
+          {task.title}
+        </TruncatedText>
 
-        {categoryLabel ? (
-          <div className="mt-1">
-            <span className="inline-block rounded-full bg-surface-container-high px-2 py-0.5 text-xs font-medium text-on-surface-variant">
-              {categoryLabel}
-            </span>
-          </div>
-        ) : null}
-
-        {/* Subtask / checklist counts below tag (or below title when no tag) */}
-        {hasProgress ? (
-          <div
-            className={`flex flex-wrap items-center gap-3 text-secondary text-on-surface-variant ${categoryLabel ? 'mt-1.5' : 'mt-1'}`}
-          >
-            {subtaskSummary ? (
-              <span className="inline-flex items-center gap-1">
-                <TasksIcon className="h-4 w-4 shrink-0" aria-hidden />
-                <span>{subtaskSummary}</span>
+        {metaSegments.length > 0 ? (
+          <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-secondary leading-snug">
+            {metaSegments.map((segment, index) => (
+              <span key={index} className="inline-flex items-center gap-1.5">
+                {index > 0 ? (
+                  <span className="text-outline-variant/70" aria-hidden>
+                    •
+                  </span>
+                ) : null}
+                {segment.kind === 'priority' ? (
+                  <span
+                    className="inline-flex"
+                    role="img"
+                    aria-label={getPriorityAriaLabel(task.priority)}
+                  >
+                    <FlagIcon
+                      className={`h-3.5 w-3.5 shrink-0 ${getPriorityFlagClasses(task.priority)}`}
+                      aria-hidden
+                    />
+                  </span>
+                ) : segment.emphasizeDate ? (
+                  <span className={dateColorClass}>{segment.text}</span>
+                ) : (
+                  <span className="text-on-surface-variant">{segment.text}</span>
+                )}
               </span>
-            ) : null}
-            {checklistSummary && checklistSummary.total > 0 ? (
-              <span className="inline-flex items-center gap-1">
-                <ChecklistIcon className="h-4 w-4 shrink-0" aria-hidden />
-                <span>
-                  {checklistSummary.completed}/{checklistSummary.total}
-                </span>
-              </span>
-            ) : null}
-          </div>
+            ))}
+          </p>
         ) : null}
-      </div>
-
-      {/* Due date and priority */}
-      <div className="flex shrink-0 items-center gap-3 self-start pt-0.5">
-        {dueLabel ? <span className={`text-secondary ${dueColor}`}>{dueLabel}</span> : null}
-        <FlagIcon
-          className={`h-5 w-5 shrink-0 ${getPriorityFlagClasses(task.priority)}`}
-          aria-hidden
-        />
       </div>
     </div>
   )

@@ -112,7 +112,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
   )
 
   return (
-    <div className="mx-auto min-h-full w-full max-w-[1200px] px-2 py-6 md:px-4 md:py-10">
+    <div className="mx-auto min-h-full w-full max-w-[1200px] py-6 md:py-10">
       <HomeGreeting />
 
       <MorningBriefingCard

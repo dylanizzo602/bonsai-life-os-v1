@@ -158,7 +158,6 @@ export function NotificationsSettingsSection({
 
                   {/* Mobile: labeled channel toggles */}
                   <div className="mt-4 space-y-2 md:hidden">
-                    <p className="settings-field-label mb-1">Channels</p>
                     <ul className="space-y-2">
                       {CHANNEL_LABELS.map((ch) => {
                         const inputId = `notif-${type}-${ch.key}`

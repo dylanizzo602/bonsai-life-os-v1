@@ -26,8 +26,10 @@ export function MobileQuickAdd({ onAddTask, onAddNote, onAddInbox }: MobileQuick
   ]
 
   return (
-    <div className="rounded-2xl bg-secondary-fixed/45 px-3 py-3">
-      <p className="text-secondary mb-2 font-semibold text-on-surface-variant">Quick Add</p>
+    <div className="w-full shrink-0 rounded-2xl bg-secondary-fixed/45 px-3 py-3">
+      <p className="mb-2 text-secondary font-semibold leading-snug text-on-surface-variant">
+        Quick Add
+      </p>
       <div className="grid grid-cols-3 gap-2">
         {actions.map((action) => (
           <button

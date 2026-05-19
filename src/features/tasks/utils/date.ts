@@ -333,6 +333,64 @@ function formatDateWithOptionalTime(
   return `${dateStr} at ${timeStr}`
 }
 
+/** True when start and due fall on the same calendar day in `timeZone`. */
+function isSameCalendarDayInZone(
+  a: string | null | undefined,
+  b: string | null | undefined,
+  timeZone: string,
+): boolean {
+  const da = toZonedDateTime(a, timeZone)?.startOf('day')
+  const db = toZonedDateTime(b, timeZone)?.startOf('day')
+  if (!da || !db) return false
+  return da.toISODate() === db.toISODate()
+}
+
+/**
+ * Dashboard metadata date line: "Due Oct 24" or "Today - Oct 24" (start–due range).
+ */
+export function formatDashboardStartDueRange(
+  startDate: string | null | undefined,
+  dueDate: string | null | undefined,
+  timeZone: string,
+): string | null {
+  const hasStart = startDate != null && startDate !== ''
+  const hasDue = dueDate != null && dueDate !== ''
+  if (!hasStart && !hasDue) return null
+
+  if (!hasStart && hasDue) {
+    const due = formatDueDateOnly(dueDate, timeZone)
+    return due ? `Due ${due}` : null
+  }
+
+  if (hasStart && !hasDue) {
+    if (isTodayInZone(startDate, timeZone)) return 'Starts Today'
+    if (isTomorrowInZone(startDate, timeZone)) return 'Starts Tomorrow'
+    const formatted = formatDateShort(startDate, timeZone)
+    return formatted ? `Starts ${formatted}` : null
+  }
+
+  if (isSameCalendarDayInZone(startDate, dueDate, timeZone)) {
+    const due = formatDueDateOnly(dueDate, timeZone)
+    return due ? `Due ${due}` : null
+  }
+
+  const range = formatStartDueDisplay(startDate, dueDate, timeZone)
+  return range ?? null
+}
+
+/**
+ * Compact due label for dashboard rows: due date only (no start range, no "Due" prefix).
+ */
+export function formatDueDateOnly(
+  dueDate: string | null | undefined,
+  timeZone: string,
+): string | null {
+  if (dueDate == null || dueDate === '') return null
+  if (isTodayInZone(dueDate, timeZone)) return getDueDayOnlyLabel(dueDate, 'Today', timeZone)
+  if (isTomorrowInZone(dueDate, timeZone)) return getDueDayOnlyLabel(dueDate, 'Tomorrow', timeZone)
+  return formatDateShort(dueDate, timeZone)
+}
+
 /**
  * Single display string for task start/due dates in `timeZone`.
  */

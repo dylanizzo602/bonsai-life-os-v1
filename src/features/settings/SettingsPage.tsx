@@ -34,12 +34,11 @@ export function SettingsPage() {
     email,
     timeZone,
     saving,
-    locating,
+    isProfileDirty,
     error,
     success,
     clearStatus,
     setField,
-    autofillLocation,
     saveProfile,
     saveEmail,
   } = useAccountSettings(user)
@@ -264,11 +263,10 @@ export function SettingsPage() {
           timeZone={timeZone}
           location={location}
           saving={saving}
-          locating={locating}
+          hasUnsavedChanges={isProfileDirty}
           disabled={disabled}
           onFieldChange={setField}
           onSave={() => void handleSaveProfileSection()}
-          onAutofillLocation={() => void autofillLocation()}
         />
 
         <IntegrationsSettingsSection

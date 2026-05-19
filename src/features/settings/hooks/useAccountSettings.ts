@@ -31,11 +31,20 @@ interface AccountSettingsState {
   timeZone: string
 }
 
+/** Profile card fields compared against the last saved baseline for dirty detection */
+interface ProfileBaseline {
+  firstName: string
+  lastName: string
+  location: string
+  timeZone: string
+  email: string
+}
+
 interface UseAccountSettingsReturn extends AccountSettingsState {
+  /** True when profile card fields differ from the last saved values */
+  isProfileDirty: boolean
   /** True while any update request is in flight */
   saving: boolean
-  /** True while location auto-fill is attempting geolocation/reverse-geocode */
-  locating: boolean
   /** Optional error message for the last operation */
   error: string | null
   /** Optional success message for the last operation */
@@ -44,8 +53,6 @@ interface UseAccountSettingsReturn extends AccountSettingsState {
   clearStatus: () => void
   /** Update a single field in local state */
   setField: <K extends keyof AccountSettingsState>(field: K, value: AccountSettingsState[K]) => void
-  /** Auto-fill location from the current device position */
-  autofillLocation: () => Promise<void>
   /** Persist profile metadata fields (first name, last name, location) */
   saveProfile: () => Promise<void>
   /** Persist email change */
@@ -103,22 +110,16 @@ function getInitialStateFromUser(user: User | null): AccountSettingsState {
   }
 }
 
-/**
- * Wrap geolocation API into a Promise for async/await usage.
- */
-function getCurrentPosition(): Promise<GeolocationPosition> {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('Geolocation is not supported in this browser'))
-      return
-    }
-
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: false,
-      timeout: 15_000,
-      maximumAge: 60_000,
-    })
-  })
+/** Snapshot of profile card fields used to detect unsaved edits */
+function getProfileBaselineFromUser(user: User | null): ProfileBaseline {
+  const initial = getInitialStateFromUser(user)
+  return {
+    firstName: initial.firstName,
+    lastName: initial.lastName,
+    location: initial.location,
+    timeZone: initial.timeZone,
+    email: user?.email ?? '',
+  }
 }
 
 /**
@@ -128,14 +129,35 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
 export function useAccountSettings(user: User | null): UseAccountSettingsReturn {
   /* Local form state: first name, last name, location, email */
   const [state, setState] = useState<AccountSettingsState>(() => getInitialStateFromUser(user))
+  /* Last-saved profile card values; updated after successful save */
+  const [profileBaseline, setProfileBaseline] = useState<ProfileBaseline>(() =>
+    getProfileBaselineFromUser(user),
+  )
   /* Status state: saving flag, error and success messages */
   const [saving, setSaving] = useState(false)
-  const [locating, setLocating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
   /* Derived flag: whether there is a logged-in user */
   const hasUser = useMemo(() => !!user, [user])
+
+  /* Dirty check: any profile card field differs from the last saved baseline */
+  const isProfileDirty = useMemo(
+    () =>
+      state.firstName !== profileBaseline.firstName ||
+      state.lastName !== profileBaseline.lastName ||
+      state.location !== profileBaseline.location ||
+      state.timeZone !== profileBaseline.timeZone ||
+      state.email.trim() !== profileBaseline.email,
+    [
+      state.firstName,
+      state.lastName,
+      state.location,
+      state.timeZone,
+      state.email,
+      profileBaseline,
+    ],
+  )
 
   /* Field updater: update a single field in local state */
   const setField = useCallback(
@@ -153,62 +175,6 @@ export function useAccountSettings(user: User | null): UseAccountSettingsReturn 
     setError(null)
     setSuccess(null)
   }, [])
-
-  /* Location auto-fill: use browser geolocation + reverse geocode into "City, Country" */
-  const autofillLocation = useCallback(async () => {
-    if (!hasUser) return
-    try {
-      setLocating(true)
-      setError(null)
-      setSuccess(null)
-
-      const position = await getCurrentPosition()
-      const latitude = position.coords.latitude
-      const longitude = position.coords.longitude
-
-      const url = new URL('https://api.bigdatacloud.net/data/reverse-geocode-client')
-      url.searchParams.set('latitude', String(latitude))
-      url.searchParams.set('longitude', String(longitude))
-      url.searchParams.set('localityLanguage', 'en')
-
-      const res = await fetch(url.toString())
-      if (!res.ok) {
-        throw new Error(`Reverse geocode failed (${res.status})`)
-      }
-
-      const data = (await res.json()) as {
-        locality?: string
-        city?: string
-        principalSubdivision?: string
-        countryName?: string
-      }
-
-      const locality = (data.locality || data.city || '').trim()
-      const country = (data.countryName || '').trim()
-      const subdivision = (data.principalSubdivision || '').trim()
-
-      const locationText =
-        locality && country
-          ? `${locality}, ${country}`
-          : subdivision && country
-            ? `${subdivision}, ${country}`
-            : country || locality || 'Unknown location'
-
-      setState((prev) => ({
-        ...prev,
-        location: locationText,
-        locationLat: latitude,
-        locationLng: longitude,
-      }))
-
-      setSuccess('Location filled from your current position')
-    } catch (err) {
-      const message = getAuthErrorMessage(err, 'Failed to auto-fill location')
-      setError(message)
-    } finally {
-      setLocating(false)
-    }
-  }, [hasUser])
 
   /* Metadata saver: persist first name, last name, location, and calendar links to user metadata + localStorage */
   const saveProfile = useCallback(async () => {
@@ -240,6 +206,13 @@ export function useAccountSettings(user: User | null): UseAccountSettingsReturn 
       }
 
       setSuccess('Profile updated')
+      setProfileBaseline((prev) => ({
+        ...prev,
+        firstName: state.firstName,
+        lastName: state.lastName,
+        location: state.location,
+        timeZone: state.timeZone,
+      }))
     } catch (err) {
       const message = getAuthErrorMessage(err, 'Failed to update profile')
       setError(message)
@@ -276,6 +249,10 @@ export function useAccountSettings(user: User | null): UseAccountSettingsReturn 
       await updateAccountEmail(trimmedEmail)
 
       setSuccess('Email update requested. Check your inbox to confirm.')
+      setProfileBaseline((prev) => ({
+        ...prev,
+        email: trimmedEmail,
+      }))
     } catch (err) {
       const message = getAuthErrorMessage(err, 'Failed to update email')
       setError(message)
@@ -314,13 +291,12 @@ export function useAccountSettings(user: User | null): UseAccountSettingsReturn 
 
   return {
     ...state,
+    isProfileDirty,
     saving,
-    locating,
     error,
     success,
     clearStatus,
     setField,
-    autofillLocation,
     saveProfile,
     saveEmail,
     savePassword,

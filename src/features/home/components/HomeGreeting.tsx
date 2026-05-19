@@ -59,7 +59,7 @@ export function HomeGreeting() {
       <h1 className="text-page-title font-semibold tracking-tight text-on-surface">
         {greeting}, {name}
       </h1>
-      <p className="mt-2 text-body font-light text-on-surface-variant">{subtitle}</p>
+      <p className="text-body font-light text-on-surface-variant">{subtitle}</p>
     </div>
   )
 }

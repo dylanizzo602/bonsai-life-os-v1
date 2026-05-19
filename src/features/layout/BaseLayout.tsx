@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { AppFooter } from '../../components/AppFooter'
 import { TopNav } from './components/TopNav'
 import { MobileSideNav } from './components/MobileSideNav'
+import { MobileSearch } from '../search/components/MobileSearch'
 import type { NavigationSection } from './hooks/useNavigation'
 
 interface BaseLayoutProps {
@@ -20,8 +21,9 @@ interface BaseLayoutProps {
  * Mobile/tablet: hamburger opens overlay side nav (legacy mobile nav until redesigned).
  */
 export function BaseLayout({ children, activeSection, onNavigate }: BaseLayoutProps) {
-  /* State management: Track mobile menu open/closed state */
+  /* State management: Track mobile menu and mobile search overlays */
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false)
 
   /* Event handlers: Toggle mobile menu */
   const handleToggleMobileMenu = () => {
@@ -32,6 +34,15 @@ export function BaseLayout({ children, activeSection, onNavigate }: BaseLayoutPr
     setIsMobileMenuOpen(false)
   }
 
+  const handleOpenMobileSearch = () => {
+    setIsMobileMenuOpen(false)
+    setIsMobileSearchOpen(true)
+  }
+
+  const handleCloseMobileSearch = () => {
+    setIsMobileSearchOpen(false)
+  }
+
   /* Shell: fixed top bar; footer at end of scrollable content (not viewport-pinned) */
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -39,9 +50,14 @@ export function BaseLayout({ children, activeSection, onNavigate }: BaseLayoutPr
         activeSection={activeSection}
         onNavigate={onNavigate}
         onMenuToggle={handleToggleMobileMenu}
+        isMobileMenuOpen={isMobileMenuOpen}
+        onOpenMobileSearch={handleOpenMobileSearch}
+        isMobileSearchOpen={isMobileSearchOpen}
       />
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col pt-20">
+      <main
+        className={`flex min-h-0 min-w-0 flex-1 flex-col pt-20 ${isMobileSearchOpen ? 'max-lg:invisible' : ''}`}
+      >
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
           <div className="p-4 md:p-6">{children}</div>
           <AppFooter />
@@ -54,6 +70,8 @@ export function BaseLayout({ children, activeSection, onNavigate }: BaseLayoutPr
         onNavigate={onNavigate}
         onClose={handleCloseMobileMenu}
       />
+
+      <MobileSearch isOpen={isMobileSearchOpen} onClose={handleCloseMobileSearch} />
     </div>
   )
 }
