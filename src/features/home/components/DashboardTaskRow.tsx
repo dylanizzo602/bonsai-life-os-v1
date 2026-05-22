@@ -51,7 +51,7 @@ const DASHBOARD_STATUS_SIZE_PX = 24
 const dashboardStatusSizeClass = 'h-6 w-6'
 
 /**
- * Zenith dashboard row: status icon, title, then metadata (tag • dates • priority flag).
+ * Bonsai dashboard row: status icon, title, then metadata (tag • dates • priority flag).
  */
 export function DashboardTaskRow({ task, onClick, onToggleComplete }: DashboardTaskRowProps) {
   const timeZone = useUserTimeZone()

@@ -176,7 +176,7 @@ export function getDueStatus(dueDate: string | null | undefined, timeZone: strin
 }
 
 /** Return true when an ISO string is today's calendar day in `timeZone`. */
-function isTodayInZone(isoString: string | null | undefined, timeZone: string): boolean {
+export function isTodayInZone(isoString: string | null | undefined, timeZone: string): boolean {
   const d = toZonedDateTime(isoString, timeZone)
   if (!d) return false
   const now = DateTime.now().setZone(timeZone)

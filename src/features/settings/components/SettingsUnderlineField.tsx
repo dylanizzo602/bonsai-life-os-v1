@@ -1,9 +1,9 @@
-/* SettingsUnderlineField: Zenith-style label + bottom-border input or select */
+/* SettingsUnderlineField: Bonsai-style label + bottom-border input or select */
 
 import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react'
 
 const fieldClassName =
-  'zenith-input w-full border-0 border-b border-outline-variant bg-transparent px-0 pb-2 text-body text-on-surface outline-none transition-all focus:border-primary focus:ring-0 disabled:opacity-60'
+  'bonsai-input w-full border-0 border-b border-outline-variant bg-transparent px-0 pb-2 text-body text-on-surface outline-none transition-all focus:border-primary focus:ring-0 disabled:opacity-60'
 
 interface SettingsUnderlineFieldProps {
   label: string

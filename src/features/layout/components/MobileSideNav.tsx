@@ -1,4 +1,4 @@
-/* MobileSideNav: Zenith full-screen overlay navigation for tablet/mobile */
+/* MobileSideNav: Bonsai full-screen overlay navigation for tablet/mobile */
 
 import { useEffect } from 'react'
 import { MaterialIcon } from '../../../components/MaterialIcon'

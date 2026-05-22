@@ -109,7 +109,10 @@ export function TopNav({
         >
           <SearchIcon className="h-6 w-6" />
         </button>
-        <NotificationBellButton className={utilityButtonClass}>
+        <NotificationBellButton
+          className={utilityButtonClass}
+          onGoToTasks={() => onNavigate('tasks')}
+        >
           <BellIcon className="h-6 w-6" />
         </NotificationBellButton>
         {/* Settings: desktop/tablet only (mobile uses side nav account section) */}

@@ -11,6 +11,7 @@ import {
   toggleChecklistItemComplete,
 } from '../../lib/supabase/tasks'
 import type { Task, TaskFilters, SortByEntry } from './types'
+import { getDependencyEnrichmentFlags } from './utils/dependencies'
 
 export interface TaskListProps {
   /** Tasks from useTasks */
@@ -137,6 +138,12 @@ export function TaskList({
     return tasks.filter((t) => !(t.parent_id && visibleTaskIds.has(t.parent_id)))
   }, [tasks])
 
+  /* Re-run dependency enrichment when any task status changes (e.g. blocker completed). */
+  const tasksStatusKey = useMemo(
+    () => tasks.map((t) => `${t.id}:${t.status}`).sort().join(','),
+    [tasks],
+  )
+
   /* Viewport bucket for habit row density (matches TaskListItem breakpoints) */
   const taskListViewport = useTaskListLayout()
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
@@ -167,6 +174,7 @@ export function TaskList({
   const loadEnrichment = async () => {
     if (!fetchSubtasks) return
     setEnrichmentLoading(true)
+    const taskLookup = new Map(tasks.map((t) => [t.id, t] as const))
     const enrichment: typeof taskEnrichment = {}
     try {
       await Promise.all(
@@ -197,16 +205,18 @@ export function TaskList({
               total += items.length
               completed += items.filter((i) => i.completed).length
             }
+            const depFlags = getDependencyEnrichmentFlags(
+              deps.blockedBy,
+              deps.blocking,
+              taskLookup,
+            )
             enrichment[task.id] = {
               checklistSummary: total > 0 ? { completed, total } : undefined,
               hasSubtasks: subtaskCount > 0,
               subtaskCount,
               incompleteSubtaskCount,
               subtaskTimeTotal,
-              isBlocked: deps.blockedBy.length > 0,
-              isBlocking: deps.blocking.length > 0,
-              blockingCount: deps.blocking.length,
-              blockedByCount: deps.blockedBy.length,
+              ...depFlags,
             }
           } catch (err) {
             console.error(`Error loading enrichment for task ${task.id}:`, err)
@@ -236,7 +246,7 @@ export function TaskList({
       setTaskEnrichment({})
       setEnrichmentLoading(false)
     }
-  }, [mainListTasks, fetchSubtasks])
+  }, [mainListTasks, fetchSubtasks, tasksStatusKey])
 
   /* When enrichment first loads for current tasks: default-expand tasks that are available and have subtasks (so "all can be worked on" shows expanded). Only apply once per task set so user collapse is not overwritten. */
   const taskIdsRef = useRef<string>('')

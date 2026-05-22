@@ -10,7 +10,7 @@ interface MaterialIconProps {
 }
 
 /**
- * Material Symbols Outlined icon wrapper for zenith layouts (nav, settings, etc.).
+ * Material Symbols Outlined icon wrapper for Bonsai layouts (nav, settings, etc.).
  */
 export function MaterialIcon({ name, className = '', style }: MaterialIconProps) {
   return (

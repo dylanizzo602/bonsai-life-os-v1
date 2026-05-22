@@ -16,7 +16,7 @@ interface MobileQuickAddProps {
 }
 
 /**
- * Quick Add card matching zenith mobile nav design (lavender panel, three actions).
+ * Quick Add card matching Bonsai mobile nav design (lavender panel, three actions).
  */
 export function MobileQuickAdd({ onAddTask, onAddNote, onAddInbox }: MobileQuickAddProps) {
   const actions: QuickAddAction[] = [

@@ -5,6 +5,7 @@ import { useTasks } from '../../tasks/hooks/useTasks'
 import { getDependenciesForTaskIds } from '../../../lib/supabase/tasks'
 import type { Task } from '../../tasks/types'
 import { getAvailableTasksFromList } from '../../tasks/utils/available'
+import { computeBlockedTaskIds } from '../../tasks/utils/dependencies'
 import { useUserTimeZone } from '../../settings/useUserTimeZone'
 
 /**
@@ -26,17 +27,10 @@ export function useUpcomingTasks(): Task[] {
       return
     }
     const taskIds = tasks.map((t) => t.id)
-    const byId = Object.fromEntries(tasks.map((t) => [t.id, t]))
+    const taskLookup = Object.fromEntries(tasks.map((t) => [t.id, t]))
     getDependenciesForTaskIds(taskIds)
       .then((deps) => {
-        const blocked = new Set<string>()
-        for (const d of deps) {
-          const blocker = byId[d.blocker_id]
-          if (blocker && blocker.status !== 'completed') {
-            blocked.add(d.blocked_id)
-          }
-        }
-        setBlockedTaskIds(blocked)
+        setBlockedTaskIds(computeBlockedTaskIds(deps, taskLookup))
       })
       .catch(() => setBlockedTaskIds(new Set()))
   }, [tasks])

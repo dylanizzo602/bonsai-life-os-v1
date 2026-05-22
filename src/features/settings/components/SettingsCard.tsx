@@ -8,7 +8,7 @@ interface SettingsCardProps {
 }
 
 /**
- * Card shell matching zenith settings mock (surface-container-lowest, subtle border).
+ * Card shell matching Bonsai settings mock (surface-container-lowest, subtle border).
  */
 export function SettingsCard({ children, className = '' }: SettingsCardProps) {
   return (

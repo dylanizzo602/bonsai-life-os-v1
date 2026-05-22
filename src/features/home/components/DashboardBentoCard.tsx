@@ -16,7 +16,7 @@ export interface DashboardBentoCardProps {
 }
 
 /**
- * Shared shell for home dashboard bento widgets (Zenith dashboard design).
+ * Shared shell for home dashboard bento widgets (Bonsai dashboard design).
  */
 export function DashboardBentoCard({
   title,

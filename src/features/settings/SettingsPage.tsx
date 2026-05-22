@@ -1,4 +1,4 @@
-/* Settings page: Zenith minimalist layout for profile, integrations, notifications, and data */
+/* Settings page: Bonsai minimalist layout for profile, integrations, notifications, and data */
 
 import { useCallback, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'

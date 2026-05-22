@@ -9,6 +9,7 @@ import type { Task } from './types'
 import { TaskContextPopover } from './modals/TaskContextPopover'
 import { TaskSearchSelect } from '../../components/TaskSearchSelect'
 import type { TaskOption } from '../../components/TaskSearchSelect'
+import { getDependencyEnrichmentFlags } from './utils/dependencies'
 
 interface SubtaskListProps {
   /** Parent task ID */
@@ -133,6 +134,8 @@ export function SubtaskList({
       setSubtaskEnrichment({})
       return
     }
+    const allTasks = getTasks ? await getTasks().catch(() => []) : subtasks
+    const taskLookup = new Map(allTasks.map((t) => [t.id, t] as const))
     const enrichment: typeof subtaskEnrichment = {}
     await Promise.all(
       subtasks.map(async (subtask) => {
@@ -156,10 +159,7 @@ export function SubtaskList({
           }
           enrichment[subtask.id] = {
             checklistSummary: total > 0 ? { completed, total } : undefined,
-            isBlocked: deps.blockedBy.length > 0,
-            isBlocking: deps.blocking.length > 0,
-            blockingCount: deps.blocking.length,
-            blockedByCount: deps.blockedBy.length,
+            ...getDependencyEnrichmentFlags(deps.blockedBy, deps.blocking, taskLookup),
           }
         } catch (err) {
           console.error(`Error loading enrichment for subtask ${subtask.id}:`, err)
@@ -173,7 +173,7 @@ export function SubtaskList({
       }),
     )
     setSubtaskEnrichment(enrichment)
-  }, [subtasks, getTaskDependencies])
+  }, [subtasks, getTaskDependencies, getTasks])
 
   /* Run enrichment load when subtasks change */
   useEffect(() => {

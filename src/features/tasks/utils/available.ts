@@ -12,6 +12,49 @@ const PRIORITY_ORDER: Record<Task['priority'], number> = {
   urgent: 4,
 }
 
+/** True when priority is medium, high, or urgent (not none or low). */
+export function isPriorityMediumOrAbove(priority: Task['priority']): boolean {
+  return (PRIORITY_ORDER[priority] ?? 0) >= PRIORITY_ORDER.medium
+}
+
+/**
+ * Matches default Available view rules: incomplete, not blocked, priority not none, start now or earlier.
+ */
+export function isTaskAvailableForWork(
+  task: Task,
+  blockedTaskIds: Set<string>,
+  timeZone: string,
+): boolean {
+  if (task.status === 'archived' || task.status === 'deleted' || task.status === 'completed') {
+    return false
+  }
+  if (blockedTaskIds.has(task.id)) return false
+  if ((task.priority ?? 'medium') === 'none') return false
+  if (!isStartAvailableNow(task.start_date, timeZone)) return false
+  return true
+}
+
+/** Sort tasks using Available view ordering (urgent → due → priority → status). */
+export function sortTasksAvailableStyle(tasks: Task[], timeZone: string): Task[] {
+  return [...tasks].sort((a, b) => {
+    const aUrgent = a.priority === 'urgent' ? 1 : 0
+    const bUrgent = b.priority === 'urgent' ? 1 : 0
+    if (bUrgent !== aUrgent) return bUrgent - aUrgent
+
+    const aDue = taskDateToComparableMs(a.due_date, timeZone) ?? Number.MAX_SAFE_INTEGER
+    const bDue = taskDateToComparableMs(b.due_date, timeZone) ?? Number.MAX_SAFE_INTEGER
+    if (aDue !== bDue) return aDue - bDue
+
+    const aPri = PRIORITY_ORDER[a.priority] ?? 0
+    const bPri = PRIORITY_ORDER[b.priority] ?? 0
+    if (bPri !== aPri) return bPri - aPri
+
+    const statusOrder = (s: Task['status']) =>
+      s === 'in_progress' ? 1 : s === 'active' ? 0 : -1
+    return statusOrder(b.status) - statusOrder(a.status)
+  })
+}
+
 /**
  * Filter and sort a list of tasks into the Available ordering:
  * - Excludes archived, deleted, and completed tasks.
@@ -35,26 +78,6 @@ export function getAvailableTasksFromList(
     return true
   })
 
-  /* Sort: urgent first, then earliest due, then priority high→low, then status in_progress→active→others */
-  const sorted = [...available].sort((a, b) => {
-    const aUrgent = a.priority === 'urgent' ? 1 : 0
-    const bUrgent = b.priority === 'urgent' ? 1 : 0
-    if (bUrgent !== aUrgent) return bUrgent - aUrgent
-
-    /* Due sort: treat date-only due as local-day boundary to avoid 8pm "previous day" shifts. */
-    const aDue = taskDateToComparableMs(a.due_date, timeZone) ?? Number.MAX_SAFE_INTEGER
-    const bDue = taskDateToComparableMs(b.due_date, timeZone) ?? Number.MAX_SAFE_INTEGER
-    if (aDue !== bDue) return aDue - bDue
-
-    const aPri = PRIORITY_ORDER[a.priority] ?? 0
-    const bPri = PRIORITY_ORDER[b.priority] ?? 0
-    if (bPri !== aPri) return bPri - aPri
-
-    const statusOrder = (s: Task['status']) =>
-      s === 'in_progress' ? 1 : s === 'active' ? 0 : -1
-    return statusOrder(b.status) - statusOrder(a.status)
-  })
-
-  return sorted
+  return sortTasksAvailableStyle(available, timeZone)
 }
 

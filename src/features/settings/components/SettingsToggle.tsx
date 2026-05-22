@@ -8,7 +8,7 @@ interface SettingsToggleProps {
 }
 
 /**
- * Peer-based toggle switch matching the zenith settings mock.
+ * Peer-based toggle switch matching the Bonsai settings mock.
  */
 export function SettingsToggle({ checked, onChange, disabled, ariaLabel }: SettingsToggleProps) {
   return (

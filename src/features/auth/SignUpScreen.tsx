@@ -126,7 +126,7 @@ export function SignUpScreen({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="jane@example.com"
-                className="zenith-input text-on-surface placeholder:text-outline-variant/60 border-outline-variant w-full border-t-0 border-r-0 border-b border-l-0 bg-transparent px-1 py-2 transition-all duration-300 focus:ring-0"
+                className="bonsai-input text-on-surface placeholder:text-outline-variant/60 border-outline-variant w-full border-t-0 border-r-0 border-b border-l-0 bg-transparent px-1 py-2 transition-all duration-300 focus:ring-0"
               />
             </div>
 

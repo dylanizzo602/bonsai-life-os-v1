@@ -28,6 +28,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useCalendarAgenda } from './hooks/useCalendarAgenda'
 import { useGoogleCalendarEventsToday } from './hooks/useGoogleCalendarEventsToday'
 import { getDueStatus } from '../tasks/utils/date'
+import { computeBlockedTaskIds } from '../tasks/utils/dependencies'
 import { getAvailableTasksFromList } from '../tasks/utils/available'
 import { isoInstantToLocalCalendarYMD } from '../../lib/localCalendarDate'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
@@ -223,15 +224,10 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
       return
     }
     const taskIds = tasks.map((t) => t.id)
-    const byId = Object.fromEntries(tasks.map((t) => [t.id, t]))
+    const taskLookup = Object.fromEntries(tasks.map((t) => [t.id, t]))
     getDependenciesForTaskIds(taskIds)
       .then((deps) => {
-        const blocked = new Set<string>()
-        for (const d of deps) {
-          const blocker = byId[d.blocker_id]
-          if (blocker && blocker.status !== 'completed') blocked.add(d.blocked_id)
-        }
-        setBlockedTaskIds(blocked)
+        setBlockedTaskIds(computeBlockedTaskIds(deps, taskLookup))
       })
       .catch(() => setBlockedTaskIds(new Set()))
   }, [tasks])

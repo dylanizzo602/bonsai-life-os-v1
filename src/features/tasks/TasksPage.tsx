@@ -2,38 +2,26 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { consumeQuickAddIntent } from '../layout/quickAddIntent'
-import { AddButton } from '../../components/AddButton'
-import {
-  FilterIcon,
-  SortIcon,
-  SearchIcon,
-  LineUpIcon,
-  ListIcon,
-  InfinityIcon,
-  CloseIcon,
-  ChevronDownIcon,
-} from '../../components/icons'
 import { AddEditTaskModal } from './AddEditTaskModal'
 import { TaskList } from './TaskList'
+import { TasksBonsaiView } from './components/bonsai/TasksBonsaiView'
+import { buildHabitReminderRows } from '../habits/utils/habitReminderRows'
+import { partitionBonsaiSections } from './utils/partitionBonsaiTasks'
+import { computeBlockedTaskIds, computeBlockingTaskIds } from './utils/dependencies'
 import { useTasks } from './hooks/useTasks'
 import { useHabits } from '../habits/hooks/useHabits'
 import { getDependenciesForTaskIds } from '../../lib/supabase/tasks'
-import { getSavedViews, createSavedView, updateSavedView, deleteSavedView } from '../../lib/supabase/savedViews'
 import { useTags } from './hooks/useTags'
 import { FilterModal } from './modals/FilterModal'
-import { SortModal } from './modals/SortModal'
 import type { Task } from './types'
 import type { SortByEntry } from './types'
 import type { FilterCondition } from './modals/FilterModal'
-import type { SavedView } from '../../lib/supabase/savedViews'
 import {
   loadTodaysLineupTaskIds,
   saveTodaysLineupTaskIds,
 } from '../../lib/todaysLineup'
-import type { HabitWithStreaks } from '../habits/types'
 import { habitReminderEffectiveInstant, taskDateToComparableMs } from './utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
-import { isoInstantToLocalCalendarYMD } from '../../lib/localCalendarDate'
 
 /** Minimal row shape for filter/sort of habit reminders (same date fields as legacy reminders). */
 type ScheduleLikeRow = { name: string; remind_at: string | null }
@@ -496,19 +484,13 @@ function sortTasksWithSortBy(tasks: Task[], sortBy: SortByEntry[], timeZone: str
   })
 }
 
-/** Linked habit task row: real task row + habit streak data */
-type HabitReminderRow = {
-  habit: HabitWithStreaks
-  task: Task
-  remindAt: string | null
-}
 
 /* Sort habit rows by the same fields as tasks (due/start → task due; task_name → linked task title). */
 function sortHabitReminderItemsWithSortBy(
-  items: HabitReminderRow[],
+  items: ReturnType<typeof buildHabitReminderRows>,
   sortBy: SortByEntry[],
   timeZone: string,
-): HabitReminderRow[] {
+): ReturnType<typeof buildHabitReminderRows> {
   return [...items].sort((a, b) => {
     const aIso =
       a.task.due_date ??
@@ -562,17 +544,8 @@ export function TasksPage() {
     onRemoveDependency,
   } = useTasks()
 
-  /* Habit reminders: habits with add_to_todos, for Tasks list (streak + Complete/Skip + notification time) */
-  const {
-    habitsWithStreaks,
-    todayYMD,
-    setEntry: setHabitEntry,
-    refetch: refetchHabits,
-  } = useHabits()
-
-  /* Habit reminder action state: surface errors and prevent double-submits on Target/Minimum/Skip. */
-  const [habitActionError, setHabitActionError] = useState<string | null>(null)
-  const [habitActionInFlightIds, setHabitActionInFlightIds] = useState<Set<string>>(new Set())
+  /* Habits: joined to tasks for available-view filtering (reminders live in notification bell). */
+  const { habitsWithStreaks, refetch: refetchHabits } = useHabits()
 
   /* Refetch habits when Tasks page becomes visible so recurring habit reminders stay in sync (e.g. after adding habit or switching tabs) */
   useEffect(() => {
@@ -584,31 +557,39 @@ export function TasksPage() {
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [refetchHabits])
 
-  const { fetchTags } = useTags()
+  const {
+    fetchTags,
+    searchTags,
+    createTag,
+    updateTag,
+    deleteTagFromAllTasks,
+    setTagsForTask: setTagIdsForTask,
+  } = useTags()
   const [availableTagNames, setAvailableTagNames] = useState<string[]>([])
 
-  /* Habit rows: linked tasks (habit_id) joined with streak data */
-  const habitReminders: HabitReminderRow[] = useMemo(() => {
-    return tasks
-      .filter(
-        (t) =>
-          t.habit_id != null &&
-          t.status !== 'deleted' &&
-          t.status !== 'archived',
+  /* Tag save wrapper: Bonsai rows pass Tag[]; data layer expects tag ids */
+  const setTagsForTask = useCallback(
+    async (taskId: string, tags: import('./types').Tag[]) => {
+      await setTagIdsForTask(
+        taskId,
+        tags.map((t) => t.id),
       )
-      .map((task) => {
-        const habit = habitsWithStreaks.find((h) => h.id === task.habit_id)
-        if (!habit) return null
-        return { habit, task, remindAt: task.due_date }
-      })
-      .filter((x): x is HabitReminderRow => x != null)
-  }, [tasks, habitsWithStreaks])
+      await refetch()
+    },
+    [setTagIdsForTask, refetch],
+  )
+
+  /* Habit rows: used by legacy TaskList paths and available-view habit filtering */
+  const habitReminders = useMemo(
+    () => buildHabitReminderRows(tasks, habitsWithStreaks),
+    [tasks, habitsWithStreaks],
+  )
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editTask, setEditTask] = useState<Task | null>(null)
  
-  /* View mode: lineup | available | all | custom. Available is default so you immediately see what you can work on (it can still hide everything if nothing qualifies). */
-  const [viewMode, setViewMode] = useState<'lineup' | 'available' | 'all' | 'custom'>('available')
+  /* View mode: backlog pool filter (available | all | custom). Lineup is always a separate section. */
+  const [viewMode, setViewMode] = useState<'available' | 'all' | 'custom'>('available')
   /* Archive/Trash: when true, list shows only archived or only deleted tasks (no filters applied). */
   const [showArchived, setShowArchived] = useState(false)
   const [showDeleted, setShowDeleted] = useState(false)
@@ -619,27 +600,13 @@ export function TasksPage() {
   const [searchExpanded, setSearchExpanded] = useState(false)
   /* Filter and Sort modals open state. */
   const [filterOpen, setFilterOpen] = useState(false)
-  const [sortOpen, setSortOpen] = useState(false)
   /* Custom view: filter conditions (flat list) and sort order. */
   const [filterConditions, setFilterConditions] = useState<FilterCondition[]>([])
-  const [sortBy, setSortBy] = useState<SortByEntry[]>([])
-  const [selectedSavedViewId, setSelectedSavedViewId] = useState<string | null>(null)
-  /* Saved views list for Custom dropdown (fetch on mount). */
-  const [savedViews, setSavedViews] = useState<SavedView[]>([])
-  const [customDropdownOpen, setCustomDropdownOpen] = useState(false)
-  const [saveViewName, setSaveViewName] = useState('')
-  const [savingView, setSavingView] = useState(false)
-  const [updatingView, setUpdatingView] = useState(false)
+  /* Custom sort entries (reserved; Bonsai header uses available/all default sorts) */
+  const sortBy: SortByEntry[] = []
   /* Blocked/blocking task IDs: for Available view and for Custom filter (Task dependencies). */
   const [blockedTaskIds, setBlockedTaskIds] = useState<Set<string>>(new Set())
   const [blockingTaskIds, setBlockingTaskIds] = useState<Set<string>>(new Set())
-
-  /* Fetch saved views on mount (for Custom dropdown). */
-  useEffect(() => {
-    getSavedViews()
-      .then(setSavedViews)
-      .catch(() => setSavedViews([]))
-  }, [])
 
   /* Fetch existing tag names when filter modal opens (for Tags multi-select). */
   useEffect(() => {
@@ -663,20 +630,11 @@ export function TasksPage() {
       return
     }
     const taskIds = tasks.map((t) => t.id)
-    const byId = Object.fromEntries(tasks.map((t) => [t.id, t]))
+    const taskLookup = Object.fromEntries(tasks.map((t) => [t.id, t]))
     getDependenciesForTaskIds(taskIds)
       .then((deps) => {
-        const blocked = new Set<string>()
-        const blocking = new Set<string>()
-        for (const d of deps) {
-          blocking.add(d.blocker_id)
-          const blocker = byId[d.blocker_id]
-          if (blocker && blocker.status !== 'completed') {
-            blocked.add(d.blocked_id)
-          }
-        }
-        setBlockedTaskIds(blocked)
-        setBlockingTaskIds(blocking)
+        setBlockedTaskIds(computeBlockedTaskIds(deps, taskLookup))
+        setBlockingTaskIds(computeBlockingTaskIds(deps, taskLookup))
       })
       .catch(() => {
         setBlockedTaskIds(new Set())
@@ -714,92 +672,8 @@ export function TasksPage() {
     [persistLineUp],
   )
 
-  const handleLoadSavedView = useCallback((view: SavedView) => {
-    setFilterConditions((view.filter_json as FilterCondition[]) ?? [])
-    setSortBy((view.sort_json as SortByEntry[]) ?? [])
-    setSelectedSavedViewId(view.id)
-    setViewMode('custom')
-    setCustomDropdownOpen(false)
-  }, [])
-
-  const handleSaveCurrentView = useCallback(async () => {
-    const name = saveViewName.trim() || 'Untitled view'
-    setSavingView(true)
-    try {
-      const created = await createSavedView({
-        user_id: null,
-        name,
-        filter_json: filterConditions,
-        sort_json: sortBy,
-      })
-      setSavedViews((prev) => [created, ...prev])
-      setSaveViewName('')
-      setSelectedSavedViewId(created.id)
-      setCustomDropdownOpen(false)
-    } catch {
-      // leave dropdown open
-    } finally {
-      setSavingView(false)
-    }
-  }, [saveViewName, filterConditions, sortBy])
-
-  /* Check if current filters/sorts differ from selected saved view: Used to show update button */
-  const hasViewChanges = useMemo(() => {
-    if (!selectedSavedViewId) return false
-    const selectedView = savedViews.find(v => v.id === selectedSavedViewId)
-    if (!selectedView) return false
-    
-    /* Compare filters: Deep equality check */
-    const savedFilters = (selectedView.filter_json as FilterCondition[]) ?? []
-    const filtersMatch = JSON.stringify(savedFilters.sort((a, b) => a.id.localeCompare(b.id))) === 
-                         JSON.stringify(filterConditions.sort((a, b) => a.id.localeCompare(b.id)))
-    
-    /* Compare sorts: Deep equality check */
-    const savedSorts = (selectedView.sort_json as SortByEntry[]) ?? []
-    const sortsMatch = JSON.stringify(savedSorts) === JSON.stringify(sortBy)
-    
-    return !filtersMatch || !sortsMatch
-  }, [selectedSavedViewId, savedViews, filterConditions, sortBy])
-
-  /* Update current saved view: Save current filter and sort settings to selected view */
-  const handleUpdateCurrentView = useCallback(async () => {
-    if (!selectedSavedViewId) return
-    
-    setUpdatingView(true)
-    try {
-      const updated = await updateSavedView(selectedSavedViewId, {
-        filter_json: filterConditions,
-        sort_json: sortBy,
-      })
-      /* Update the saved view in the list */
-      setSavedViews((prev) => prev.map(v => v.id === updated.id ? updated : v))
-    } catch {
-      // Error already logged in updateSavedView
-    } finally {
-      setUpdatingView(false)
-    }
-  }, [selectedSavedViewId, filterConditions, sortBy])
-
-  /* Delete saved view: Remove from database and update state */
-  const handleDeleteSavedView = useCallback(async (viewId: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!confirm('Are you sure you want to delete this saved view?')) return
-    
-    try {
-      await deleteSavedView(viewId)
-      /* Remove from saved views list */
-      setSavedViews((prev) => prev.filter(v => v.id !== viewId))
-      /* If this was the selected view, clear selection */
-      if (selectedSavedViewId === viewId) {
-        setSelectedSavedViewId(null)
-      }
-    } catch {
-      // Error already logged in deleteSavedView
-    }
-  }, [selectedSavedViewId])
-
   /* Filter pipeline: Archive/Trash first, then by view, then by filter (custom), then by search, then by sort. */
-  const { filteredTasks, filteredHabitReminders, availableTaskIds } = useMemo(() => {
+  const { filteredTasks, availableTaskIds } = useMemo(() => {
     /* Habit reminders filtered by view and (for available/custom) by start/due date; set in each view branch. */
     let habitRemindersFiltered: typeof habitReminders = habitReminders
 
@@ -808,7 +682,6 @@ export function TasksPage() {
       const list = tasks.filter((t) => t.status === 'archived')
       return {
         filteredTasks: list,
-        filteredHabitReminders: [],
         availableTaskIds: new Set<string>(),
       }
     }
@@ -816,7 +689,6 @@ export function TasksPage() {
       const list = tasks.filter((t) => t.status === 'deleted')
       return {
         filteredTasks: list,
-        filteredHabitReminders: [],
         availableTaskIds: new Set<string>(),
       }
     }
@@ -835,14 +707,9 @@ export function TasksPage() {
       return true
     })
 
-    /* By view: lineup, available, all, or custom base list. */
+    /* By view: available, all, or custom base list (backlog pool; lineup is partitioned separately). */
     let viewTasks: Task[]
     switch (viewMode) {
-      case 'lineup':
-        viewTasks = baseTasks.filter((t) => lineUpTaskIds.has(t.id))
-        /* Today's Lineup shows only tasks in the lineup; no habit reminders */
-        habitRemindersFiltered = []
-        break
       case 'available': {
         /* Available view: apply built-in default filter (status not Complete, no blocking deps, start <= now & earlier) via filter conditions. */
         const conditions = AVAILABLE_DEFAULT_FILTER_CONDITIONS
@@ -998,7 +865,6 @@ export function TasksPage() {
 
     return {
       filteredTasks: viewTasks,
-      filteredHabitReminders: habitRemindersFiltered,
       availableTaskIds,
     }
   }, [
@@ -1050,435 +916,167 @@ export function TasksPage() {
     setEditTask(null)
   }
 
+  const bonsaiHideCompletedSubtasks = true
+
+  /* Bonsai sections: lineup (due today OR available + medium+) vs other (All Tasks sort, minus lineup) */
+  const bonsaiSections = useMemo(() => {
+    if (showArchived || showDeleted) {
+      return {
+        lineupTasks: [] as Task[],
+        backlogPool: [] as Task[],
+      }
+    }
+    const { lineupTasks, backlogPool } = partitionBonsaiSections(
+      tasks,
+      blockedTaskIds,
+      timeZone,
+      searchQuery,
+    )
+    return { lineupTasks, backlogPool }
+  }, [tasks, blockedTaskIds, timeZone, searchQuery, showArchived, showDeleted])
+
   return (
     <div className="min-h-full">
-      {/* Row 1: Page title only */}
-      <h1 className="text-page-title font-bold text-bonsai-brown-700 mb-4">Tasks</h1>
-
-      {/* Row 2: Toolbar — left = view buttons, right = Filter, Sort, Search, Add */}
-      <div className="flex flex-wrap items-center gap-2 justify-between mb-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setViewMode('lineup')
-              setSelectedSavedViewId(null)
+      {showArchived || showDeleted ? (
+        <>
+          <h1 className="text-page-title font-bold text-bonsai-brown-700 mb-4">Tasks</h1>
+          <TaskList
+            tasks={filteredTasks}
+            availableTaskIds={availableTaskIds}
+            loading={loading}
+            error={error}
+            filters={filters}
+            setFilters={setFilters}
+            refetch={refetch}
+            updateTask={updateTask}
+            deleteTask={deleteTask}
+            toggleComplete={toggleComplete}
+            fetchSubtasks={fetchSubtasks}
+            createSubtask={createSubtask}
+            getTasks={getTasks}
+            getTaskDependencies={getTaskDependencies}
+            onAddDependency={onAddDependency}
+            onRemoveDependency={onRemoveDependency}
+            onOpenAddModal={openAdd}
+            onOpenEditModal={openEdit}
+            onCreateTask={createTask}
+            onArchiveTask={async (task) => {
+              if (task.status === 'archived') {
+                await updateTask(task.id, { status: 'active' })
+              } else {
+                await updateTask(task.id, { status: 'archived' })
+              }
             }}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-secondary font-medium transition-colors ${viewMode === 'lineup' ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
-            aria-pressed={viewMode === 'lineup'}
-          >
-            <LineUpIcon className="w-4 h-4 md:w-5 md:h-5" />
-            Today's Lineup
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setViewMode('available')
-              setSelectedSavedViewId(null)
+            onMarkDeletedTask={async (task) => {
+              if (task.status === 'deleted') {
+                await updateTask(task.id, { status: 'active' })
+              } else {
+                await updateTask(task.id, { status: 'deleted' })
+              }
             }}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-secondary font-medium transition-colors ${viewMode === 'available' ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
-            aria-pressed={viewMode === 'available'}
-          >
-            <ListIcon className="w-4 h-4 md:w-5 md:h-5" />
-            Available
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setViewMode('all')
-              setSelectedSavedViewId(null)
+            habitReminders={[]}
+            hideCompletedSubtasks={false}
+            onShowArchived={() => {
+              setShowArchived(true)
+              setShowDeleted(false)
             }}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-secondary font-medium transition-colors ${viewMode === 'all' ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
-            aria-pressed={viewMode === 'all'}
-          >
-            <InfinityIcon className="w-4 h-4 md:w-5 md:h-5" />
-            All Tasks
-          </button>
-          {/* Custom: button with dropdown for save/load saved views */}
-          <div className="relative inline-block">
-            {(() => {
-              /* Get selected view name: Find view by ID or use "Custom" as default */
-              const selectedView = selectedSavedViewId 
-                ? savedViews.find(v => v.id === selectedSavedViewId)
-                : null
-              const buttonText = selectedView?.name || 'Custom'
-              
-              return (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setViewMode('custom')
-                    setCustomDropdownOpen((v) => !v)
-                  }}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-secondary font-medium transition-colors ${viewMode === 'custom' ? 'bg-bonsai-sage-200 text-bonsai-sage-800' : 'bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200'}`}
-                  aria-pressed={viewMode === 'custom'}
-                  aria-haspopup="true"
-                  aria-expanded={customDropdownOpen}
-                >
-                  {buttonText}
-                  <ChevronDownIcon className="w-4 h-4" />
-                </button>
-              )
-            })()}
-            {customDropdownOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-40"
-                  aria-hidden
-                  onClick={() => setCustomDropdownOpen(false)}
-                />
-                <div 
-                  className="absolute left-0 top-full z-50 mt-1 min-w-[200px] rounded-lg border border-bonsai-slate-200 bg-white py-2 shadow-lg"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {/* Saved views list: Show at top */}
-                  {savedViews.length > 0 && (
-                    <div className="max-h-48 overflow-y-auto border-b border-bonsai-slate-100">
-                      {savedViews.map((v) => (
-                        <div
-                          key={v.id}
-                          className="group flex items-center gap-2 px-3 py-2 hover:bg-bonsai-slate-100"
-                        >
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleLoadSavedView(v)
-                            }}
-                            className="flex-1 text-left text-body text-bonsai-slate-700"
-                          >
-                            {v.name}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => handleDeleteSavedView(v.id, e)}
-                            className="shrink-0 p-1 rounded text-bonsai-slate-400 hover:text-bonsai-slate-700 hover:bg-bonsai-slate-200 opacity-0 group-hover:opacity-100 transition-opacity"
-                            aria-label={`Delete ${v.name}`}
-                          >
-                            <CloseIcon className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {/* Save new view: Input and button side by side */}
-                  <div className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={saveViewName}
-                        onChange={(e) => setSaveViewName(e.target.value)}
-                        placeholder="Name for new view"
-                        className="flex-1 rounded border border-bonsai-slate-300 px-2 py-1.5 text-body text-bonsai-slate-700"
-                        aria-label="View name"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !savingView) {
-                            e.stopPropagation()
-                            handleSaveCurrentView()
-                          }
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleSaveCurrentView()
-                        }}
-                        disabled={savingView}
-                        className="shrink-0 rounded-lg px-3 py-1.5 text-body font-medium text-bonsai-sage-700 bg-bonsai-sage-100 hover:bg-bonsai-sage-200 disabled:opacity-50 whitespace-nowrap"
-                      >
-                        {savingView ? 'Saving…' : 'Save'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+            onShowDeleted={() => {
+              setShowDeleted(true)
+              setShowArchived(false)
+            }}
+            showArchived={showArchived}
+            showDeleted={showDeleted}
+            onClearArchiveTrashView={() => {
+              setShowArchived(false)
+              setShowDeleted(false)
+            }}
+            lineUpTaskIds={lineUpTaskIds}
+            onAddToLineUp={addToLineUp}
+            onRemoveFromLineUp={removeFromLineUp}
+            viewMode={viewMode}
+            effectiveSortBy={effectiveSortByForList}
+          />
+        </>
+      ) : (
+        <>
+          <TasksBonsaiView
+            tasks={tasks}
+            lineupTasks={bonsaiSections.lineupTasks}
+            backlogPool={bonsaiSections.backlogPool}
+            loading={loading}
+            error={error}
+            searchQuery={searchQuery}
+            searchExpanded={searchExpanded}
+            onSearchQueryChange={setSearchQuery}
+            onSearchExpandedChange={setSearchExpanded}
+            onOpenFilter={() => setFilterOpen(true)}
+            onAddTask={openAdd}
+            onOpenEdit={openEdit}
+            onShowDeleted={() => {
+              setShowDeleted(true)
+              setShowArchived(false)
+            }}
+            refetch={refetch}
+            toggleComplete={toggleComplete}
+            fetchSubtasks={fetchSubtasks}
+            getTaskDependencies={getTaskDependencies}
+            createTask={createTask}
+            hideCompletedSubtasks={bonsaiHideCompletedSubtasks}
+            lineUpTaskIds={lineUpTaskIds}
+            onAddToLineUp={addToLineUp}
+            onRemoveFromLineUp={removeFromLineUp}
+            setTagsForTask={setTagsForTask}
+            searchTags={searchTags}
+            createTag={createTag}
+            updateTag={updateTag}
+            deleteTagFromAllTasks={deleteTagFromAllTasks}
+            onArchiveTask={async (task) => {
+              if (task.status === 'archived') {
+                await updateTask(task.id, { status: 'active' })
+              } else {
+                await updateTask(task.id, { status: 'archived' })
+              }
+              refetch()
+            }}
+            onMarkDeletedTask={async (task) => {
+              if (task.status === 'deleted') {
+                await updateTask(task.id, { status: 'active' })
+              } else {
+                await updateTask(task.id, { status: 'deleted' })
+              }
+              refetch()
+            }}
+          />
 
-        <div className="flex flex-wrap items-center gap-2">
-          {searchExpanded ? (
-            <div className="flex items-center gap-2 flex-1 min-w-[200px] max-w-md">
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search tasks..."
-                className="flex-1 rounded-full border-2 border-bonsai-sage-500 px-4 py-2 text-body bg-white focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500"
-                aria-label="Search tasks"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('')
-                  setSearchExpanded(false)
-                }}
-                className="shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200"
-                aria-label="Clear search"
-              >
-                <CloseIcon className="w-4 h-4" />
-              </button>
-            </div>
-          ) : (
-            <>
-              {/* Save view button: Show when in custom view with no saved view selected */}
-              {viewMode === 'custom' && !selectedSavedViewId && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCustomDropdownOpen(true)
-                    /* Focus the input after dropdown opens */
-                    setTimeout(() => {
-                      const input = document.querySelector('[aria-label="View name"]') as HTMLInputElement
-                      input?.focus()
-                    }, 100)
-                  }}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 md:px-3 text-secondary font-medium text-bonsai-sage-700 bg-bonsai-sage-100 hover:bg-bonsai-sage-200 transition-colors whitespace-nowrap"
-                  aria-label="Save view"
-                >
-                  Save view
-                </button>
-              )}
-              {/* Update current view button: Show when a saved view is selected and has been modified */}
-              {selectedSavedViewId && hasViewChanges && (
-                <button
-                  type="button"
-                  onClick={handleUpdateCurrentView}
-                  disabled={updatingView}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 md:px-3 text-secondary font-medium text-bonsai-sage-700 bg-bonsai-sage-100 hover:bg-bonsai-sage-200 disabled:opacity-50 transition-colors whitespace-nowrap"
-                  aria-label="Update current view"
-                >
-                  {updatingView ? 'Updating…' : 'Update current view'}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setFilterOpen(true)}
-                className="flex items-center justify-center w-8 h-8 md:w-9 md:h-9 rounded-full bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200 transition-colors"
-                aria-label="Filter tasks"
-                aria-expanded={filterOpen}
-              >
-                <FilterIcon className="w-4 h-4 md:w-5 md:h-5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortOpen(true)}
-                className="flex items-center justify-center w-8 h-8 md:w-9 md:h-9 rounded-full bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200 transition-colors"
-                aria-label="Sort tasks"
-                aria-expanded={sortOpen}
-              >
-                <SortIcon className="w-4 h-4 md:w-5 md:h-5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setSearchExpanded(true)}
-                className="flex items-center justify-center w-8 h-8 md:w-9 md:h-9 rounded-full bg-bonsai-slate-100 text-bonsai-slate-600 hover:bg-bonsai-slate-200 transition-colors"
-                aria-label="Search tasks"
-              >
-                <SearchIcon className="w-4 h-4 md:w-5 md:h-5" />
-              </button>
-            </>
-          )}
-          <AddButton
-            className="self-end sm:self-auto"
-            aria-label="Add new task"
-            hideChevron
-            onClick={openAdd}
-          >
-            Add new task
-          </AddButton>
-        </div>
-      </div>
+          {/* Filter modal: tune control; backlog uses available defaults until customized */}
+          <FilterModal
+            isOpen={filterOpen}
+            onClose={() => setFilterOpen(false)}
+            conditions={
+              viewMode === 'available' && filterConditions.length === 0
+                ? AVAILABLE_DEFAULT_FILTER_CONDITIONS
+                : viewMode === 'all' && filterConditions.length === 0
+                  ? ALL_DEFAULT_FILTER_CONDITIONS
+                  : filterConditions
+            }
+            onConditionsChange={(newConditions) => {
+              const wasAvailable = viewMode === 'available'
+              const wasAll = viewMode === 'all'
+              if ((wasAvailable || wasAll) && filterConditions.length === 0 && newConditions.length > 0) {
+                setFilterConditions(newConditions)
+              } else {
+                setFilterConditions(newConditions)
+              }
+              if (viewMode !== 'custom') {
+                setViewMode('custom')
+              }
+            }}
+            onApply={() => setViewMode('custom')}
+            availableTagNames={availableTagNames}
+          />
+        </>
+      )}
 
-      {/* Filter modal: show effective filter (Available default or Custom conditions) so user sees what is selected */}
-      <FilterModal
-        isOpen={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        conditions={
-          viewMode === 'available'
-            ? AVAILABLE_DEFAULT_FILTER_CONDITIONS
-            : viewMode === 'all'
-              ? ALL_DEFAULT_FILTER_CONDITIONS
-              : filterConditions
-        }
-        onConditionsChange={(newConditions) => {
-          // If switching from available/all to custom and no custom filters exist yet, preserve defaults
-          const wasAvailable = viewMode === 'available'
-          const wasAll = viewMode === 'all'
-          if ((wasAvailable || wasAll) && filterConditions.length === 0 && newConditions.length > 0) {
-            // User modified filters from available/all view - use their modifications
-            setFilterConditions(newConditions)
-          } else {
-            setFilterConditions(newConditions)
-          }
-          // Keep selectedSavedViewId so user can update the view if desired
-          // Switch to custom mode immediately when user modifies filters
-          if (viewMode !== 'custom') {
-            setViewMode('custom')
-          }
-        }}
-        onApply={() => setViewMode('custom')}
-        availableTagNames={availableTagNames}
-      />
-
-      {/* Sort modal: show effective sort (Available/All defaults or Custom sortBy) so user sees what is selected */}
-      <SortModal
-        isOpen={sortOpen}
-        onClose={() => setSortOpen(false)}
-        sortBy={
-          viewMode === 'available'
-            ? AVAILABLE_DEFAULT_SORT
-            : viewMode === 'all' && sortBy.length === 0
-              ? ALL_DEFAULT_SORT
-              : sortBy
-        }
-        onSortByChange={(newSortBy) => {
-          setSortBy(newSortBy)
-          // Keep selectedSavedViewId so user can update the view if desired
-          // Switch to custom mode immediately when user modifies sort
-          // If switching from available and no custom filters exist yet, copy the available defaults
-          if (viewMode === 'available' && filterConditions.length === 0) {
-            setFilterConditions([...AVAILABLE_DEFAULT_FILTER_CONDITIONS])
-          }
-          if (viewMode !== 'custom') {
-            setViewMode('custom')
-          }
-        }}
-        onApply={() => setViewMode('custom')}
-        defaultSortLabel={undefined}
-      />
-
-      {/* Task list: tasks and habit reminders; Archive/Trash at bottom rendered inside TaskList */}
-      <TaskList
-        tasks={filteredTasks}
-        availableTaskIds={availableTaskIds}
-        loading={loading}
-        /* Error display: show task errors and habit-action errors in the same banner so failures aren't silent. */
-        error={error ?? habitActionError}
-        filters={filters}
-        setFilters={setFilters}
-        refetch={refetch}
-        updateTask={updateTask}
-        deleteTask={deleteTask}
-        toggleComplete={toggleComplete}
-        fetchSubtasks={fetchSubtasks}
-        createSubtask={createSubtask}
-        getTasks={getTasks}
-        getTaskDependencies={getTaskDependencies}
-        onAddDependency={onAddDependency}
-        onRemoveDependency={onRemoveDependency}
-        onOpenAddModal={openAdd}
-        onOpenEditModal={openEdit}
-        onCreateTask={createTask}
-        onArchiveTask={async (task) => {
-          /* Archive/Unarchive: If task is archived, unarchive it (set to active); otherwise archive it */
-          if (task.status === 'archived') {
-            await updateTask(task.id, { status: 'active' })
-          } else {
-            await updateTask(task.id, { status: 'archived' })
-          }
-        }}
-        onMarkDeletedTask={async (task) => {
-          /* Trash/Restore: If task is deleted, restore it to active; otherwise move it to trash (soft delete). */
-          if (task.status === 'deleted') {
-            await updateTask(task.id, { status: 'active' })
-          } else {
-            await updateTask(task.id, { status: 'deleted' })
-          }
-        }}
-        habitReminders={filteredHabitReminders}
-        habitActionInFlightIds={habitActionInFlightIds}
-        hideCompletedSubtasks={viewMode === 'available' || viewMode === 'all'}
-        onHabitTargetComplete={async (habit, task, remindAt) => {
-          /* Habit completion: write entry, advance next due, then refresh both habits + tasks (linked task due_date). */
-          setHabitActionError(null)
-          setHabitActionInFlightIds((prev) => new Set(prev).add(habit.id))
-
-          try {
-            /* Occurrence date: must align with habit.todo_remind_at local-calendar day for advanceTodoRemindAtIfDueOn. */
-            const occurrenceSourceIso = habit.todo_remind_at ?? remindAt ?? task.due_date
-            const occurrenceDate = isoInstantToLocalCalendarYMD(occurrenceSourceIso) ?? todayYMD
-
-            await setHabitEntry(habit.id, occurrenceDate, 'completed')
-
-            await refetchHabits()
-            await refetch()
-          } catch (err) {
-            setHabitActionError(err instanceof Error ? err.message : 'Failed to complete habit reminder')
-            console.error('Habit Target click failed:', err)
-          } finally {
-            setHabitActionInFlightIds((prev) => {
-              const next = new Set(prev)
-              next.delete(habit.id)
-              return next
-            })
-          }
-        }}
-        onHabitMinimum={async (habit, task, remindAt) => {
-          /* Habit minimum: same flow as completion but with minimum status. */
-          setHabitActionError(null)
-          setHabitActionInFlightIds((prev) => new Set(prev).add(habit.id))
-          try {
-            /* Occurrence date: must align with habit.todo_remind_at local-calendar day for advanceTodoRemindAtIfDueOn. */
-            const occurrenceSourceIso = habit.todo_remind_at ?? remindAt ?? task.due_date
-            const occurrenceDate = isoInstantToLocalCalendarYMD(occurrenceSourceIso) ?? todayYMD
-            await setHabitEntry(habit.id, occurrenceDate, 'minimum')
-            await refetchHabits()
-            await refetch()
-          } catch (err) {
-            setHabitActionError(err instanceof Error ? err.message : 'Failed to set habit reminder to minimum')
-            console.error('Habit Minimum click failed:', err)
-          } finally {
-            setHabitActionInFlightIds((prev) => {
-              const next = new Set(prev)
-              next.delete(habit.id)
-              return next
-            })
-          }
-        }}
-        onHabitSkip={async (habit, task, remindAt) => {
-          /* Habit skip: same flow but with skipped status. */
-          setHabitActionError(null)
-          setHabitActionInFlightIds((prev) => new Set(prev).add(habit.id))
-          try {
-            /* Occurrence date: must align with habit.todo_remind_at local-calendar day for advanceTodoRemindAtIfDueOn. */
-            const occurrenceSourceIso = habit.todo_remind_at ?? remindAt ?? task.due_date
-            const occurrenceDate = isoInstantToLocalCalendarYMD(occurrenceSourceIso) ?? todayYMD
-            await setHabitEntry(habit.id, occurrenceDate, 'skipped')
-            await refetchHabits()
-            await refetch()
-          } catch (err) {
-            setHabitActionError(err instanceof Error ? err.message : 'Failed to skip habit reminder')
-            console.error('Habit Skip click failed:', err)
-          } finally {
-            setHabitActionInFlightIds((prev) => {
-              const next = new Set(prev)
-              next.delete(habit.id)
-              return next
-            })
-          }
-        }}
-        onShowArchived={() => {
-          setShowArchived(true)
-          setShowDeleted(false)
-        }}
-        onShowDeleted={() => {
-          setShowDeleted(true)
-          setShowArchived(false)
-        }}
-        showArchived={showArchived}
-        showDeleted={showDeleted}
-        onClearArchiveTrashView={() => {
-          setShowArchived(false)
-          setShowDeleted(false)
-        }}
-        lineUpTaskIds={lineUpTaskIds}
-        onAddToLineUp={addToLineUp}
-        onRemoveFromLineUp={removeFromLineUp}
-        viewMode={viewMode}
-        effectiveSortBy={effectiveSortByForList}
-      />
 
       <AddEditTaskModal
         isOpen={isModalOpen}

@@ -1,21 +1,24 @@
-/* NotificationsPopover: Full-screen on mobile; anchored below bell on md+ */
+/* NotificationsPopover: Habit reminders in-app (full-screen mobile, anchored desktop) */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { MaterialIcon } from '../../../components/MaterialIcon'
-import {
-  PLACEHOLDER_NOTIFICATIONS,
-  type PlaceholderNotification,
-} from '../placeholderNotifications'
+import { HabitReminderItem } from '../../habits/HabitReminderItem'
+import type { useInAppNotifications } from '../hooks/useInAppNotifications'
 
 const PANEL_MAX_WIDTH = 420
 const ANCHOR_GAP_PX = 8
 const MOBILE_MEDIA_QUERY = '(max-width: 767px)'
 
+type InAppNotifications = ReturnType<typeof useInAppNotifications>
+
 interface NotificationsPopoverProps {
   isOpen: boolean
   onClose: () => void
   triggerRef: React.RefObject<HTMLElement | null>
+  notifications: InAppNotifications
+  /** Navigate to Tasks when user taps a reminder title area */
+  onGoToTasks?: () => void
 }
 
 /** Match Tailwind `md` breakpoint: mobile = viewport below 768px */
@@ -36,20 +39,33 @@ function useIsMobileViewport(): boolean {
 }
 
 /**
- * Notifications UI: full-screen modal on mobile, anchored popover on tablet/desktop.
+ * Notifications UI: habit reminders with Target / Minimum / Skip actions.
  */
-export function NotificationsPopover({ isOpen, onClose, triggerRef }: NotificationsPopoverProps) {
+export function NotificationsPopover({
+  isOpen,
+  onClose,
+  triggerRef,
+  notifications,
+  onGoToTasks,
+}: NotificationsPopoverProps) {
   const isMobile = useIsMobileViewport()
   const panelRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState({ top: 0, left: 0, width: PANEL_MAX_WIDTH })
-  const [items, setItems] = useState<PlaceholderNotification[]>(PLACEHOLDER_NOTIFICATIONS)
 
-  /* Reset placeholders when opened */
+  const {
+    visibleReminders,
+    dismissHabit,
+    dismissAll,
+    runHabitAction,
+    actionInFlightIds,
+  } = notifications
+
+  /* Refresh tasks/habits when panel opens */
   useEffect(() => {
     if (isOpen) {
-      setItems(PLACEHOLDER_NOTIFICATIONS)
+      void notifications.refetch()
     }
-  }, [isOpen])
+  }, [isOpen, notifications.refetch])
 
   /* Mobile: lock page scroll while full-screen panel is open */
   useEffect(() => {
@@ -102,7 +118,7 @@ export function NotificationsPopover({ isOpen, onClose, triggerRef }: Notificati
       window.removeEventListener('resize', updatePosition)
       window.removeEventListener('scroll', updatePosition, true)
     }
-  }, [isOpen, isMobile, triggerRef, items.length])
+  }, [isOpen, isMobile, triggerRef, visibleReminders.length])
 
   /* ESC to close */
   useEffect(() => {
@@ -115,27 +131,23 @@ export function NotificationsPopover({ isOpen, onClose, triggerRef }: Notificati
     return () => document.removeEventListener('keydown', handleEscape)
   }, [isOpen, onClose])
 
-  const handleMarkAllRead = useCallback(() => {
-    setItems((prev) => prev.map((item) => ({ ...item, read: true })))
-  }, [])
-
-  const handleClear = useCallback((id: string) => {
-    setItems((prev) => prev.filter((item) => item.id !== id))
-  }, [])
-
   if (!isOpen) return null
 
   const panelContent = (
     <NotificationsPanel
-      items={items}
+      reminders={visibleReminders}
       showCloseButton={isMobile}
       onClose={onClose}
-      onMarkAllRead={handleMarkAllRead}
-      onClear={handleClear}
+      onDismissAll={dismissAll}
+      onDismissHabit={dismissHabit}
+      onTargetComplete={(row) => void runHabitAction(row.habit.id, row, 'completed')}
+      onMinimum={(row) => void runHabitAction(row.habit.id, row, 'minimum')}
+      onSkip={(row) => void runHabitAction(row.habit.id, row, 'skipped')}
+      actionInFlightIds={actionInFlightIds}
+      onGoToTasks={onGoToTasks}
     />
   )
 
-  /* Mobile: full-screen modal */
   if (isMobile) {
     return createPortal(
       <div className="fixed inset-0 z-[60] flex flex-col bg-surface-container-lowest" role="presentation">
@@ -155,7 +167,6 @@ export function NotificationsPopover({ isOpen, onClose, triggerRef }: Notificati
     )
   }
 
-  /* Desktop/tablet: anchored popover below bell */
   return createPortal(
     <>
       <div className="fixed inset-0 z-[55]" aria-hidden onClick={onClose} />
@@ -180,24 +191,33 @@ export function NotificationsPopover({ isOpen, onClose, triggerRef }: Notificati
 }
 
 interface NotificationsPanelProps {
-  items: PlaceholderNotification[]
+  reminders: InAppNotifications['visibleReminders']
   showCloseButton: boolean
   onClose: () => void
-  onMarkAllRead: () => void
-  onClear: (id: string) => void
+  onDismissAll: () => void
+  onDismissHabit: (habitId: string) => void
+  onTargetComplete: (row: InAppNotifications['visibleReminders'][number]) => void
+  onMinimum: (row: InAppNotifications['visibleReminders'][number]) => void
+  onSkip: (row: InAppNotifications['visibleReminders'][number]) => void
+  actionInFlightIds: Set<string>
+  onGoToTasks?: () => void
 }
 
-/** Shared header + scrollable notification list */
+/** Shared header + scrollable habit reminder list */
 function NotificationsPanel({
-  items,
+  reminders,
   showCloseButton,
   onClose,
-  onMarkAllRead,
-  onClear,
+  onDismissAll,
+  onDismissHabit,
+  onTargetComplete,
+  onMinimum,
+  onSkip,
+  actionInFlightIds,
+  onGoToTasks,
 }: NotificationsPanelProps) {
   return (
     <>
-      {/* Header: close (mobile), title, mark all read */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-outline-variant/20 px-5 py-4 md:px-6 md:py-5">
         <div className="flex min-w-0 items-center gap-2">
           {showCloseButton ? (
@@ -214,89 +234,63 @@ function NotificationsPanel({
             Notifications
           </h2>
         </div>
-        {items.length > 0 ? (
+        {reminders.length > 0 ? (
           <button
             type="button"
-            onClick={onMarkAllRead}
+            onClick={onDismissAll}
             className="shrink-0 text-xs font-bold uppercase tracking-wide text-primary transition-colors hover:text-primary-container"
           >
-            Mark all as read
+            Dismiss all
           </button>
         ) : null}
       </div>
 
-      {/* Notification list */}
-      <div className="min-h-0 flex-1 overflow-y-auto md:max-h-[min(600px,70vh)]">
-        {items.length === 0 ? (
-          <p className="px-6 py-10 text-center text-secondary text-on-surface-variant">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 md:max-h-[min(600px,70vh)] md:p-5">
+        {reminders.length === 0 ? (
+          <p className="py-10 text-center text-secondary text-on-surface-variant">
             You&apos;re all caught up.
           </p>
         ) : (
-          items.map((item, index) => (
-            <NotificationRow
-              key={item.id}
-              item={item}
-              isLast={index === items.length - 1}
-              onClear={() => onClear(item.id)}
-            />
-          ))
+          <div className="space-y-3">
+            {reminders.map((row) => (
+              <div key={row.habit.id} className="relative">
+                <HabitReminderItem
+                  habit={row.habit}
+                  task={row.task}
+                  remindAt={row.remindAt}
+                  reminderTime={row.habit.reminder_time}
+                  onTargetComplete={() => onTargetComplete(row)}
+                  onMinimum={() => onMinimum(row)}
+                  onSkip={() => onSkip(row)}
+                  actionsDisabled={actionInFlightIds.has(row.habit.id)}
+                  density="compact"
+                  showStreakBreakdown={false}
+                />
+                <button
+                  type="button"
+                  onClick={() => onDismissHabit(row.habit.id)}
+                  className="absolute right-2 top-2 rounded-md border border-outline-variant/40 bg-surface-container-lowest px-2 py-0.5 text-xs font-semibold text-primary shadow-sm hover:bg-primary/10"
+                  aria-label="Dismiss reminder"
+                >
+                  Dismiss
+                </button>
+              </div>
+            ))}
+          </div>
         )}
-      </div>
-    </>
-  )
-}
-
-interface NotificationRowProps {
-  item: PlaceholderNotification
-  isLast: boolean
-  onClear: () => void
-}
-
-/** Single notification row: icon, text, and right column (time + clear aligned to body) */
-function NotificationRow({ item, isLast, onClear }: NotificationRowProps) {
-  const borderClass = isLast ? '' : 'border-b border-outline-variant/10'
-
-  return (
-    <div
-      className={`flex gap-3 px-4 py-4 transition-colors hover:bg-surface-container-low sm:px-6 ${borderClass}`}
-    >
-      {/* Category icon */}
-      <div className="shrink-0 self-start">
-        <div
-          className={`flex h-10 w-10 items-center justify-center rounded-xl ${item.iconContainerClass}`}
-        >
-          <MaterialIcon name={item.icon} className={`text-[20px] ${item.iconClass}`} />
-        </div>
-      </div>
-
-      {/* Text + actions: time on title row; clear vertically centered with body */}
-      <div className="grid min-w-0 flex-1 grid-cols-[1fr_auto] gap-x-3 gap-y-0.5">
-        <h3
-          className={`text-secondary text-on-surface ${item.read ? 'font-medium' : 'font-bold'}`}
-        >
-          {item.title}
-        </h3>
-        <span className="whitespace-nowrap text-xs text-outline">{item.timeAgo}</span>
-        <p
-          className={`text-secondary leading-relaxed ${
-            item.read ? 'text-outline' : 'text-on-surface-variant'
-          }`}
-        >
-          {item.body}
-        </p>
-        <div className="flex items-center justify-end self-center">
+        {onGoToTasks ? (
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onClear()
+            onClick={() => {
+              onGoToTasks()
+              onClose()
             }}
-            className="rounded-md border border-outline-variant/40 bg-surface-container-lowest px-2.5 py-1 text-xs font-semibold text-primary shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/10"
+            className="mt-4 w-full text-center text-secondary font-medium text-primary hover:underline"
           >
-            Clear
+            Open Tasks
           </button>
-        </div>
+        ) : null}
       </div>
-    </div>
+    </>
   )
 }
