@@ -10,12 +10,12 @@ interface TasksSectionHeaderProps {
   onSearchQueryChange: (value: string) => void
   onSearchExpandedChange: (expanded: boolean) => void
   onOpenFilter: () => void
-  /** Add a new task (desktop + mobile toolbar) */
+  /** Add a new task (md+ toolbar); below md uses floating FAB in TasksBonsaiView */
   onAddTask: () => void
 }
 
 /**
- * Responsive tasks header: mobile page title + actions; desktop Today's Lineup section title.
+ * Responsive tasks header: mobile page title + actions (< md); desktop lineup title + toolbar (md+).
  */
 export function TasksSectionHeader({
   searchExpanded,
@@ -67,21 +67,13 @@ export function TasksSectionHeader({
           >
             <MaterialIcon name="tune" />
           </button>
-          {/* Mobile: primary add action near search/filter (replaces floating FAB). */}
-          <Button
-            variant="primary"
-            onClick={onAddTask}
-            className="ml-1 inline-flex items-center gap-2 px-3 py-2 lg:hidden"
-          >
-            <MaterialIcon name="add" className="text-lg" />
-            New Task
-          </Button>
         </>
       )}
+      {/* md+: inline next to filter; below md FAB handles add */}
       <Button
         variant="primary"
         onClick={onAddTask}
-        className="ml-2 hidden items-center gap-2 rounded-xl px-6 py-2.5 shadow-sm active:scale-95 lg:inline-flex"
+        className="hidden shrink-0 items-center gap-2 rounded-xl px-6 py-2.5 shadow-sm active:scale-95 md:ml-2 md:inline-flex"
       >
         <MaterialIcon name="add" className="text-lg" />
         New Task
@@ -92,7 +84,7 @@ export function TasksSectionHeader({
   return (
     <>
       {/* Mobile: page title and toolbar */}
-      <div className="mb-8 flex items-start justify-between lg:hidden">
+      <div className="mb-8 flex items-start justify-between md:hidden">
         <div>
           <h1 className="text-page-title font-semibold tracking-tight text-on-surface">Tasks</h1>
           <p className="text-secondary mt-1 text-on-surface-variant/70">
@@ -102,11 +94,11 @@ export function TasksSectionHeader({
         {!searchExpanded ? actionButtons : null}
       </div>
       {searchExpanded ? (
-        <div className="mb-6 lg:hidden">{actionButtons}</div>
+        <div className="mb-6 md:hidden">{actionButtons}</div>
       ) : null}
 
       {/* Desktop/tablet: Today's Lineup section header */}
-      <div className="mb-8 hidden items-center justify-between lg:flex">
+      <div className="mb-8 hidden items-center justify-between md:flex">
         <div>
           <h2 className="text-[28px] font-semibold tracking-tight text-on-surface lg:text-[32px]">
             Today&apos;s Lineup

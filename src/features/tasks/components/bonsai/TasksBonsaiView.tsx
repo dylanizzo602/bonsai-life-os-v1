@@ -12,11 +12,22 @@ import { buildBacklogPartition } from '../../utils/partitionBonsaiTasks'
 import { LineupTaskCard } from './LineupTaskCard'
 import { OtherTasksSection } from './OtherTasksSection'
 import { TasksSectionHeader } from './TasksSectionHeader'
+import { FilteredResultsHeader } from './FilteredResultsHeader'
+import { TasksMobileAddFab } from './TasksMobileAddFab'
+import type { FilterSummaryChip } from '../../utils/filterSummary'
 
 interface TasksBonsaiViewProps {
   tasks: Task[]
+  /** Default layout: lineup + other tasks */
   lineupTasks: Task[]
   backlogPool: Task[]
+  /** When true, show Filtered Results list instead of lineup/other */
+  filterMode?: 'default' | 'filtered'
+  /** Tasks matching applied custom filters (sorted) */
+  filteredTasks?: Task[]
+  filterSummaryChips?: FilterSummaryChip[]
+  onRemoveFilterChip?: (conditionId: string) => void
+  onClearFilters?: () => void
   loading?: boolean
   error?: string | null
   searchQuery: string
@@ -55,6 +66,11 @@ export function TasksBonsaiView({
   tasks,
   lineupTasks,
   backlogPool,
+  filterMode = 'default',
+  filteredTasks = [],
+  filterSummaryChips = [],
+  onRemoveFilterChip,
+  onClearFilters,
   loading,
   error,
   searchQuery,
@@ -101,15 +117,21 @@ export function TasksBonsaiView({
     [backlogPool, lineupIds, timeZone],
   )
 
+  const isFilteredMode = filterMode === 'filtered'
+
   const enrichmentTasks = useMemo(() => {
     const ids = new Set<string>()
-    for (const t of lineupTasks) ids.add(t.id)
-    for (const t of backlogPartition.parentTasks) ids.add(t.id)
-    for (const subs of backlogPartition.subtasksByParentId.values()) {
-      for (const s of subs) ids.add(s.id)
+    if (isFilteredMode) {
+      for (const t of filteredTasks) ids.add(t.id)
+    } else {
+      for (const t of lineupTasks) ids.add(t.id)
+      for (const t of backlogPartition.parentTasks) ids.add(t.id)
+      for (const subs of backlogPartition.subtasksByParentId.values()) {
+        for (const s of subs) ids.add(s.id)
+      }
     }
     return tasks.filter((t) => ids.has(t.id))
-  }, [tasks, lineupTasks, backlogPartition])
+  }, [tasks, lineupTasks, backlogPartition, isFilteredMode, filteredTasks])
 
   const { enrichmentById } = useTaskRowEnrichment({
     tasks: enrichmentTasks,
@@ -144,15 +166,30 @@ export function TasksBonsaiView({
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl">
-      <TasksSectionHeader
-        searchExpanded={searchExpanded}
-        searchQuery={searchQuery}
-        onSearchQueryChange={onSearchQueryChange}
-        onSearchExpandedChange={onSearchExpandedChange}
-        onOpenFilter={onOpenFilter}
-        onAddTask={onAddTask}
-      />
+    <div className="relative mx-auto w-full max-w-7xl pb-24 md:pb-0">
+      {isFilteredMode ? (
+        <FilteredResultsHeader
+          chips={filterSummaryChips}
+          taskCount={filteredTasks.length}
+          searchExpanded={searchExpanded}
+          searchQuery={searchQuery}
+          onSearchQueryChange={onSearchQueryChange}
+          onSearchExpandedChange={onSearchExpandedChange}
+          onOpenFilter={onOpenFilter}
+          onRemoveChip={onRemoveFilterChip ?? (() => {})}
+          onClearFilters={onClearFilters ?? (() => {})}
+          onAddTask={onAddTask}
+        />
+      ) : (
+        <TasksSectionHeader
+          searchExpanded={searchExpanded}
+          searchQuery={searchQuery}
+          onSearchQueryChange={onSearchQueryChange}
+          onSearchExpandedChange={onSearchExpandedChange}
+          onOpenFilter={onOpenFilter}
+          onAddTask={onAddTask}
+        />
+      )}
 
       {error ? (
         <p className="mb-4 text-body text-error" role="alert">
@@ -164,41 +201,67 @@ export function TasksBonsaiView({
         <p className="text-secondary mb-6 text-on-surface-variant">Loading tasks…</p>
       ) : null}
 
-      {/* Today's Lineup */}
-      <section className="mb-16">
-        <h2 className="text-secondary mb-4 font-bold uppercase tracking-wide text-on-surface-variant lg:hidden">
-          Today&apos;s Lineup
-        </h2>
-        <div className="flex flex-col gap-3 lg:gap-3">
-          {lineupTasks.length === 0 ? (
-            <p className="text-secondary rounded-xl border border-dashed border-outline-variant/40 px-4 py-8 text-center text-on-surface-variant">
-              No tasks due today or ready to work at medium priority and above.
-            </p>
-          ) : (
-            lineupTasks.map((task) => (
-              <LineupTaskCard
-                key={task.id}
-                task={task}
-                enrichment={getEnrichment(task.id)}
-                goalName={task.goal_id ? goalNameById.get(task.goal_id) ?? null : null}
-                onOpen={() => onOpenEdit(task)}
-                onContextMenu={(e) => handleContextMenu(task, e)}
-                onToggleComplete={() => handleToggleComplete(task)}
-                {...tagHandlers}
-              />
-            ))
-          )}
-        </div>
-      </section>
+      {isFilteredMode ? (
+        <section className="mb-16">
+          <div className="flex flex-col gap-4">
+            {filteredTasks.length === 0 ? (
+              <p className="text-secondary rounded-xl border border-dashed border-outline-variant/40 px-4 py-8 text-center text-on-surface-variant">
+                No tasks match your filters.
+              </p>
+            ) : (
+              filteredTasks.map((task) => (
+                <LineupTaskCard
+                  key={task.id}
+                  task={task}
+                  enrichment={getEnrichment(task.id)}
+                  goalName={task.goal_id ? goalNameById.get(task.goal_id) ?? null : null}
+                  onOpen={() => onOpenEdit(task)}
+                  onContextMenu={(e) => handleContextMenu(task, e)}
+                  onToggleComplete={() => handleToggleComplete(task)}
+                  {...tagHandlers}
+                />
+              ))
+            )}
+          </div>
+        </section>
+      ) : (
+        <>
+          <section className="mb-16">
+            <h2 className="text-secondary mb-4 font-bold uppercase tracking-wide text-on-surface-variant md:hidden">
+              Today&apos;s Lineup
+            </h2>
+            <div className="flex flex-col gap-3 lg:gap-3">
+              {lineupTasks.length === 0 ? (
+                <p className="text-secondary rounded-xl border border-dashed border-outline-variant/40 px-4 py-8 text-center text-on-surface-variant">
+                  No tasks due today or ready to work at medium priority and above.
+                </p>
+              ) : (
+                lineupTasks.map((task) => (
+                  <LineupTaskCard
+                    key={task.id}
+                    task={task}
+                    enrichment={getEnrichment(task.id)}
+                    goalName={task.goal_id ? goalNameById.get(task.goal_id) ?? null : null}
+                    onOpen={() => onOpenEdit(task)}
+                    onContextMenu={(e) => handleContextMenu(task, e)}
+                    onToggleComplete={() => handleToggleComplete(task)}
+                    {...tagHandlers}
+                  />
+                ))
+              )}
+            </div>
+          </section>
 
-      <OtherTasksSection
-        partition={backlogPartition}
-        getEnrichment={getEnrichment}
-        hideCompletedSubtasks={hideCompletedSubtasks}
-        onOpenTask={onOpenEdit}
-        onContextMenu={handleContextMenu}
-        onToggleComplete={handleToggleComplete}
-      />
+          <OtherTasksSection
+            partition={backlogPartition}
+            getEnrichment={getEnrichment}
+            hideCompletedSubtasks={hideCompletedSubtasks}
+            onOpenTask={onOpenEdit}
+            onContextMenu={handleContextMenu}
+            onToggleComplete={handleToggleComplete}
+          />
+        </>
+      )}
 
       {/* View deleted tasks footer */}
       <footer className="mt-20 flex justify-center border-t border-outline-variant/10 pt-8">
@@ -211,6 +274,8 @@ export function TasksBonsaiView({
           View Deleted Tasks
         </button>
       </footer>
+
+      <TasksMobileAddFab onAddTask={onAddTask} />
 
       {contextTask ? (
         <TaskContextPopover
