@@ -1,6 +1,7 @@
 /* TasksBonsaiView: Today's Lineup + Other tasks Bonsai layout */
 
 import { useCallback, useMemo, useState, type MouseEvent } from 'react'
+import { useGoals } from '../../../goals/hooks/useGoals'
 import { MaterialIcon } from '../../../../components/MaterialIcon'
 import { TaskContextPopover } from '../../modals/TaskContextPopover'
 import { useTaskRowEnrichment } from '../../hooks/useTaskRowEnrichment'
@@ -82,6 +83,11 @@ export function TasksBonsaiView({
   deleteTagFromAllTasks,
 }: TasksBonsaiViewProps) {
   const timeZone = useUserTimeZone()
+  const { goals } = useGoals()
+  const goalNameById = useMemo(
+    () => new Map(goals.map((g) => [g.id, g.name])),
+    [goals],
+  )
   const [contextTask, setContextTask] = useState<Task | null>(null)
   const [contextPosition, setContextPosition] = useState({ x: 0, y: 0 })
 
@@ -174,6 +180,7 @@ export function TasksBonsaiView({
                 key={task.id}
                 task={task}
                 enrichment={getEnrichment(task.id)}
+                goalName={task.goal_id ? goalNameById.get(task.goal_id) ?? null : null}
                 onOpen={() => onOpenEdit(task)}
                 onContextMenu={(e) => handleContextMenu(task, e)}
                 onToggleComplete={() => handleToggleComplete(task)}
@@ -204,16 +211,6 @@ export function TasksBonsaiView({
           View Deleted Tasks
         </button>
       </footer>
-
-      {/* Mobile FAB */}
-      <button
-        type="button"
-        onClick={onAddTask}
-        className="fixed bottom-24 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-on-primary shadow-lg transition-transform active:scale-95 lg:hidden"
-        aria-label="Add new task"
-      >
-        <MaterialIcon name="add" className="text-3xl" />
-      </button>
 
       {contextTask ? (
         <TaskContextPopover

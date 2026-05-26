@@ -123,6 +123,11 @@ function compareWithinOtherTasksGroup(a: Task, b: Task, timeZone: string): numbe
  */
 export function sortOtherTasksBacklog(tasks: Task[], timeZone: string): Task[] {
   return [...tasks].sort((a, b) => {
+    /* Priority "none": always sort to the very end of Other tasks. */
+    const aNone = a.priority === 'none'
+    const bNone = b.priority === 'none'
+    if (aNone !== bNone) return aNone ? 1 : -1
+
     const groupCmp = getOtherTasksDateGroup(a, timeZone) - getOtherTasksDateGroup(b, timeZone)
     if (groupCmp !== 0) return groupCmp
     return compareWithinOtherTasksGroup(a, b, timeZone)

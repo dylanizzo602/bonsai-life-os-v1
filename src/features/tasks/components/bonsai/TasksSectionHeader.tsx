@@ -10,7 +10,7 @@ interface TasksSectionHeaderProps {
   onSearchQueryChange: (value: string) => void
   onSearchExpandedChange: (expanded: boolean) => void
   onOpenFilter: () => void
-  /** Desktop/tablet: primary New Task in section header */
+  /** Add a new task (desktop + mobile toolbar) */
   onAddTask: () => void
 }
 
@@ -67,6 +67,15 @@ export function TasksSectionHeader({
           >
             <MaterialIcon name="tune" />
           </button>
+          {/* Mobile: primary add action near search/filter (replaces floating FAB). */}
+          <Button
+            variant="primary"
+            onClick={onAddTask}
+            className="ml-1 inline-flex items-center gap-2 px-3 py-2 lg:hidden"
+          >
+            <MaterialIcon name="add" className="text-lg" />
+            New Task
+          </Button>
         </>
       )}
       <Button

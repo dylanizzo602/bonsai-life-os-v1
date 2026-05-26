@@ -2,13 +2,14 @@
 
 import type { ReactNode } from 'react'
 import { MaterialIcon } from '../../../../components/MaterialIcon'
-import type { Task } from '../../types'
+import type { Tag, Task } from '../../types'
 import type { TaskRowEnrichment } from '../../types/taskRowEnrichment'
 import {
   formatChecklistProgress,
   formatSubtaskProgress,
   formatTimeEstimateMinutes,
 } from '../../utils/taskRowDisplay'
+import { getLineupTagPillClassName } from '../../utils/tagPillStyles'
 
 interface TaskRowMetadataStripProps {
   task: Task
@@ -16,8 +17,10 @@ interface TaskRowMetadataStripProps {
   /** Include checklist icon with count when present */
   showChecklistAsSubtasks?: boolean
   compact?: boolean
-  /** Mobile lineup: show primary tag as trophy chip in metadata row */
-  primaryTagName?: string | null
+  /** Mobile lineup: colored primary tag pill in metadata row (not used when goal is linked) */
+  primaryTag?: Tag | null
+  /** Resolved goal title when task.goal_id is set */
+  goalName?: string | null
 }
 
 /**
@@ -28,7 +31,8 @@ export function TaskRowMetadataStrip({
   enrichment,
   showChecklistAsSubtasks = false,
   compact = false,
-  primaryTagName = null,
+  primaryTag = null,
+  goalName = null,
 }: TaskRowMetadataStripProps) {
   const iconClass = compact ? 'text-[14px]' : 'text-[16px]'
   const textClass = compact
@@ -63,25 +67,24 @@ export function TaskRowMetadataStrip({
 
   const items: Array<{ key: string; node: ReactNode }> = []
 
-  if (primaryTagName) {
+  /* Primary tag: colored pill (same styling as desktop lineup tag) */
+  if (primaryTag) {
     items.push({
       key: 'tag',
       node: (
-        <span className={`flex items-center gap-1 ${textClass}`}>
-          <MaterialIcon name="trophy" className={iconClass} />
-          <span>{primaryTagName}</span>
-        </span>
+        <span className={getLineupTagPillClassName(primaryTag)}>{primaryTag.name}</span>
       ),
     })
   }
 
+  /* Goal link: show goal name when known (matches desktop/list trophy semantics) */
   if (task.goal_id) {
     items.push({
       key: 'goal',
       node: (
         <span className={`flex items-center gap-1 text-primary/70 ${textClass}`}>
           <MaterialIcon name="emoji_events" className={iconClass} />
-          <span className="text-[10px] font-semibold">Linked to Goal</span>
+          <span className="font-semibold">{goalName?.trim() || 'Linked to goal'}</span>
         </span>
       ),
     })

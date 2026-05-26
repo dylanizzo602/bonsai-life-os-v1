@@ -1,6 +1,7 @@
 /* BacklogTaskRow: Compact row for Other tasks section */
 
 import type { MouseEvent } from 'react'
+import { FlagIcon, TrophyIcon } from '../../../../components/icons'
 import { MaterialIcon } from '../../../../components/MaterialIcon'
 import { useUserTimeZone } from '../../../settings/useUserTimeZone'
 import type { Task } from '../../types'
@@ -8,8 +9,8 @@ import type { TaskRowEnrichment } from '../../types/taskRowEnrichment'
 import {
   getBacklogDateDisplay,
   getDueDateColorClass,
-  getPriorityFlagColorClass,
 } from '../../utils/taskRowDisplay'
+import { getPriorityFlagClasses } from '../../utils/priority'
 import { getBacklogTagPillClassName } from '../../utils/tagPillStyles'
 import { BonsaiTaskStatusButton } from './BonsaiTaskStatusButton'
 
@@ -108,10 +109,15 @@ export function BacklogTaskRow({
 
         <div className={`flex shrink-0 items-center gap-6 text-[11px] font-medium ${dateColorClass}`}>
           {dateDisplay ? <span className="flex items-center gap-1">{dateDisplay}</span> : null}
-          {task.priority !== 'none' ? (
-            <MaterialIcon
-              name="flag"
-              className={`text-lg ${getPriorityFlagColorClass(task.priority)}`}
+          {task.goal_id ? (
+            <TrophyIcon
+              className="h-5 w-5 shrink-0 stroke-yellow-500 fill-yellow-100 text-yellow-600"
+              aria-hidden
+            />
+          ) : task.priority !== 'none' ? (
+            <FlagIcon
+              className={`h-5 w-5 shrink-0 ${getPriorityFlagClasses(task.priority)}`}
+              aria-hidden
             />
           ) : null}
         </div>

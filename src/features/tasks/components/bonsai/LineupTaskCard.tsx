@@ -4,6 +4,7 @@
 
 import { useRef, useState, type MouseEvent } from 'react'
 
+import { FlagIcon, TrophyIcon } from '../../../../components/icons'
 import { MaterialIcon } from '../../../../components/MaterialIcon'
 
 import { useUserTimeZone } from '../../../settings/useUserTimeZone'
@@ -18,9 +19,9 @@ import {
 
   getLineupDateDisplay,
 
-  getPriorityFlagColorClass,
-
 } from '../../utils/taskRowDisplay'
+
+import { getPriorityFlagClasses } from '../../utils/priority'
 
 import { getLineupTagPillClassName } from '../../utils/tagPillStyles'
 
@@ -56,6 +57,9 @@ interface LineupTaskCardProps {
 
   deleteTagFromAllTasks?: (tagId: string) => Promise<void>
 
+  /** Goal title when task.goal_id is set (from parent useGoals) */
+  goalName?: string | null
+
 }
 
 
@@ -90,6 +94,8 @@ export function LineupTaskCard({
 
   deleteTagFromAllTasks,
 
+  goalName = null,
+
 }: LineupTaskCardProps) {
 
   const timeZone = useUserTimeZone()
@@ -100,6 +106,15 @@ export function LineupTaskCard({
 
   const primaryTag = task.tags[0]
 
+  /* Mobile metadata: hide tag when goal-linked (goal row shows goal name instead) */
+  const primaryTagForStrip =
+    task.goal_id || !primaryTag
+      ? null
+      : goalName &&
+          primaryTag.name.trim().toLowerCase() === goalName.trim().toLowerCase()
+        ? null
+        : primaryTag
+
   const dateDisplay = getLineupDateDisplay(task, timeZone)
 
   const dateColorClass = getDueDateColorClass(task.due_date, timeZone)
@@ -109,6 +124,25 @@ export function LineupTaskCard({
   const showFlag = task.priority !== 'none'
 
   const isCompleted = task.status === 'completed'
+
+  /* Priority indicator: SVG flag colors match task list rows; trophy when goal-linked */
+  const renderPriorityIndicator = (sizeClass: string) => {
+    if (task.goal_id) {
+      return (
+        <TrophyIcon
+          className={`${sizeClass} shrink-0 stroke-yellow-500 fill-yellow-100 text-yellow-600`}
+          aria-hidden
+        />
+      )
+    }
+    if (!showFlag) return null
+    return (
+      <FlagIcon
+        className={`${sizeClass} shrink-0 ${getPriorityFlagClasses(task.priority)}`}
+        aria-hidden
+      />
+    )
+  }
 
 
 
@@ -208,7 +242,7 @@ export function LineupTaskCard({
 
               <h3
 
-                className={`font-semibold leading-tight text-on-surface ${isCompleted ? 'line-through opacity-50' : ''}`}
+                className={`min-w-0 flex-1 font-semibold leading-tight text-on-surface ${isCompleted ? 'line-through opacity-50' : ''}`}
 
               >
 
@@ -216,16 +250,22 @@ export function LineupTaskCard({
 
               </h3>
 
-              {showFlag ? (
-
-                <MaterialIcon
-
-                  name="flag"
-
-                  className={`shrink-0 text-xl ${getPriorityFlagColorClass(task.priority)}`}
-
-                />
-
+              {/* Mobile: due date immediately left of priority flag (matches desktop row) */}
+              {(dateDisplay || showFlag || task.goal_id) ? (
+                <div className="flex shrink-0 items-center gap-2">
+                  {dateDisplay ? (
+                    <div
+                      className={`flex items-center gap-1 text-[12px] font-medium ${dateColorClass}`}
+                    >
+                      <MaterialIcon name="calendar_today" className="text-[16px]" />
+                      <span>{dateDisplay}</span>
+                      {isRecurring ? (
+                        <MaterialIcon name="sync" className="text-[14px]" aria-hidden />
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {renderPriorityIndicator('h-6 w-6')}
+                </div>
               ) : null}
 
             </div>
@@ -240,27 +280,11 @@ export function LineupTaskCard({
 
               compact
 
-              primaryTagName={primaryTag?.name ?? null}
+              primaryTag={primaryTagForStrip}
+
+              goalName={goalName}
 
             />
-
-            {dateDisplay ? (
-
-              <div className={`flex items-center gap-1 text-[12px] font-medium ${dateColorClass}`}>
-
-                <MaterialIcon name="calendar_today" className="text-[16px]" />
-
-                <span>{dateDisplay}</span>
-
-                {isRecurring ? (
-
-                  <MaterialIcon name="sync" className="text-[14px]" aria-hidden />
-
-                ) : null}
-
-              </div>
-
-            ) : null}
 
           </div>
 
@@ -317,34 +341,17 @@ export function LineupTaskCard({
               <span className={getLineupTagPillClassName(primaryTag)}>{primaryTag.name}</span>
 
             ) : (
-
-              <button
-
-                ref={tagButtonRef}
-
-                type="button"
-
-                onClick={(e) => {
-
-                  e.stopPropagation()
-
-                  setTagModalOpen(true)
-
-                }}
-
-                className="shrink-0 rounded border border-dashed border-outline-variant px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-outline/60 transition-colors hover:border-primary hover:text-primary"
-
-              >
-
-                Add Tag
-
-              </button>
-
+              null
             )}
 
           </div>
 
-          <TaskRowMetadataStrip task={task} enrichment={enrichment} showChecklistAsSubtasks />
+          <TaskRowMetadataStrip
+            task={task}
+            enrichment={enrichment}
+            showChecklistAsSubtasks
+            goalName={goalName}
+          />
 
         </div>
 
@@ -374,17 +381,7 @@ export function LineupTaskCard({
 
           ) : null}
 
-          {showFlag ? (
-
-            <MaterialIcon
-
-              name="flag"
-
-              className={`text-[18px] ${getPriorityFlagColorClass(task.priority)}`}
-
-            />
-
-          ) : null}
+          {renderPriorityIndicator('h-5 w-5')}
 
         </div>
 

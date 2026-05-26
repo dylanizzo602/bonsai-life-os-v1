@@ -1,9 +1,10 @@
 /* FilterModal: Modal for building task filters per plan (field, operator, criteria per field type) */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Modal } from '../../../components/Modal'
-import { CloseIcon, PlusIcon } from '../../../components/icons'
+import { PlusIcon } from '../../../components/icons'
+import { MaterialIcon } from '../../../components/MaterialIcon'
 
 export interface FilterCondition {
   id: string
@@ -221,6 +222,8 @@ export function FilterModal({
   availableTagNames = [],
 }: FilterModalProps) {
   const [localConditions, setLocalConditions] = useState<FilterCondition[]>(conditions)
+  /* Global combine toggle: AND/OR (v1 maps to combineWithPrevious for all conditions after the first). */
+  const [combineMode, setCombineMode] = useState<'and' | 'or'>('and')
   /* Add filter popover: open state, refs, and position (like Sort modal "Add sort" popover) */
   const [isAddFilterPopoverOpen, setIsAddFilterPopoverOpen] = useState(false)
   const addFilterButtonRef = useRef<HTMLButtonElement>(null)
@@ -228,11 +231,30 @@ export function FilterModal({
   const [addFilterPopoverPosition, setAddFilterPopoverPosition] = useState({ top: 0, left: 0 })
 
   useEffect(() => {
-    if (isOpen) setLocalConditions(conditions)
+    if (!isOpen) return
+    setLocalConditions(conditions)
+    const hasOr = conditions.slice(1).some((c) => (c.combineWithPrevious ?? 'and') === 'or')
+    setCombineMode(hasOr ? 'or' : 'and')
   }, [isOpen, conditions])
+
+  /* Keep global combine mode in sync when user edits local conditions. */
+  useEffect(() => {
+    const hasOr = localConditions.slice(1).some((c) => (c.combineWithPrevious ?? 'and') === 'or')
+    setCombineMode(hasOr ? 'or' : 'and')
+  }, [localConditions])
 
   const updateCondition = (id: string, patch: Partial<FilterCondition>) => {
     const next = localConditions.map((c) => (c.id === id ? { ...c, ...patch } : c))
+    setLocalConditions(next)
+    onConditionsChange?.(next)
+  }
+
+  /* Apply combine mode across the whole flat list (v1 behavior; nested rules are future). */
+  const applyCombineMode = (mode: 'and' | 'or') => {
+    setCombineMode(mode)
+    const next = localConditions.map((c, idx) =>
+      idx === 0 ? c : { ...c, combineWithPrevious: mode },
+    )
     setLocalConditions(next)
     onConditionsChange?.(next)
   }
@@ -246,7 +268,7 @@ export function FilterModal({
       field: fieldId,
       operator,
       value,
-      ...(localConditions.length > 0 ? { combineWithPrevious: 'and' as const } : {}),
+      ...(localConditions.length > 0 ? { combineWithPrevious: combineMode } : {}),
     }
     const nextList = [...localConditions, next]
     setLocalConditions(nextList)
@@ -333,70 +355,49 @@ export function FilterModal({
     if (!isOpen) setIsAddFilterPopoverOpen(false)
   }, [isOpen])
 
-  const footer = (
-    <>
-      <div className="relative">
-        <button
-          ref={addFilterButtonRef}
-          type="button"
-          onClick={() => setIsAddFilterPopoverOpen((prev) => !prev)}
-          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-body font-medium text-bonsai-sage-700 bg-bonsai-sage-100 hover:bg-bonsai-sage-200"
-          aria-expanded={isAddFilterPopoverOpen}
-          aria-haspopup="true"
-        >
-          <PlusIcon className="w-4 h-4" />
-          Add filter
-        </button>
-        {/* Add filter popover: list of filter fields (same pattern as Sort "Add sort" popover) */}
-        {isAddFilterPopoverOpen && createPortal(
-          <div
-            ref={addFilterPopoverRef}
-            className="fixed z-[10000] flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-lg border border-bonsai-slate-200 bg-white shadow-lg"
-            style={{ top: `${addFilterPopoverPosition.top}px`, left: `${addFilterPopoverPosition.left}px` }}
-            role="menu"
-            aria-label="Add filter field"
-          >
-            <div className="flex flex-col p-1.5 min-w-[200px] max-h-[320px] overflow-y-auto">
-              {FILTER_FIELDS.map((field) => (
-                <button
-                  key={field.id}
-                  type="button"
-                  onClick={() => handleAddFilterWithField(field.id)}
-                  className="flex items-center gap-2.5 rounded-md px-3 py-2 text-body font-medium transition-colors bg-white text-bonsai-slate-800 hover:bg-bonsai-slate-50 text-left"
-                  role="menuitem"
-                >
-                  {field.label}
-                </button>
-              ))}
-            </div>
-          </div>,
-          document.body
-        )}
+  /* Title node: custom header content; Modal still renders its built-in close button. */
+  const titleNode = useMemo(
+    () => (
+      <div className="flex items-center gap-3">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-bonsai-sage-100">
+          <MaterialIcon name="filter_list" className="text-[20px] text-bonsai-sage-700" />
+        </div>
+        <span className="text-body font-semibold text-bonsai-brown-700">Filter Rules</span>
       </div>
-      <button
-        type="button"
-        onClick={handleClearAll}
-        className="rounded-lg px-4 py-2 text-body font-medium text-red-600 hover:bg-red-50"
-      >
-        Clear all
-      </button>
-      <div className="flex-1" />
-      <button
-        type="button"
-        onClick={onClose}
-        className="rounded-lg px-4 py-2 text-body font-medium bg-bonsai-slate-100 text-bonsai-slate-700 hover:bg-bonsai-slate-200"
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        onClick={handleApply}
-        className="rounded-lg px-4 py-2 text-body font-medium bg-bonsai-sage-600 text-white hover:bg-bonsai-sage-700"
-      >
-        Apply
-      </button>
-    </>
+    ),
+    [],
   )
+
+  /* Add-filter popover: list of available filter fields (desktop + mobile). */
+  const addFilterPopover =
+    isAddFilterPopoverOpen &&
+    createPortal(
+      <div
+        ref={addFilterPopoverRef}
+        className="fixed z-[10000] flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-xl border border-bonsai-slate-200 bg-white shadow-lg"
+        style={{
+          top: `${addFilterPopoverPosition.top}px`,
+          left: `${addFilterPopoverPosition.left}px`,
+        }}
+        role="menu"
+        aria-label="Add filter field"
+      >
+        <div className="flex min-w-[220px] flex-col gap-1 p-2">
+          {FILTER_FIELDS.map((field) => (
+            <button
+              key={field.id}
+              type="button"
+              onClick={() => handleAddFilterWithField(field.id)}
+              className="flex items-center rounded-lg px-3 py-2 text-body font-medium text-bonsai-slate-800 transition-colors hover:bg-bonsai-slate-50 text-left"
+              role="menuitem"
+            >
+              {field.label}
+            </button>
+          ))}
+        </div>
+      </div>,
+      document.body,
+    )
 
   const renderCriteria = (cond: FilterCondition) => {
     const { field, operator, value } = cond
@@ -662,74 +663,162 @@ export function FilterModal({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Filters" fullScreenOnMobile footer={footer}>
-      <div className="flex flex-col gap-3">
-        <div className="text-secondary font-medium text-bonsai-slate-600">Where</div>
-        {localConditions.length === 0 ? (
-          <p className="text-secondary text-bonsai-slate-500">No filters. Add a filter below.</p>
-        ) : (
-          localConditions.map((cond, index) => (
-            <div key={cond.id} className="flex flex-wrap items-center gap-2">
-              {index > 0 && (
-                <select
-                  className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body font-medium text-bonsai-slate-700 bg-white"
-                  value={cond.combineWithPrevious ?? 'and'}
-                  onChange={(e) =>
-                    updateCondition(cond.id, {
-                      combineWithPrevious: e.target.value === 'or' ? 'or' : 'and',
-                    })
-                  }
-                  aria-label="Combine with previous filter"
+    <Modal isOpen={isOpen} onClose={onClose} title={titleNode} fullScreenOnMobile disableBodyScroll>
+      <div className="flex flex-col gap-6">
+        {/* AND/OR toggle: controls how rules combine (flat list v1). */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex w-fit items-center rounded-lg bg-bonsai-slate-100 p-1">
+            <button
+              type="button"
+              onClick={() => applyCombineMode('and')}
+              className={
+                combineMode === 'and'
+                  ? 'rounded-md bg-white px-4 py-1.5 text-secondary font-bold uppercase tracking-wider text-bonsai-sage-700 shadow-sm'
+                  : 'rounded-md px-4 py-1.5 text-secondary font-bold uppercase tracking-wider text-bonsai-slate-600 hover:bg-bonsai-slate-200'
+              }
+            >
+              AND
+            </button>
+            <button
+              type="button"
+              onClick={() => applyCombineMode('or')}
+              className={
+                combineMode === 'or'
+                  ? 'rounded-md bg-white px-4 py-1.5 text-secondary font-bold uppercase tracking-wider text-bonsai-sage-700 shadow-sm'
+                  : 'rounded-md px-4 py-1.5 text-secondary font-bold uppercase tracking-wider text-bonsai-slate-600 hover:bg-bonsai-slate-200'
+              }
+            >
+              OR
+            </button>
+          </div>
+
+          {/* Nested rules: future enhancement (v1 is flat list). */}
+          <button
+            type="button"
+            disabled
+            className="ml-auto inline-flex items-center gap-1 text-secondary font-semibold text-bonsai-sage-700/60"
+            title="Nested rules coming soon"
+          >
+            <MaterialIcon name="add" className="text-[18px]" />
+            + Add a nested filter rule
+          </button>
+        </div>
+
+        {/* Rules list: each row is a 3-column grid with hover-delete. */}
+        <div className="flex flex-col gap-3">
+          {localConditions.length === 0 ? (
+            <p className="text-secondary text-bonsai-slate-500">No filters yet. Add one below.</p>
+          ) : (
+            localConditions.map((cond) => (
+              <div
+                key={cond.id}
+                className="group flex items-center gap-3 rounded-lg border border-bonsai-slate-200 bg-white p-3"
+              >
+                <div className="grid flex-1 grid-cols-1 gap-2 md:grid-cols-3">
+                  <div className="relative">
+                    <select
+                      className="w-full appearance-none rounded-t-sm border-0 border-b border-bonsai-slate-200 bg-white py-2 pl-3 pr-8 text-secondary text-bonsai-slate-700 transition-colors focus:border-bonsai-sage-600 focus:ring-0"
+                      value={cond.field}
+                      onChange={(e) => handleFieldChange(cond, e.target.value)}
+                      aria-label="Filter field"
+                    >
+                      {FILTER_FIELDS.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-bonsai-slate-400">
+                      <MaterialIcon name="expand_more" className="text-[18px]" />
+                    </span>
+                  </div>
+
+                  <div className="relative">
+                    <select
+                      className="w-full appearance-none rounded-t-sm border-0 border-b border-bonsai-slate-200 bg-white py-2 pl-3 pr-8 text-secondary text-bonsai-slate-700 transition-colors focus:border-bonsai-sage-600 focus:ring-0"
+                      value={cond.operator}
+                      onChange={(e) => {
+                        const op = e.target.value
+                        if (cond.field === 'start_date' || cond.field === 'due_date') {
+                          updateCondition(cond.id, {
+                            operator: op,
+                            value: getDefaultValue(cond.field, op),
+                          })
+                        } else {
+                          updateCondition(cond.id, { operator: op })
+                        }
+                      }}
+                      aria-label="Operator"
+                    >
+                      {getOperatorsForField(cond.field).map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-bonsai-slate-400">
+                      <MaterialIcon name="expand_more" className="text-[18px]" />
+                    </span>
+                  </div>
+
+                  <div className="min-w-0">{renderCriteria(cond)}</div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleRemove(cond.id)}
+                  className="p-1 text-bonsai-slate-400 opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100"
+                  aria-label="Remove filter rule"
                 >
-                  <option value="and">AND</option>
-                  <option value="or">OR</option>
-                </select>
-              )}
-              <select
-                className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white"
-                value={cond.field}
-                onChange={(e) => handleFieldChange(cond, e.target.value)}
-                aria-label="Filter field"
-              >
-                {FILTER_FIELDS.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="rounded-lg border border-bonsai-slate-300 px-3 py-2 text-body text-bonsai-slate-700 bg-white"
-                value={cond.operator}
-                onChange={(e) => {
-                  const op = e.target.value
-                  if (cond.field === 'start_date' || cond.field === 'due_date') {
-                    updateCondition(cond.id, { operator: op, value: getDefaultValue(cond.field, op) })
-                  } else if (cond.field === 'tags' && op === 'has_none') {
-                    updateCondition(cond.id, { operator: op, value: '' })
-                  } else {
-                    updateCondition(cond.id, { operator: op })
-                  }
-                }}
-                aria-label="Operator"
-              >
-                {getOperatorsForField(cond.field).map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              {renderCriteria(cond)}
-              <button
-                type="button"
-                onClick={() => handleRemove(cond.id)}
-                className="p-1.5 rounded-full text-bonsai-slate-500 hover:bg-bonsai-slate-200 hover:text-bonsai-slate-700"
-                aria-label="Remove filter"
-              >
-                <CloseIcon className="w-4 h-4" />
-              </button>
-            </div>
-          ))
-        )}
+                  <MaterialIcon name="delete" className="text-[22px]" />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Add rule: button + popover for choosing field. */}
+        <div className="relative">
+          <button
+            ref={addFilterButtonRef}
+            type="button"
+            onClick={() => setIsAddFilterPopoverOpen((prev) => !prev)}
+            className="inline-flex items-center gap-2 text-body font-semibold text-bonsai-sage-700 transition-colors hover:text-bonsai-sage-800"
+            aria-expanded={isAddFilterPopoverOpen}
+            aria-haspopup="true"
+          >
+            <PlusIcon className="h-5 w-5" />
+            <span>+ Add</span>
+          </button>
+          {addFilterPopover}
+        </div>
+
+        {/* Footer actions: Clear, Cancel, Apply. */}
+        <div className="flex items-center justify-between gap-3 border-t border-bonsai-slate-200 pt-4">
+          <button
+            type="button"
+            onClick={handleClearAll}
+            className="text-body font-medium text-bonsai-slate-600 hover:text-red-600"
+          >
+            Clear All
+          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-6 py-2.5 text-body font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleApply}
+              className="rounded-lg bg-bonsai-sage-600 px-8 py-2.5 text-body font-semibold text-white hover:bg-bonsai-sage-700"
+            >
+              Apply Filters
+            </button>
+          </div>
+        </div>
       </div>
     </Modal>
   )
