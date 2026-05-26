@@ -1,30 +1,39 @@
-/* TasksBonsaiView: Today's Lineup + Other tasks Bonsai layout */
+/* TasksBonsaiView: Today's Lineup + Available / Unavailable backlog Bonsai layout */
 
 import { useCallback, useMemo, useState, type MouseEvent } from 'react'
 import { useGoals } from '../../../goals/hooks/useGoals'
 import { MaterialIcon } from '../../../../components/MaterialIcon'
 import { TaskContextPopover } from '../../modals/TaskContextPopover'
+import { handleDesktopTaskContextMenu } from '../../utils/taskContextMenu'
 import { useTaskRowEnrichment } from '../../hooks/useTaskRowEnrichment'
 import type { CreateTaskInput, Task, Tag, TagColorId } from '../../types'
 import { EMPTY_TASK_ENRICHMENT } from '../../types/taskRowEnrichment'
 import { useUserTimeZone } from '../../../settings/useUserTimeZone'
-import { buildBacklogPartition } from '../../utils/partitionBonsaiTasks'
+import {
+  buildBacklogPartition,
+  splitBacklogPoolByAvailability,
+} from '../../utils/partitionBonsaiTasks'
 import { LineupTaskCard } from './LineupTaskCard'
-import { OtherTasksSection } from './OtherTasksSection'
+import { BacklogTasksSection } from './OtherTasksSection'
 import { TasksSectionHeader } from './TasksSectionHeader'
 import { FilteredResultsHeader } from './FilteredResultsHeader'
+import { SearchResultsHeader } from './SearchResultsHeader'
 import { TasksMobileAddFab } from './TasksMobileAddFab'
 import type { FilterSummaryChip } from '../../utils/filterSummary'
 
 interface TasksBonsaiViewProps {
   tasks: Task[]
-  /** Default layout: lineup + other tasks */
+  /** Default layout: lineup + available / unavailable backlog */
   lineupTasks: Task[]
   backlogPool: Task[]
-  /** When true, show Filtered Results list instead of lineup/other */
-  filterMode?: 'default' | 'filtered'
+  blockedTaskIds: Set<string>
+  /** When set, show search or filtered results instead of lineup/other */
+  filterMode?: 'default' | 'filtered' | 'search'
+  /** Tasks matching the active name search (sorted) */
+  searchTasks?: Task[]
   /** Tasks matching applied custom filters (sorted) */
   filteredTasks?: Task[]
+  onClearSearch?: () => void
   filterSummaryChips?: FilterSummaryChip[]
   onRemoveFilterChip?: (conditionId: string) => void
   onClearFilters?: () => void
@@ -60,14 +69,17 @@ interface TasksBonsaiViewProps {
 }
 
 /**
- * Two-section tasks UI: rich lineup cards and collapsible backlog (habits live in notification bell).
+ * Tasks UI: lineup cards plus collapsible Available and Unavailable backlog sections.
  */
 export function TasksBonsaiView({
   tasks,
   lineupTasks,
   backlogPool,
+  blockedTaskIds,
   filterMode = 'default',
+  searchTasks = [],
   filteredTasks = [],
+  onClearSearch,
   filterSummaryChips = [],
   onRemoveFilterChip,
   onClearFilters,
@@ -112,26 +124,48 @@ export function TasksBonsaiView({
     [lineupTasks],
   )
 
-  const backlogPartition = useMemo(
-    () => buildBacklogPartition(backlogPool, lineupIds, timeZone),
-    [backlogPool, lineupIds, timeZone],
-  )
+  /* Backlog split: blocked or future start → unavailable; same sort order preserved per bucket */
+  const { availableBacklogPartition, unavailableBacklogPartition } = useMemo(() => {
+    const { availablePool, unavailablePool } = splitBacklogPoolByAvailability(
+      backlogPool,
+      tasks,
+      lineupIds,
+      blockedTaskIds,
+      timeZone,
+    )
+    return {
+      availableBacklogPartition: buildBacklogPartition(availablePool, lineupIds, timeZone),
+      unavailableBacklogPartition: buildBacklogPartition(unavailablePool, lineupIds, timeZone),
+    }
+  }, [backlogPool, tasks, lineupIds, blockedTaskIds, timeZone])
 
+  const isSearchMode = filterMode === 'search'
   const isFilteredMode = filterMode === 'filtered'
+  const isResultsListMode = isSearchMode || isFilteredMode
+  const resultsListTasks = isSearchMode ? searchTasks : filteredTasks
 
   const enrichmentTasks = useMemo(() => {
     const ids = new Set<string>()
-    if (isFilteredMode) {
-      for (const t of filteredTasks) ids.add(t.id)
+    if (isResultsListMode) {
+      for (const t of resultsListTasks) ids.add(t.id)
     } else {
       for (const t of lineupTasks) ids.add(t.id)
-      for (const t of backlogPartition.parentTasks) ids.add(t.id)
-      for (const subs of backlogPartition.subtasksByParentId.values()) {
-        for (const s of subs) ids.add(s.id)
+      for (const partition of [availableBacklogPartition, unavailableBacklogPartition]) {
+        for (const t of partition.parentTasks) ids.add(t.id)
+        for (const subs of partition.subtasksByParentId.values()) {
+          for (const s of subs) ids.add(s.id)
+        }
       }
     }
     return tasks.filter((t) => ids.has(t.id))
-  }, [tasks, lineupTasks, backlogPartition, isFilteredMode, filteredTasks])
+  }, [
+    tasks,
+    lineupTasks,
+    availableBacklogPartition,
+    unavailableBacklogPartition,
+    isResultsListMode,
+    resultsListTasks,
+  ])
 
   const { enrichmentById } = useTaskRowEnrichment({
     tasks: enrichmentTasks,
@@ -146,9 +180,10 @@ export function TasksBonsaiView({
   )
 
   const handleContextMenu = (task: Task, e: MouseEvent) => {
-    e.preventDefault()
-    setContextTask(task)
-    setContextPosition({ x: e.clientX, y: e.clientY })
+    handleDesktopTaskContextMenu(e, ({ x, y }) => {
+      setContextTask(task)
+      setContextPosition({ x, y })
+    })
   }
 
   const handleToggleComplete = async (task: Task) => {
@@ -167,7 +202,16 @@ export function TasksBonsaiView({
 
   return (
     <div className="relative mx-auto w-full max-w-7xl pb-24 md:pb-0">
-      {isFilteredMode ? (
+      {isSearchMode ? (
+        <SearchResultsHeader
+          taskCount={searchTasks.length}
+          searchQuery={searchQuery}
+          onSearchQueryChange={onSearchQueryChange}
+          onClearSearch={onClearSearch ?? (() => {})}
+          onOpenFilter={onOpenFilter}
+          onAddTask={onAddTask}
+        />
+      ) : isFilteredMode ? (
         <FilteredResultsHeader
           chips={filterSummaryChips}
           taskCount={filteredTasks.length}
@@ -201,15 +245,15 @@ export function TasksBonsaiView({
         <p className="text-secondary mb-6 text-on-surface-variant">Loading tasks…</p>
       ) : null}
 
-      {isFilteredMode ? (
+      {isResultsListMode ? (
         <section className="mb-16">
           <div className="flex flex-col gap-4">
-            {filteredTasks.length === 0 ? (
+            {resultsListTasks.length === 0 ? (
               <p className="text-secondary rounded-xl border border-dashed border-outline-variant/40 px-4 py-8 text-center text-on-surface-variant">
-                No tasks match your filters.
+                {isSearchMode ? 'No tasks match your search.' : 'No tasks match your filters.'}
               </p>
             ) : (
-              filteredTasks.map((task) => (
+              resultsListTasks.map((task) => (
                 <LineupTaskCard
                   key={task.id}
                   task={task}
@@ -252,14 +296,27 @@ export function TasksBonsaiView({
             </div>
           </section>
 
-          <OtherTasksSection
-            partition={backlogPartition}
+          <BacklogTasksSection
+            title="Available tasks"
+            partition={availableBacklogPartition}
             getEnrichment={getEnrichment}
             hideCompletedSubtasks={hideCompletedSubtasks}
             onOpenTask={onOpenEdit}
             onContextMenu={handleContextMenu}
             onToggleComplete={handleToggleComplete}
           />
+
+          <div className="mt-10">
+            <BacklogTasksSection
+              title="Unavailable tasks"
+              partition={unavailableBacklogPartition}
+              getEnrichment={getEnrichment}
+              hideCompletedSubtasks={hideCompletedSubtasks}
+              onOpenTask={onOpenEdit}
+              onContextMenu={handleContextMenu}
+              onToggleComplete={handleToggleComplete}
+            />
+          </div>
         </>
       )}
 
@@ -284,7 +341,7 @@ export function TasksBonsaiView({
           x={contextPosition.x}
           y={contextPosition.y}
           task={contextTask}
-          onRename={(t) => {
+          onOpenTask={(t) => {
             setContextTask(null)
             onOpenEdit(t)
           }}
@@ -304,6 +361,7 @@ export function TasksBonsaiView({
           onArchive={onArchiveTask}
           onMarkDeleted={onMarkDeletedTask}
           lineUpTaskIds={lineUpTaskIds}
+          displayedLineupTaskIds={lineupIds}
           onAddToLineUp={onAddToLineUp}
           onRemoveFromLineUp={onRemoveFromLineUp}
         />

@@ -1,4 +1,4 @@
-/* OtherTasksSection: Collapsible backlog list with parent/subtask groups */
+/* BacklogTasksSection: Collapsible backlog list with parent/subtask groups */
 
 import { useState } from 'react'
 import { MaterialIcon } from '../../../../components/MaterialIcon'
@@ -8,30 +8,36 @@ import { BacklogTaskGroup } from './BacklogTaskGroup'
 import { BacklogTaskRow } from './BacklogTaskRow'
 import type { BonsaiBacklogPartition } from '../../utils/partitionBonsaiTasks'
 
-interface OtherTasksSectionProps {
+interface BacklogTasksSectionProps {
+  /** Section heading (e.g. Available tasks, Unavailable tasks) */
+  title: string
   partition: BonsaiBacklogPartition
   getEnrichment: (taskId: string) => TaskRowEnrichment
   hideCompletedSubtasks?: boolean
   onOpenTask: (task: Task) => void
   onContextMenu: (task: Task, e: React.MouseEvent) => void
   onToggleComplete: (task: Task) => void
+  /** Whether the section starts expanded (default true). */
+  defaultOpen?: boolean
   /** Optional slot above task rows (e.g. habit reminders). */
   leadingContent?: React.ReactNode
 }
 
 /**
- * Collapsible "Other tasks" section with compact backlog rows.
+ * Collapsible backlog section with compact rows (Available / Unavailable tasks).
  */
-export function OtherTasksSection({
+export function BacklogTasksSection({
+  title,
   partition,
   getEnrichment,
   hideCompletedSubtasks = false,
   onOpenTask,
   onContextMenu,
   onToggleComplete,
+  defaultOpen = true,
   leadingContent,
-}: OtherTasksSectionProps) {
-  const [open, setOpen] = useState(true)
+}: BacklogTasksSectionProps) {
+  const [open, setOpen] = useState(defaultOpen)
   const { parentTasks, subtasksByParentId } = partition
 
   if (parentTasks.length === 0 && !leadingContent) return null
@@ -85,7 +91,7 @@ export function OtherTasksSection({
             className={`text-on-surface-variant transition-transform lg:text-outline ${open ? 'rotate-90' : ''}`}
           />
           <h2 className="text-secondary font-bold uppercase tracking-wide text-on-surface-variant lg:text-xl lg:font-semibold lg:normal-case lg:text-on-surface">
-            Other tasks
+            {title}
           </h2>
         </div>
         <div className="mx-4 hidden h-px flex-1 bg-surface-container-highest lg:block" />

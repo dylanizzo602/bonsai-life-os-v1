@@ -40,7 +40,7 @@ export function FilteredResultsHeader({
             type="search"
             value={searchQuery}
             onChange={(e) => onSearchQueryChange(e.target.value)}
-            placeholder="Search tasks..."
+            placeholder="Search by name..."
             className="min-w-0 flex-1 rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2 text-body focus:outline-none focus:ring-2 focus:ring-primary/30"
             aria-label="Search filtered tasks"
           />

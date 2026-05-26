@@ -18,6 +18,19 @@ export function isPriorityMediumOrAbove(priority: Task['priority']): boolean {
 }
 
 /**
+ * Backlog unavailable: blocked by a dependency or start date/time is still in the future.
+ * Used to split Bonsai backlog into Available vs Unavailable sections (not the full Available view rules).
+ */
+export function isTaskBacklogUnavailable(
+  task: Task,
+  blockedTaskIds: Set<string>,
+  timeZone: string,
+): boolean {
+  if (blockedTaskIds.has(task.id)) return true
+  return !isStartAvailableNow(task.start_date, timeZone)
+}
+
+/**
  * Matches default Available view rules: incomplete, not blocked, priority not none, start now or earlier.
  */
 export function isTaskAvailableForWork(

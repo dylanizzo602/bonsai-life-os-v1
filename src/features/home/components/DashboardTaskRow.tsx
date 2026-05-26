@@ -8,6 +8,10 @@ import {
   getDueStatus,
 } from '../../tasks/utils/date'
 import { getPriorityFlagClasses } from '../../tasks/utils/priority'
+import {
+  getLineupTagPillClassName,
+  getTagPillClasses,
+} from '../../tasks/utils/tagPillStyles'
 import { useUserTimeZone } from '../../settings/useUserTimeZone'
 import type { Task, TaskPriority } from '../../tasks/types'
 import {
@@ -34,17 +38,24 @@ function getPriorityAriaLabel(priority: TaskPriority): string {
   return map[priority] ?? 'Priority'
 }
 
-/** Tag or category label for metadata */
-function getTaskTagLabel(task: Task): string | null {
-  const tag = task.tags[0]?.name?.trim()
-  if (tag) return tag
-  const category = task.category?.trim()
-  return category || null
-}
-
 type MetaSegment =
+  | { kind: 'tag'; label: string; className: string }
   | { kind: 'text'; text: string; emphasizeDate?: boolean }
   | { kind: 'priority' }
+
+/** Tag pill classes for metadata — matches Today's Lineup card pills */
+function getDashboardTagPillClassName(task: Task): { label: string; className: string } | null {
+  const primaryTag = task.tags[0]
+  if (primaryTag?.name?.trim()) {
+    return { label: primaryTag.name, className: getLineupTagPillClassName(primaryTag) }
+  }
+  const category = task.category?.trim()
+  if (!category) return null
+  return {
+    label: category,
+    className: `shrink-0 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${getTagPillClasses('slate')}`,
+  }
+}
 
 /** Status control size — matches Upcoming Tasks card header icon (24px / text-[24px]) */
 const DASHBOARD_STATUS_SIZE_PX = 24
@@ -67,10 +78,10 @@ export function DashboardTaskRow({ task, onClick, onToggleComplete }: DashboardT
         ? 'text-amber-600'
         : 'text-on-surface-variant'
 
-  /* Metadata segments: tag (if any), start–due, priority flag (if not none) */
+  /* Metadata segments: tag pill (if any), start–due, priority flag (if not none) */
   const metaSegments: MetaSegment[] = []
-  const tagLabel = getTaskTagLabel(task)
-  if (tagLabel) metaSegments.push({ kind: 'text', text: tagLabel })
+  const tagPill = getDashboardTagPillClassName(task)
+  if (tagPill) metaSegments.push({ kind: 'tag', label: tagPill.label, className: tagPill.className })
   if (dateRange) metaSegments.push({ kind: 'text', text: dateRange, emphasizeDate: true })
   if (task.priority !== 'none') metaSegments.push({ kind: 'priority' })
 
@@ -144,7 +155,9 @@ export function DashboardTaskRow({ task, onClick, onToggleComplete }: DashboardT
                     •
                   </span>
                 ) : null}
-                {segment.kind === 'priority' ? (
+                {segment.kind === 'tag' ? (
+                  <span className={segment.className}>{segment.label}</span>
+                ) : segment.kind === 'priority' ? (
                   <span
                     className="inline-flex"
                     role="img"
@@ -155,10 +168,8 @@ export function DashboardTaskRow({ task, onClick, onToggleComplete }: DashboardT
                       aria-hidden
                     />
                   </span>
-                ) : segment.emphasizeDate ? (
-                  <span className={dateColorClass}>{segment.text}</span>
                 ) : (
-                  <span className="text-on-surface-variant">{segment.text}</span>
+                  <span className={dateColorClass}>{segment.text}</span>
                 )}
               </span>
             ))}

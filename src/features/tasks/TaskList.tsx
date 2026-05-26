@@ -5,6 +5,7 @@ import { SubtaskList } from './SubtaskList'
 import { HabitReminderItem } from '../habits/HabitReminderItem'
 import type { HabitWithStreaks } from '../habits/types'
 import { TaskContextPopover } from './modals/TaskContextPopover'
+import { handleDesktopTaskContextMenu } from './utils/taskContextMenu'
 import {
   getTaskChecklists,
   getTaskChecklistItems,
@@ -454,9 +455,10 @@ export function TaskList({
                     }
                     onClick={() => editingNameTaskId !== task.id && onOpenEditModal?.(task)}
                     onContextMenu={(e) => {
-                      e.preventDefault()
-                      setContextTask(task)
-                      setContextPosition({ x: e.clientX, y: e.clientY })
+                      handleDesktopTaskContextMenu(e, ({ x, y }) => {
+                        setContextTask(task)
+                        setContextPosition({ x, y })
+                      })
                     }}
                     inlineEditTitle={
                       editingNameTaskId === task.id
@@ -566,7 +568,7 @@ export function TaskList({
         </div>
       )}
 
-      {/* Task context popover: Right-click on a task shows Rename, Duplicate, Archive, Delete */}
+      {/* Task context popover: Right-click on a task shows Open, Lineup, Duplicate, Delete */}
       {contextTask && (
         <TaskContextPopover
           isOpen={true}
@@ -574,9 +576,9 @@ export function TaskList({
           x={contextPosition.x}
           y={contextPosition.y}
           task={contextTask}
-          onRename={(t) => {
+          onOpenTask={(t) => {
             setContextTask(null)
-            setEditingNameTaskId(t.id)
+            onOpenEditModal?.(t)
           }}
           onDuplicate={async (t) => {
             if (!onCreateTask) return

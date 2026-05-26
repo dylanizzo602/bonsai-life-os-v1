@@ -1,5 +1,6 @@
 /* TasksSectionHeader: Page/section chrome for Bonsai tasks layout (search, filter, add) */
 
+import { useEffect, useRef } from 'react'
 import { MaterialIcon } from '../../../../components/MaterialIcon'
 import { Button } from '../../../../components/Button'
 
@@ -25,17 +26,27 @@ export function TasksSectionHeader({
   onOpenFilter,
   onAddTask,
 }: TasksSectionHeaderProps) {
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  /* Focus inline search when the user expands the search bar */
+  useEffect(() => {
+    if (searchExpanded) {
+      searchInputRef.current?.focus()
+    }
+  }, [searchExpanded])
+
   const actionButtons = (
     <div className="flex items-center gap-2">
       {searchExpanded ? (
         <div className="flex min-w-0 flex-1 items-center gap-2 sm:max-w-xs">
           <input
+            ref={searchInputRef}
             type="search"
             value={searchQuery}
             onChange={(e) => onSearchQueryChange(e.target.value)}
-            placeholder="Search tasks..."
+            placeholder="Search by name..."
             className="min-w-0 flex-1 rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2 text-body focus:outline-none focus:ring-2 focus:ring-primary/30"
-            aria-label="Search tasks"
+            aria-label="Search tasks by name"
           />
           <button
             type="button"

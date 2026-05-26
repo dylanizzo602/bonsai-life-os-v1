@@ -1,42 +1,110 @@
-/* TaskContextPopover: Right-click context menu for a task (Rename, Duplicate, Archive, Delete) */
+/* TaskContextPopover: Desktop right-click / mobile edit-modal task actions (Zenith menu design) */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { MaterialIcon } from '../../../components/MaterialIcon'
 import type { Task } from '../types'
+import {
+  formatTaskLastEdited,
+  getTaskContextStatusLabel,
+  getTaskContextThumbnail,
+  getTaskDeleteMenuLabel,
+  isDesktopContextMenuViewport,
+  getLineupMenuLabel,
+  isTaskInLineupMenu,
+} from '../utils/taskContextMenu'
 
 export interface TaskContextPopoverProps {
-  /** Whether the popover is open */
   isOpen: boolean
-  /** Called when popover should close */
   onClose: () => void
-  /** Position: clientX from context menu event */
   x: number
-  /** Position: clientY from context menu event */
   y: number
-  /** Task this menu applies to */
   task: Task
-  /** Open edit modal (Rename) */
-  onRename: (task: Task) => void
-  /** Duplicate the task */
+  onOpenTask: (task: Task) => void
   onDuplicate: (task: Task) => void
-  /** Archive the task (optional; sets status to archived) */
   onArchive?: (task: Task) => void
-  /** Toggle trash state: move to trash or restore from trash (soft delete) */
   onMarkDeleted?: (task: Task) => void
-  /** Unlink a subtask from its parent so it becomes a top-level task */
   onUnlinkFromParent?: (task: Task) => void
-  /** Today's Lineup task IDs (show "Add to Today's Lineup" / "Remove from Today's Lineup") */
   lineUpTaskIds?: Set<string>
+  displayedLineupTaskIds?: Set<string>
+  /** When set, overrides lineup membership (e.g. task opened from Today's Lineup section) */
+  isInTodaysLineup?: boolean
   onAddToLineUp?: (taskId: string) => void
   onRemoveFromLineUp?: (taskId: string) => void
+  allowMobile?: boolean
+  hideOpenTask?: boolean
 }
 
 const PADDING = 8
-const MIN_WIDTH = 160
+const MENU_WIDTH_PX = 288 /* w-72 */
+
+type MenuActionTone = 'open' | 'lineup' | 'neutral' | 'danger' | 'restore'
+
+interface ContextMenuActionProps {
+  icon: string
+  label: string
+  onClick: () => void
+  tone: MenuActionTone
+}
+
+/** Menu row: icon tile + label (matches Zenith context menu mock) */
+function ContextMenuAction({ icon, label, onClick, tone }: ContextMenuActionProps) {
+  const toneClasses: Record<
+    MenuActionTone,
+    { row: string; tile: string; icon: string; label: string }
+  > = {
+    open: {
+      row: 'text-on-surface hover:bg-surface-container-high',
+      tile: 'bg-primary-fixed text-primary',
+      icon: 'text-primary',
+      label: 'font-medium',
+    },
+    lineup: {
+      row: 'text-on-surface hover:bg-surface-container-high',
+      tile: 'bg-surface-container text-primary',
+      icon: 'text-primary',
+      label: 'font-normal',
+    },
+    neutral: {
+      row: 'text-on-surface hover:bg-surface-container-high',
+      tile: 'bg-surface-container text-on-surface-variant',
+      icon: 'text-on-surface-variant',
+      label: 'font-normal',
+    },
+    danger: {
+      row: 'text-error hover:bg-error-container/30',
+      tile: 'bg-error-container text-error',
+      icon: 'text-error',
+      label: 'font-medium',
+    },
+    restore: {
+      row: 'text-on-surface hover:bg-surface-container-high',
+      tile: 'bg-surface-container text-primary',
+      icon: 'text-primary',
+      label: 'font-medium',
+    },
+  }
+  const styles = toneClasses[tone]
+
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className={`group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${styles.row}`}
+    >
+      <div
+        className={`flex size-9 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-105 ${styles.tile}`}
+      >
+        <MaterialIcon name={icon} className={`text-[20px] leading-none ${styles.icon}`} />
+      </div>
+      <span className={`flex-1 truncate text-base leading-normal ${styles.label}`}>{label}</span>
+    </button>
+  )
+}
 
 /**
- * Context menu popover for a task: Rename, Duplicate, Today's Lineup, Archive, Trash/Restore.
- * Positioned at (x, y) with viewport boundary detection; styled to match design (light background, rounded, spaced).
+ * Task context menu at cursor (desktop) or below ⋯ (mobile edit modal).
  */
 export function TaskContextPopover({
   isOpen,
@@ -44,46 +112,47 @@ export function TaskContextPopover({
   x,
   y,
   task,
-  onRename,
+  onOpenTask,
   onDuplicate,
-  onArchive,
   onMarkDeleted,
   lineUpTaskIds,
+  displayedLineupTaskIds,
+  isInTodaysLineup,
   onAddToLineUp,
   onRemoveFromLineUp,
-  onUnlinkFromParent,
+  allowMobile = false,
+  hideOpenTask = false,
 }: TaskContextPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
-
-  /* Position: center on mobile/tablet (< 1024px); at (x,y) with clamp on desktop */
-  const DESKTOP_BREAKPOINT = 1024
+  const [isDesktop, setIsDesktop] = useState(isDesktopContextMenuViewport)
 
   useEffect(() => {
-    if (!isOpen || !popoverRef.current) return
+    const update = () => setIsDesktop(isDesktopContextMenuViewport())
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+
+  const canRender = isOpen && (isDesktop || allowMobile)
+
+  useEffect(() => {
+    if (!canRender || !popoverRef.current) return
     const el = popoverRef.current
     const rect = el.getBoundingClientRect()
     const vw = window.innerWidth
     const vh = window.innerHeight
-    let left: number
-    let top: number
-    if (vw < DESKTOP_BREAKPOINT) {
-      left = Math.max(PADDING, (vw - rect.width) / 2)
-      top = Math.max(PADDING, (vh - rect.height) / 2)
-    } else {
-      left = x
-      top = y
-      if (left + rect.width > vw - PADDING) left = vw - rect.width - PADDING
-      if (left < PADDING) left = PADDING
-      if (top + rect.height > vh - PADDING) top = vh - rect.height - PADDING
-      if (top < PADDING) top = PADDING
-    }
+    let left = x
+    let top = y
+    if (left + rect.width > vw - PADDING) left = vw - rect.width - PADDING
+    if (left < PADDING) left = PADDING
+    if (top + rect.height > vh - PADDING) top = vh - rect.height - PADDING
+    if (top < PADDING) top = PADDING
     el.style.left = `${left}px`
     el.style.top = `${top}px`
-  }, [isOpen, x, y])
+  }, [canRender, x, y])
 
-  /* Close on click outside or Escape */
   useEffect(() => {
-    if (!isOpen) return
+    if (!canRender) return
     const handleClick = (e: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
         onClose()
@@ -101,119 +170,111 @@ export function TaskContextPopover({
       document.removeEventListener('click', handleClick, true)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen, onClose])
+  }, [canRender, onClose])
 
-  if (!isOpen) return null
+  if (!canRender) return null
 
-  /* Menu actions: Run handler and close */
-  const handleRename = () => {
-    onRename(task)
+  const handleOpenTask = () => {
+    onOpenTask(task)
     onClose()
   }
   const handleDuplicate = () => {
     onDuplicate(task)
     onClose()
   }
-  /* Archive/Unarchive handler: Archive if not archived, unarchive if archived */
-  const handleArchive = () => {
-    onArchive?.(task)
-    onClose()
-  }
-  const isArchived = task.status === 'archived'
   const isDeleted = task.status === 'deleted'
+  const deleteLabel = getTaskDeleteMenuLabel(isDeleted)
   const handleMarkDeleted = () => {
     onMarkDeleted?.(task)
     onClose()
   }
-  const handleUnlinkFromParent = () => {
-    if (!task.parent_id) return
-    onUnlinkFromParent?.(task)
+  const inLineUp =
+    isInTodaysLineup ??
+    isTaskInLineupMenu(task.id, lineUpTaskIds, displayedLineupTaskIds)
+  const handleLineUpToggle = () => {
+    if (inLineUp) {
+      onRemoveFromLineUp?.(task.id)
+    } else {
+      onAddToLineUp?.(task.id)
+    }
     onClose()
   }
-  const inLineUp = lineUpTaskIds?.has(task.id) ?? false
-  const handleAddToLineUp = () => {
-    onAddToLineUp?.(task.id)
-    onClose()
-  }
-  const handleRemoveFromLineUp = () => {
-    onRemoveFromLineUp?.(task.id)
-    onClose()
-  }
+
+  const thumbnailUrl = getTaskContextThumbnail(task)
+  const statusLabel = getTaskContextStatusLabel(task)
+  const lastEdited = formatTaskLastEdited(task.updated_at)
+  const showLineUp =
+    onAddToLineUp != null && onRemoveFromLineUp != null && !task.parent_id
 
   const popover = (
     <div
       ref={popoverRef}
-      className="fixed z-[10000] flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-xl border border-bonsai-slate-200 bg-bonsai-brown-50 py-2 shadow-lg"
-      style={{ left: x, top: y, minWidth: MIN_WIDTH }}
+      className="fixed z-[10000] w-72 overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest custom-shadow transition-all duration-200"
+      style={{ left: x, top: y, width: MENU_WIDTH_PX }}
       role="menu"
       aria-label="Task options"
     >
-      <div className="flex flex-col">
-        <button
-          type="button"
-          role="menuitem"
-          onClick={handleRename}
-          className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors rounded-none first:rounded-t-xl"
-        >
-          Rename
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          onClick={handleDuplicate}
-          className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors"
-        >
-          Duplicate
-        </button>
-        {onAddToLineUp && onRemoveFromLineUp && lineUpTaskIds != null && (
-          inLineUp ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={handleRemoveFromLineUp}
-              className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors"
-            >
-              Remove from Today's Lineup
-            </button>
+      {/* Header */}
+      <div className="flex items-center gap-3 border-b border-outline-variant bg-surface-container-low p-4">
+        <div className="size-8 shrink-0 overflow-hidden rounded-lg border border-outline-variant">
+          {thumbnailUrl ? (
+            <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" />
           ) : (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={handleAddToLineUp}
-              className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors"
-            >
-              Add to Today's Lineup
-            </button>
-          )
-        )}
-        <button
-          type="button"
-          role="menuitem"
-          onClick={handleArchive}
-          className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors rounded-none last:rounded-b-xl"
-        >
-          {isArchived ? 'Unarchive' : 'Archive'}
-        </button>
-        {task.parent_id && onUnlinkFromParent && (
-          <button
-            type="button"
-            role="menuitem"
-            onClick={handleUnlinkFromParent}
-            className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors rounded-none last:rounded-b-xl"
-          >
-            Unlink from parent
-          </button>
-        )}
-        {onMarkDeleted && (
-          <button
-            type="button"
-            role="menuitem"
-            onClick={handleMarkDeleted}
-            className="text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100 text-left px-4 py-2.5 transition-colors rounded-none last:rounded-b-xl"
-          >
-            {isDeleted ? 'Restore from trash' : 'Move to trash'}
-          </button>
-        )}
+            <div className="flex h-full w-full items-center justify-center bg-primary-fixed">
+              <MaterialIcon name="eco" className="text-[20px] text-primary" />
+            </div>
+          )}
+        </div>
+        <div className="flex min-w-0 flex-col">
+          <span className="mb-1 text-[12px] font-bold uppercase leading-none tracking-wider text-on-surface-variant">
+            {statusLabel}
+          </span>
+          <span className="truncate text-sm font-medium text-on-surface">{task.title}</span>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="py-2">
+        {!hideOpenTask ? (
+          <ContextMenuAction
+            icon="open_in_new"
+            label="Open Task"
+            tone="open"
+            onClick={handleOpenTask}
+          />
+        ) : null}
+        {showLineUp ? (
+          <ContextMenuAction
+            icon="star"
+            label={getLineupMenuLabel(inLineUp)}
+            tone="lineup"
+            onClick={handleLineUpToggle}
+          />
+        ) : null}
+        <ContextMenuAction
+          icon="content_copy"
+          label="Duplicate"
+          tone="neutral"
+          onClick={handleDuplicate}
+        />
+        {onMarkDeleted ? (
+          <>
+            <div className="mx-4 my-2 h-px bg-outline-variant/30" aria-hidden />
+            <ContextMenuAction
+              icon={isDeleted ? 'restore_from_trash' : 'delete'}
+              label={deleteLabel}
+              tone={isDeleted ? 'restore' : 'danger'}
+              onClick={handleMarkDeleted}
+            />
+          </>
+        ) : null}
+      </div>
+
+      {/* Footer metadata */}
+      <div className="flex items-center justify-between border-t border-outline-variant bg-surface-container-lowest px-4 py-3">
+        <span className="text-[10px] font-medium uppercase tracking-widest text-on-surface-variant">
+          {lastEdited}
+        </span>
       </div>
     </div>
   )

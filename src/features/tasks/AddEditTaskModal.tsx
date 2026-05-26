@@ -1,7 +1,7 @@
 /* AddEditTaskModal: Modal for adding/editing a task; full form state, templates, and sub-modals */
 
 import { useState, useEffect, useRef } from 'react'
-import type { ReactNode } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 import { Modal } from '../../components/Modal'
 import { Button } from '../../components/Button'
 import { Input } from '../../components/Input'
@@ -26,6 +26,11 @@ import { parseRecurrencePattern, getNextOccurrence } from '../../lib/recurrence'
 import { formatDateShort } from './utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
 import { parseSmartQuickAdd } from './utils/smartQuickAdd'
+import { TaskContextPopover } from './modals/TaskContextPopover'
+import {
+  isDesktopContextMenuViewport,
+  isTaskInLineupMenu,
+} from './utils/taskContextMenu'
 import { DatePickerModal } from './modals/DatePickerModal'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { TagModal } from './modals/TagModal'
@@ -295,6 +300,10 @@ export interface AddEditTaskModalProps {
   onMarkDeletedTask?: (task: Task) => void | Promise<void>
   /** Today's Lineup task IDs (for inline menu: Add/Remove from Today's Lineup) */
   lineUpTaskIds?: Set<string>
+  /** Task IDs in Today's Lineup section (auto + manual) for menu labels */
+  displayedLineupTaskIds?: Set<string>
+  /** When true, task is in Today's Lineup (from parent when opening edit) */
+  isInTodaysLineup?: boolean
   onAddToLineUp?: (taskId: string) => void
   onRemoveFromLineUp?: (taskId: string) => void
   /** When adding (task is null), pre-fill the title (e.g. from Inbox "Convert to task") */
@@ -322,9 +331,11 @@ export function AddEditTaskModal({
   getTaskDependencies,
   onAddDependency,
   onRemoveDependency,
-  onArchiveTask,
+  onArchiveTask: _onArchiveTask,
   onMarkDeletedTask,
   lineUpTaskIds,
+  displayedLineupTaskIds,
+  isInTodaysLineup,
   onAddToLineUp,
   onRemoveFromLineUp,
   initialTitle,
@@ -388,8 +399,9 @@ export function AddEditTaskModal({
   const [pendingDraftPasteLines, setPendingDraftPasteLines] = useState<Record<string, string[]>>({})
   const [draftSubtasks, setDraftSubtasks] = useState<string[]>([])
   const [newDraftSubtaskTitle, setNewDraftSubtaskTitle] = useState('')
-  /* Inline task actions menu: track open/closed state for three-dot menu in edit mode */
-  const [actionsMenuOpen, setActionsMenuOpen] = useState(false)
+  /* Edit modal: TaskContextPopover from ⋯ or desktop right-click */
+  const [taskOptionsMenuOpen, setTaskOptionsMenuOpen] = useState(false)
+  const [taskOptionsPosition, setTaskOptionsPosition] = useState({ x: 0, y: 0 })
   /* Smart quick add state: parsed fields + highlight ranges (add mode only) */
   const [smartTagNames, setSmartTagNames] = useState<string[]>([])
   const [smartMatches, setSmartMatches] = useState<Array<{ start: number; end: number; kind: string }>>([])
@@ -483,6 +495,20 @@ export function AddEditTaskModal({
     if (!isOpen) return
     void fetchTemplates()
   }, [isOpen, fetchTemplates])
+
+  /* Reset task action menu when modal closes */
+  useEffect(() => {
+    if (!isOpen) {
+      setTaskOptionsMenuOpen(false)
+    }
+  }, [isOpen])
+
+  /* Lineup membership for ⋯ / context menu (auto lineup + manual picks) */
+  const editTaskInLineup =
+    isInTodaysLineup ??
+    (task != null
+      ? isTaskInLineupMenu(task.id, lineUpTaskIds, displayedLineupTaskIds)
+      : false)
 
   /* Prefill when modal opens or when switching tasks; do not depend on full `task` — parent often passes a new object reference on re-render, which would wipe local edits (e.g. priority set to None before Save) */
   useEffect(() => {
@@ -639,6 +665,46 @@ export function AddEditTaskModal({
   const formatEstimate = (min: number | null) =>
     min == null ? null : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`.replace(/ 0m$/, '')
 
+  /* Duplicate current task (shared by desktop dropdown and mobile task menu) */
+  const duplicateCurrentTask = async (source: Task) => {
+    if (!onCreateTask) return
+    await onCreateTask({
+      title: `${source.title} (copy)`,
+      description: source.description ?? undefined,
+      start_date: source.start_date ?? undefined,
+      due_date: source.due_date ?? undefined,
+      priority: source.priority ?? 'medium',
+      time_estimate: source.time_estimate ?? undefined,
+      recurrence_pattern: source.recurrence_pattern ?? undefined,
+      status: 'active',
+      attachments: Array.isArray(source.attachments)
+        ? (source.attachments as TaskAttachment[])
+        : undefined,
+    })
+  }
+
+  /* Open task actions menu at screen position or below ⋯ */
+  const openTaskOptionsMenuAt = (x: number, y: number) => {
+    setTaskOptionsPosition({ x, y })
+    setTaskOptionsMenuOpen(true)
+  }
+
+  const openTaskOptionsMenuFromAnchor = (anchor: HTMLElement) => {
+    const rect = anchor.getBoundingClientRect()
+    openTaskOptionsMenuAt(
+      Math.max(8, Math.min(rect.left, window.innerWidth - 288 - 8)),
+      rect.bottom + 4,
+    )
+  }
+
+  /* Desktop right-click in edit modal: custom menu, not browser default */
+  const handleEditModalContextMenu = (e: MouseEvent) => {
+    if (!task || !isEditMode || !isDesktopContextMenuViewport()) return
+    e.preventDefault()
+    e.stopPropagation()
+    openTaskOptionsMenuAt(e.clientX, e.clientY)
+  }
+
   const headerTitle = (
     <div className="relative flex w-full items-center justify-between gap-3">
       <span className="text-body font-semibold text-bonsai-brown-700">
@@ -707,104 +773,19 @@ export function AddEditTaskModal({
               Save as task template
             </Button>
           )}
-          {/* Three-dot task actions menu: duplicate, lineup, archive, trash (matches right-click options) */}
+          {/* Task actions: ⋯ opens same menu as desktop right-click in modal */}
           <div className="relative">
             <Button
               variant="ghost"
               size="sm"
               aria-label="Task options"
-              onClick={() => setActionsMenuOpen((open) => !open)}
+              onClick={(e) => {
+                if (!task) return
+                openTaskOptionsMenuFromAnchor(e.currentTarget)
+              }}
             >
               …
             </Button>
-            {actionsMenuOpen && task && (
-              <div className="absolute right-0 z-20 mt-1 w-56 rounded-lg border border-bonsai-slate-200 bg-white py-1 shadow-lg">
-                <button
-                  type="button"
-                  className="block w-full px-3 py-1.5 text-left text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100"
-                  onClick={async () => {
-                    if (!onCreateTask) {
-                      setActionsMenuOpen(false)
-                      return
-                    }
-                    try {
-                      await onCreateTask({
-                        title: `${task.title} (copy)`,
-                        description: task.description ?? undefined,
-                        start_date: task.start_date ?? undefined,
-                        due_date: task.due_date ?? undefined,
-                        priority: task.priority ?? 'medium',
-                        time_estimate: task.time_estimate ?? undefined,
-                        recurrence_pattern: task.recurrence_pattern ?? undefined,
-                        status: 'active',
-                        attachments: Array.isArray(task.attachments)
-                          ? (task.attachments as TaskAttachment[])
-                          : undefined,
-                      })
-                    } catch (err) {
-                      console.error('Failed to duplicate task from edit modal:', err)
-                    } finally {
-                      setActionsMenuOpen(false)
-                    }
-                  }}
-                >
-                  Duplicate task
-                </button>
-                {lineUpTaskIds && onAddToLineUp && onRemoveFromLineUp && (
-                  <button
-                    type="button"
-                    className="block w-full px-3 py-1.5 text-left text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100"
-                    onClick={() => {
-                      const inLineUp = lineUpTaskIds.has(task.id)
-                      if (inLineUp) {
-                        onRemoveFromLineUp(task.id)
-                      } else {
-                        onAddToLineUp(task.id)
-                      }
-                      setActionsMenuOpen(false)
-                    }}
-                  >
-                    {lineUpTaskIds.has(task.id)
-                      ? "Remove from Today's Lineup"
-                      : "Add to Today's Lineup"}
-                  </button>
-                )}
-                {onArchiveTask && (
-                  <button
-                    type="button"
-                    className="block w-full px-3 py-1.5 text-left text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100"
-                    onClick={async () => {
-                      try {
-                        await onArchiveTask(task)
-                      } catch (err) {
-                        console.error('Failed to archive/unarchive task from edit modal:', err)
-                      } finally {
-                        setActionsMenuOpen(false)
-                      }
-                    }}
-                  >
-                    {task.status === 'archived' ? 'Unarchive task' : 'Archive task'}
-                  </button>
-                )}
-                {onMarkDeletedTask && (
-                  <button
-                    type="button"
-                    className="block w-full px-3 py-1.5 text-left text-body text-bonsai-slate-800 hover:bg-bonsai-slate-100"
-                    onClick={async () => {
-                      try {
-                        await onMarkDeletedTask(task)
-                      } catch (err) {
-                        console.error('Failed to move task to trash / restore from edit modal:', err)
-                      } finally {
-                        setActionsMenuOpen(false)
-                      }
-                    }}
-                  >
-                    {task.status === 'deleted' ? 'Restore from trash' : 'Move to trash'}
-                  </button>
-                )}
-              </div>
-            )}
           </div>
         </div>
       ) : (
@@ -869,6 +850,7 @@ export function AddEditTaskModal({
         )
       }
     >
+      <div className="min-h-0 flex-1" onContextMenu={handleEditModalContextMenu}>
       {/* Main task input: Status circle on left, input field on right */}
       {showTemplateManager && !isEditMode && (
         <div className="mb-3 rounded-md border border-bonsai-slate-200 bg-bonsai-slate-50 p-3">
@@ -2128,6 +2110,35 @@ export function AddEditTaskModal({
           </div>
         </div>
       )}
+
+      </div>
+
+      {/* Task actions menu (⋯ or right-click in edit modal) */}
+      {task && taskOptionsMenuOpen ? (
+        <TaskContextPopover
+          isOpen
+          allowMobile={!isDesktopContextMenuViewport()}
+          hideOpenTask
+          onClose={() => setTaskOptionsMenuOpen(false)}
+          x={taskOptionsPosition.x}
+          y={taskOptionsPosition.y}
+          task={task}
+          onOpenTask={() => setTaskOptionsMenuOpen(false)}
+          onDuplicate={async (t) => {
+            try {
+              await duplicateCurrentTask(t)
+            } catch (err) {
+              console.error('Failed to duplicate task from edit modal menu:', err)
+            }
+          }}
+          onMarkDeleted={onMarkDeletedTask}
+          lineUpTaskIds={lineUpTaskIds}
+          displayedLineupTaskIds={displayedLineupTaskIds}
+          isInTodaysLineup={editTaskInLineup}
+          onAddToLineUp={onAddToLineUp}
+          onRemoveFromLineUp={onRemoveFromLineUp}
+        />
+      ) : null}
     </Modal>
   )
 }

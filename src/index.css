@@ -170,6 +170,10 @@ body {
   .ambient-shadow {
     box-shadow: 0 20px 40px -15px rgba(91, 107, 135, 0.12);
   }
+  /* Task context menu (Zenith mock): cool gray ambient elevation */
+  .custom-shadow {
+    box-shadow: 0 20px 40px -12px rgba(91, 107, 135, 0.12);
+  }
   /* Dashboard bento cards: lighter ambient hover shadow */
   .ambient-shadow-dashboard {
     box-shadow: 0 12px 40px rgba(79, 95, 122, 0.08);

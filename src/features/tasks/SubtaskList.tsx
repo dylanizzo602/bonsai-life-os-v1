@@ -7,6 +7,7 @@ import { AddEditSubtaskModal } from './AddEditSubtaskModal'
 import { getTaskChecklists, getTaskChecklistItems, getTaskDependencies as fetchTaskDependencies } from '../../lib/supabase/tasks'
 import type { Task } from './types'
 import { TaskContextPopover } from './modals/TaskContextPopover'
+import { handleDesktopTaskContextMenu } from './utils/taskContextMenu'
 import { TaskSearchSelect } from '../../components/TaskSearchSelect'
 import type { TaskOption } from '../../components/TaskSearchSelect'
 import { getDependencyEnrichmentFlags } from './utils/dependencies'
@@ -259,9 +260,10 @@ export function SubtaskList({
                   key={subtask.id}
                   task={subtask}
                   onContextMenu={(e) => {
-                    e.preventDefault()
-                    setContextSubtask(subtask)
-                    setContextPosition({ x: e.clientX, y: e.clientY })
+                    handleDesktopTaskContextMenu(e, ({ x, y }) => {
+                      setContextSubtask(subtask)
+                      setContextPosition({ x, y })
+                    })
                   }}
                   onClick={() => openEditModal(subtask)}
                   isBlocked={enrichment.isBlocked}
@@ -332,7 +334,7 @@ export function SubtaskList({
           x={contextPosition.x}
           y={contextPosition.y}
           task={contextSubtask}
-          onRename={(t) => {
+          onOpenTask={(t) => {
             setContextSubtask(null)
             setEditingSubtask(t)
             setEditModalOpen(true)

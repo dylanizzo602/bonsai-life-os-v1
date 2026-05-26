@@ -1,10 +1,11 @@
-/* partitionBonsaiTasks: Today's Lineup vs Other tasks (All Tasks pool + rules) */
+/* partitionBonsaiTasks: Today's Lineup vs backlog (All Tasks pool + rules) */
 
 import type { Task, TaskPriority } from '../types'
 import { isTodayInZone, taskDateToComparableMs } from './date'
 import {
   isPriorityMediumOrAbove,
   isTaskAvailableForWork,
+  isTaskBacklogUnavailable,
   sortTasksAvailableStyle,
 } from './available'
 
@@ -151,11 +152,26 @@ export interface BonsaiBacklogPartition {
  * Lineup: due today OR available + medium+; sorted like Available view.
  * Other: remainder; sorted via sortOtherTasksBacklog.
  */
+/** Whether a task belongs in Today's Lineup (auto rules, manual picks, minus exclusions). */
+export function isTaskInDisplayedLineup(
+  task: Task,
+  blockedTaskIds: Set<string>,
+  timeZone: string,
+  lineUpTaskIds: Set<string> = new Set(),
+  lineupExcludedTaskIds: Set<string> = new Set(),
+): boolean {
+  if (lineupExcludedTaskIds.has(task.id)) return false
+  if (lineUpTaskIds.has(task.id)) return true
+  return isTaskInTodaysLineup(task, blockedTaskIds, timeZone)
+}
+
 export function partitionBonsaiSections(
   tasks: Task[],
   blockedTaskIds: Set<string>,
   timeZone: string,
   searchQuery: string,
+  lineUpTaskIds: Set<string> = new Set(),
+  lineupExcludedTaskIds: Set<string> = new Set(),
 ): BonsaiSectionPartition {
   const taskById = new Map(tasks.map((t) => [t.id, t] as const))
   const baseTasks = tasks.filter((t) => {
@@ -173,7 +189,9 @@ export function partitionBonsaiSections(
     .filter((t) => matchesSearch(t, searchQuery))
 
   const lineupTasks = sortTasksAvailableStyle(
-    allPool.filter((t) => isTaskInTodaysLineup(t, blockedTaskIds, timeZone)),
+    allPool.filter((t) =>
+      isTaskInDisplayedLineup(t, blockedTaskIds, timeZone, lineUpTaskIds, lineupExcludedTaskIds),
+    ),
     timeZone,
   )
   const lineupIds = new Set(lineupTasks.map((t) => t.id))
@@ -215,4 +233,45 @@ export function buildBacklogPartition(
   }
 
   return { parentTasks, subtasksByParentId }
+}
+
+export interface BonsaiBacklogAvailabilitySplit {
+  availablePool: Task[]
+  unavailablePool: Task[]
+}
+
+/**
+ * Split sorted backlog pool into available vs unavailable while preserving sort order.
+ * Subtasks inherit their parent's bucket when the parent is in the backlog (not lineup).
+ */
+export function splitBacklogPoolByAvailability(
+  backlogPool: Task[],
+  allTasks: Task[],
+  lineupIds: Set<string>,
+  blockedTaskIds: Set<string>,
+  timeZone: string,
+): BonsaiBacklogAvailabilitySplit {
+  const taskById = new Map(allTasks.map((t) => [t.id, t] as const))
+  const availablePool: Task[] = []
+  const unavailablePool: Task[] = []
+
+  const bucketFor = (task: Task): 'available' | 'unavailable' => {
+    const subject =
+      task.parent_id && !lineupIds.has(task.parent_id)
+        ? taskById.get(task.parent_id) ?? task
+        : task
+    return isTaskBacklogUnavailable(subject, blockedTaskIds, timeZone)
+      ? 'unavailable'
+      : 'available'
+  }
+
+  for (const task of backlogPool) {
+    if (bucketFor(task) === 'unavailable') {
+      unavailablePool.push(task)
+    } else {
+      availablePool.push(task)
+    }
+  }
+
+  return { availablePool, unavailablePool }
 }

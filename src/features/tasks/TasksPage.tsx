@@ -5,8 +5,13 @@ import { consumeQuickAddIntent } from '../layout/quickAddIntent'
 import { AddEditTaskModal } from './AddEditTaskModal'
 import { TaskList } from './TaskList'
 import { TasksBonsaiView } from './components/bonsai/TasksBonsaiView'
+import { DeletedTasksView } from './components/bonsai/DeletedTasksView'
 import { buildHabitReminderRows } from '../habits/utils/habitReminderRows'
 import { partitionBonsaiSections, sortOtherTasksBacklog } from './utils/partitionBonsaiTasks'
+import {
+  getBonsaiSearchableTaskPool,
+  matchesTaskNameSearch,
+} from './utils/taskSearch'
 import { computeBlockedTaskIds, computeBlockingTaskIds } from './utils/dependencies'
 import { useTasks } from './hooks/useTasks'
 import { useHabits } from '../habits/hooks/useHabits'
@@ -34,8 +39,9 @@ import {
   removeConditionFromRoot,
 } from './utils/filterSummary'
 import {
+  loadLineupExcludedTaskIds,
   loadTodaysLineupTaskIds,
-  saveTodaysLineupTaskIds,
+  saveTodaysLineupState,
 } from '../../lib/todaysLineup'
 import { habitReminderEffectiveInstant, taskDateToComparableMs } from './utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
@@ -212,6 +218,7 @@ export function TasksPage() {
   const [showDeleted, setShowDeleted] = useState(false)
   /* Today's Lineup: task IDs for today (date-scoped localStorage, resets daily). */
   const [lineUpTaskIds, setLineUpTaskIds] = useState<Set<string>>(new Set())
+  const [lineupExcludedTaskIds, setLineupExcludedTaskIds] = useState<Set<string>>(new Set())
   /* Search: query and whether the search pill is expanded. */
   const [searchQuery, setSearchQuery] = useState('')
   const [searchExpanded, setSearchExpanded] = useState(false)
@@ -237,6 +244,7 @@ export function TasksPage() {
   /* Load Today's Lineup from localStorage on mount; empty if stored date is not today. */
   useEffect(() => {
     setLineUpTaskIds(loadTodaysLineupTaskIds())
+    setLineupExcludedTaskIds(loadLineupExcludedTaskIds())
   }, [])
 
   /* Compute blocked and blocking task IDs (for Available view and Custom dependency filters). */
@@ -260,33 +268,32 @@ export function TasksPage() {
   }, [tasks])
 
   /* Persist Today's Lineup to localStorage when it changes (date-scoped, resets daily). */
-  const persistLineUp = useCallback((ids: Set<string>) => {
-    saveTodaysLineupTaskIds(ids)
+  const persistLineupState = useCallback((ids: Set<string>, excluded: Set<string>) => {
+    saveTodaysLineupState(ids, excluded)
     setLineUpTaskIds(ids)
+    setLineupExcludedTaskIds(excluded)
   }, [])
 
   const addToLineUp = useCallback(
     (id: string) => {
-      setLineUpTaskIds((prev) => {
-        const next = new Set(prev)
-        next.add(id)
-        persistLineUp(next)
-        return next
-      })
+      const nextIds = new Set(lineUpTaskIds)
+      nextIds.add(id)
+      const nextExcluded = new Set(lineupExcludedTaskIds)
+      nextExcluded.delete(id)
+      persistLineupState(nextIds, nextExcluded)
     },
-    [persistLineUp],
+    [lineUpTaskIds, lineupExcludedTaskIds, persistLineupState],
   )
 
   const removeFromLineUp = useCallback(
     (id: string) => {
-      setLineUpTaskIds((prev) => {
-        const next = new Set(prev)
-        next.delete(id)
-        persistLineUp(next)
-        return next
-      })
+      const nextIds = new Set(lineUpTaskIds)
+      nextIds.delete(id)
+      const nextExcluded = new Set(lineupExcludedTaskIds)
+      nextExcluded.add(id)
+      persistLineupState(nextIds, nextExcluded)
     },
-    [persistLineUp],
+    [lineUpTaskIds, lineupExcludedTaskIds, persistLineupState],
   )
 
   const filterCtx = useMemo(
@@ -510,6 +517,9 @@ export function TasksPage() {
 
   const bonsaiHideCompletedSubtasks = true
 
+  const isBonsaiFilteredMode = isFilterRootActive(filterRoot)
+  const isBonsaiSearchMode = searchQuery.trim().length > 0
+
   /* Bonsai sections: lineup (due today OR available + medium+) vs other (All Tasks sort, minus lineup) */
   const bonsaiSections = useMemo(() => {
     if (showArchived || showDeleted) {
@@ -522,42 +532,52 @@ export function TasksPage() {
       tasks,
       blockedTaskIds,
       timeZone,
-      searchQuery,
+      /* Search uses a dedicated results view; do not narrow lineup/backlog while typing */
+      isBonsaiSearchMode ? '' : searchQuery,
+      lineUpTaskIds,
+      lineupExcludedTaskIds,
     )
     return { lineupTasks, backlogPool }
-  }, [tasks, blockedTaskIds, timeZone, searchQuery, showArchived, showDeleted])
-
-  const isBonsaiFilteredMode = isFilterRootActive(filterRoot)
+  }, [
+    tasks,
+    blockedTaskIds,
+    timeZone,
+    searchQuery,
+    isBonsaiSearchMode,
+    showArchived,
+    showDeleted,
+    lineUpTaskIds,
+    lineupExcludedTaskIds,
+  ])
 
   const filterSummaryChips = useMemo(
     () => buildFilterSummaryChips(filterRoot),
     [filterRoot],
   )
 
-  /* Bonsai filtered results: full pool → tree match → search → backlog sort */
-  const bonsaiFilteredTasks = useMemo(() => {
-    if (!isBonsaiFilteredMode) return []
-    const taskById = new Map(tasks.map((t) => [t.id, t] as const))
-    let pool = tasks.filter((t) => {
-      if (t.status === 'deleted' || t.status === 'archived') return false
-      if (t.habit_id) return false
-      if (t.parent_id) {
-        const parent = taskById.get(t.parent_id)
-        if (parent?.status === 'deleted' || parent?.status === 'archived') return false
-      }
-      return true
-    })
-    pool = pool.filter((t) => matchesFilterRoot(filterRoot, t, filterCtx))
-    const q = searchQuery.trim().toLowerCase()
-    if (q) {
-      pool = pool.filter(
-        (t) =>
-          (t.title ?? '').toLowerCase().includes(q) ||
-          (t.description ?? '').toLowerCase().includes(q),
-      )
+  /* Bonsai search results: name match on searchable pool; optional active filters narrow the pool */
+  const bonsaiSearchTasks = useMemo(() => {
+    if (!isBonsaiSearchMode) return []
+    let pool = getBonsaiSearchableTaskPool(tasks)
+    if (isBonsaiFilteredMode) {
+      pool = pool.filter((t) => matchesFilterRoot(filterRoot, t, filterCtx))
     }
+    pool = pool.filter((t) => matchesTaskNameSearch(t, searchQuery))
     return sortOtherTasksBacklog(pool, timeZone)
-  }, [tasks, filterRoot, filterCtx, searchQuery, timeZone, isBonsaiFilteredMode])
+  }, [tasks, filterRoot, filterCtx, searchQuery, timeZone, isBonsaiSearchMode, isBonsaiFilteredMode])
+
+  /* Bonsai filtered results: full pool → tree match → backlog sort (search uses dedicated view) */
+  const bonsaiFilteredTasks = useMemo(() => {
+    if (!isBonsaiFilteredMode || isBonsaiSearchMode) return []
+    let pool = getBonsaiSearchableTaskPool(tasks)
+    pool = pool.filter((t) => matchesFilterRoot(filterRoot, t, filterCtx))
+    return sortOtherTasksBacklog(pool, timeZone)
+  }, [tasks, filterRoot, filterCtx, timeZone, isBonsaiFilteredMode, isBonsaiSearchMode])
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery('')
+    setSearchExpanded(false)
+  }, [])
 
   const handleRemoveFilterChip = useCallback((conditionId: string) => {
     setFilterRoot((prev) => removeConditionFromRoot(prev, conditionId))
@@ -568,9 +588,69 @@ export function TasksPage() {
     setViewMode('available')
   }, [])
 
+  /* Deleted tasks: most recently updated first (proxy for when marked deleted) */
+  const deletedTasks = useMemo(() => {
+    if (!showDeleted) return []
+    return tasks
+      .filter((t) => t.status === 'deleted')
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+  }, [tasks, showDeleted])
+
+  const handleRestoreDeletedTask = useCallback(
+    async (task: Task) => {
+      await updateTask(task.id, { status: 'active' })
+      await refetch()
+    },
+    [updateTask, refetch],
+  )
+
+  const handleEmptyDeleted = useCallback(async () => {
+    const toRemove = tasks.filter((t) => t.status === 'deleted')
+    await Promise.all(toRemove.map((t) => deleteTask(t.id)))
+    await refetch()
+  }, [tasks, deleteTask, refetch])
+
+  const handleBackFromDeleted = useCallback(() => {
+    setShowDeleted(false)
+  }, [])
+
   return (
     <div className="min-h-full">
-      {showArchived || showDeleted ? (
+      {showDeleted ? (
+        <DeletedTasksView
+          tasks={deletedTasks}
+          allTasks={tasks}
+          loading={loading}
+          error={error}
+          onBack={handleBackFromDeleted}
+          onOpenEdit={openEdit}
+          onRestoreTask={handleRestoreDeletedTask}
+          onEmptyDeleted={handleEmptyDeleted}
+          refetch={refetch}
+          fetchSubtasks={fetchSubtasks}
+          getTaskDependencies={getTaskDependencies}
+          createTask={createTask}
+          onArchiveTask={async (task) => {
+            if (task.status === 'archived') {
+              await updateTask(task.id, { status: 'active' })
+            } else {
+              await updateTask(task.id, { status: 'archived' })
+            }
+            refetch()
+          }}
+          onMarkDeletedTask={async (task) => {
+            if (task.status === 'deleted') {
+              await updateTask(task.id, { status: 'active' })
+            } else {
+              await updateTask(task.id, { status: 'deleted' })
+            }
+            refetch()
+          }}
+          lineUpTaskIds={lineUpTaskIds}
+          onAddToLineUp={addToLineUp}
+          onRemoveFromLineUp={removeFromLineUp}
+        />
+      ) : showArchived ? (
         <>
           <h1 className="text-page-title font-bold text-bonsai-brown-700 mb-4">Tasks</h1>
           <TaskList
@@ -636,8 +716,13 @@ export function TasksPage() {
             tasks={tasks}
             lineupTasks={bonsaiSections.lineupTasks}
             backlogPool={bonsaiSections.backlogPool}
-            filterMode={isBonsaiFilteredMode ? 'filtered' : 'default'}
+            blockedTaskIds={blockedTaskIds}
+            filterMode={
+              isBonsaiSearchMode ? 'search' : isBonsaiFilteredMode ? 'filtered' : 'default'
+            }
+            searchTasks={bonsaiSearchTasks}
             filteredTasks={bonsaiFilteredTasks}
+            onClearSearch={handleClearSearch}
             filterSummaryChips={filterSummaryChips}
             onRemoveFilterChip={handleRemoveFilterChip}
             onClearFilters={handleClearFilters}
@@ -737,6 +822,14 @@ export function TasksPage() {
           }
         }}
         lineUpTaskIds={lineUpTaskIds}
+        displayedLineupTaskIds={
+          new Set(bonsaiSections.lineupTasks.map((t) => t.id))
+        }
+        isInTodaysLineup={
+          editTask
+            ? bonsaiSections.lineupTasks.some((t) => t.id === editTask.id)
+            : undefined
+        }
         onAddToLineUp={addToLineUp}
         onRemoveFromLineUp={removeFromLineUp}
       />

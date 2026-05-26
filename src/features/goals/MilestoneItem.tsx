@@ -2,6 +2,7 @@
 import { Checkbox } from '../../components/Checkbox'
 import { CompactTaskItem } from '../tasks/CompactTaskItem'
 import { formatStartDueDisplay } from '../tasks/utils/date'
+import { handleDesktopTaskContextMenu } from '../tasks/utils/taskContextMenu'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
 import type { GoalMilestone } from './types'
 import { isNumberMilestoneMet } from './utils/numberMilestone'
@@ -131,8 +132,9 @@ export function MilestoneItem({
             formatDueDate={(iso) => (iso ? formatStartDueDisplay(undefined, iso, timeZone) : null)}
             onClick={() => onOpenEditTaskModal?.(linkedTask)}
             onContextMenu={(e) => {
-              e.preventDefault()
-              onOpenTaskContextMenu?.(linkedTask, e.clientX, e.clientY)
+              handleDesktopTaskContextMenu(e, ({ x, y }) => {
+                onOpenTaskContextMenu?.(linkedTask, x, y)
+              })
             }}
           />
         </div>

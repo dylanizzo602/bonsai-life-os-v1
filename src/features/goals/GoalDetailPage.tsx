@@ -273,7 +273,7 @@ export function GoalDetailPage({ goalId, onBack }: GoalDetailPageProps) {
         onRemoveDependency={onRemoveDependency}
       />
 
-      {/* Task context popover: right-click on linked task shows Rename, Duplicate, Archive, Delete */}
+      {/* Task context popover: right-click on linked task shows Open, Lineup, Duplicate, Delete */}
       {contextTask && (
         <TaskContextPopover
           isOpen
@@ -281,7 +281,7 @@ export function GoalDetailPage({ goalId, onBack }: GoalDetailPageProps) {
           x={contextPosition.x}
           y={contextPosition.y}
           task={contextTask}
-          onRename={(t) => {
+          onOpenTask={(t) => {
             setContextTask(null)
             setTaskToEdit(t)
           }}
