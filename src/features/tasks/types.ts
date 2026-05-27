@@ -212,6 +212,8 @@ export interface TaskTemplate {
   id: string
   user_id: string | null
   name: string
+  /** Optional Material Symbols icon name for display in template library UI */
+  icon: string | null
   data: TaskTemplateData
   created_at: string
   updated_at: string

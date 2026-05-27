@@ -43,6 +43,7 @@ import {
   loadTodaysLineupTaskIds,
   saveTodaysLineupState,
 } from '../../lib/todaysLineup'
+import { buildTodaysLineupSeedTasks } from './utils/partitionBonsaiTasks'
 import { habitReminderEffectiveInstant, taskDateToComparableMs } from './utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
 
@@ -273,6 +274,25 @@ export function TasksPage() {
     setLineUpTaskIds(ids)
     setLineupExcludedTaskIds(excluded)
   }, [])
+
+  /* Daily seed: if lineup is empty for today, compute once and persist so it stays stable all day */
+  useEffect(() => {
+    if (tasks.length === 0) return
+    if (lineUpTaskIds.size > 0) return
+
+    const seedTasks = buildTodaysLineupSeedTasks(tasks, blockedTaskIds, timeZone, 5)
+    if (seedTasks.length === 0) return
+
+    const seedIds = new Set(seedTasks.map((t) => t.id))
+    persistLineupState(seedIds, lineupExcludedTaskIds)
+  }, [
+    tasks,
+    blockedTaskIds,
+    timeZone,
+    lineUpTaskIds,
+    lineupExcludedTaskIds,
+    persistLineupState,
+  ])
 
   const addToLineUp = useCallback(
     (id: string) => {

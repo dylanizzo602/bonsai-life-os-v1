@@ -4,7 +4,7 @@ import { MaterialIcon } from '../../../components/MaterialIcon'
 import { FlagIcon } from '../../../components/icons'
 import { TruncatedText } from '../../../components/TruncatedText'
 import {
-  formatDashboardStartDueRange,
+  formatStartDueDisplay,
   getDueStatus,
 } from '../../tasks/utils/date'
 import { getPriorityFlagClasses } from '../../tasks/utils/priority'
@@ -69,7 +69,9 @@ export function DashboardTaskRow({ task, onClick, onToggleComplete }: DashboardT
   const displayStatus = getTaskDisplayStatus(task.status)
   const complete = displayStatus === 'complete'
 
-  const dateRange = formatDashboardStartDueRange(task.start_date, task.due_date, timeZone)
+  /* Dates: show separate start and due labels so both are visible when set */
+  const startLabel = formatStartDueDisplay(task.start_date, null, timeZone)
+  const dueLabel = formatStartDueDisplay(null, task.due_date, timeZone)
   const dueStatus = getDueStatus(task.due_date, timeZone)
   const dateColorClass =
     dueStatus === 'overdue'
@@ -78,11 +80,12 @@ export function DashboardTaskRow({ task, onClick, onToggleComplete }: DashboardT
         ? 'text-amber-600'
         : 'text-on-surface-variant'
 
-  /* Metadata segments: tag pill (if any), start–due, priority flag (if not none) */
+  /* Metadata segments: tag pill (if any), start label, due label, priority flag (if not none) */
   const metaSegments: MetaSegment[] = []
   const tagPill = getDashboardTagPillClassName(task)
   if (tagPill) metaSegments.push({ kind: 'tag', label: tagPill.label, className: tagPill.className })
-  if (dateRange) metaSegments.push({ kind: 'text', text: dateRange, emphasizeDate: true })
+  if (startLabel) metaSegments.push({ kind: 'text', text: startLabel })
+  if (dueLabel) metaSegments.push({ kind: 'text', text: dueLabel, emphasizeDate: true })
   if (task.priority !== 'none') metaSegments.push({ kind: 'priority' })
 
   const handleCircleClick = (e: React.MouseEvent) => {
@@ -107,13 +110,13 @@ export function DashboardTaskRow({ task, onClick, onToggleComplete }: DashboardT
             }
           : undefined
       }
-      className="group flex cursor-pointer items-start gap-4 rounded-xl border border-transparent px-1 py-3 transition-colors hover:border-surface-variant hover:bg-surface-container-lowest"
+      className="group flex cursor-pointer items-center gap-4 rounded-xl border border-transparent px-1 py-3 transition-colors hover:border-surface-variant hover:bg-surface-container-lowest"
     >
       {/* Status control */}
       <button
         type="button"
         onClick={handleCircleClick}
-        className={`mt-0.5 flex ${dashboardStatusSizeClass} shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:cursor-default`}
+        className={`flex ${dashboardStatusSizeClass} shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:cursor-default`}
         aria-label={
           complete ? getTaskStatusAriaLabel(displayStatus) : 'Mark task complete'
         }
@@ -169,7 +172,9 @@ export function DashboardTaskRow({ task, onClick, onToggleComplete }: DashboardT
                     />
                   </span>
                 ) : (
-                  <span className={dateColorClass}>{segment.text}</span>
+                  <span className={segment.emphasizeDate ? dateColorClass : 'text-on-surface-variant'}>
+                    {segment.text}
+                  </span>
                 )}
               </span>
             ))}

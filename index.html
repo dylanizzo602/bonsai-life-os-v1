@@ -3,7 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Viewport: disable pinch/double-tap zoom to keep the UI stable on mobile -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no"
+    />
     <!-- PWA manifest: enables install + standalone display mode (required for iOS web push) -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <!-- Theme color: used for address bar / task switcher tint on supported platforms -->

@@ -11,6 +11,7 @@ import {
   loadTodaysLineupTaskIds,
   saveTodaysLineupTaskIds,
 } from '../../lib/todaysLineup'
+import { buildTodaysLineupSeedTasks } from '../tasks/utils/partitionBonsaiTasks'
 import type { Task } from '../tasks/types'
 import type { MorningBriefingResponses } from '../reflections/types'
 import type { HabitWithStreaks } from '../habits/types'
@@ -231,6 +232,19 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
       })
       .catch(() => setBlockedTaskIds(new Set()))
   }, [tasks])
+
+  /* Daily seed: ensure overdue/due-today (and top-up to 5) are present before the user reviews during briefing */
+  useEffect(() => {
+    if (tasks.length === 0) return
+    if (lineUpTaskIds.size > 0) return
+
+    const seedTasks = buildTodaysLineupSeedTasks(tasks, blockedTaskIds, timeZone, 5)
+    if (seedTasks.length === 0) return
+
+    const seedIds = new Set(seedTasks.map((t) => t.id))
+    setLineUpTaskIds(seedIds)
+    saveTodaysLineupTaskIds(seedIds)
+  }, [tasks, blockedTaskIds, timeZone, lineUpTaskIds.size])
 
   /* Today start/end for filtering (same IANA zone as Settings / task list) */
   const { todayStart, todayEnd } = useMemo(() => {

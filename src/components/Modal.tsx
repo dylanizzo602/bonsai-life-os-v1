@@ -9,6 +9,8 @@ interface ModalProps {
   onClose: () => void
   /** Modal title (string or ReactNode for custom content) */
   title?: string | ReactNode
+  /** Optional fully custom header (replaces default title + close button layout) */
+  header?: ReactNode
   /** Modal content */
   children: ReactNode
   /** Optional footer content */
@@ -19,6 +21,16 @@ interface ModalProps {
   fullScreenOnMobile?: boolean
   /** When true, modal body grows to fit content without its own scroll; page scrolls instead if needed */
   disableBodyScroll?: boolean
+  /** Optional extra classes for the backdrop/overlay container */
+  overlayClassName?: string
+  /** Optional extra classes for the modal card */
+  cardClassName?: string
+  /** Optional extra classes for the default header wrapper */
+  headerClassName?: string
+  /** Optional extra classes for the modal body wrapper */
+  bodyClassName?: string
+  /** Optional extra classes for the footer wrapper */
+  footerClassName?: string
 }
 
 /**
@@ -29,11 +41,17 @@ export function Modal({
   isOpen,
   onClose,
   title,
+  header,
   children,
   footer,
   noCard = false,
   fullScreenOnMobile = false,
   disableBodyScroll = false,
+  overlayClassName = '',
+  cardClassName = '',
+  headerClassName = '',
+  bodyClassName = '',
+  footerClassName = '',
 }: ModalProps) {
   /* Close modal on ESC key press */
   useEffect(() => {
@@ -77,15 +95,21 @@ export function Modal({
   const cardClass = fullScreenOnMobile
     ? 'bg-white shadow-xl w-full min-h-full md:min-h-0 md:max-h-[90vh] md:max-w-2xl md:rounded-lg rounded-none overflow-hidden flex flex-col'
     : 'bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col'
+  /* Body layout: always flex-1 so full-screen modals fill the viewport; toggle scrolling via disableBodyScroll */
   const bodyClass = disableBodyScroll
-    ? 'p-4 md:p-5 lg:p-6'
-    : 'flex-1 overflow-y-auto p-4 md:p-5 lg:p-6'
+    ? 'flex-1 min-h-0 overflow-hidden p-4 md:p-5 lg:p-6'
+    : 'flex-1 min-h-0 overflow-y-auto p-4 md:p-5 lg:p-6'
 
   return (
-    <div className={containerClass} onClick={onClose}>
-      <div className={cardClass} onClick={(e) => e.stopPropagation()}>
-        {title && (
-          <div className="flex items-center justify-between p-4 md:p-5 lg:p-6 border-b border-bonsai-slate-200">
+    <div className={`${containerClass} ${overlayClassName}`} onClick={onClose}>
+      <div className={`${cardClass} ${cardClassName}`} onClick={(e) => e.stopPropagation()}>
+        {/* Header: custom header overrides default title/close layout */}
+        {header != null ? (
+          <div className={headerClassName}>{header}</div>
+        ) : title ? (
+          <div
+            className={`flex items-center justify-between p-4 md:p-5 lg:p-6 border-b border-bonsai-slate-200 ${headerClassName}`}
+          >
             {typeof title === 'string' ? (
               <h2 className="text-body font-semibold text-bonsai-brown-700">{title}</h2>
             ) : (
@@ -96,12 +120,7 @@ export function Modal({
               className="text-bonsai-slate-400 hover:text-bonsai-slate-600 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded p-1"
               aria-label="Close modal"
             >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -111,12 +130,14 @@ export function Modal({
               </svg>
             </button>
           </div>
-        )}
+        ) : null}
 
-        <div className={bodyClass}>{children}</div>
+        <div className={`${bodyClass} ${bodyClassName}`}>{children}</div>
 
         {footer && (
-          <div className="border-t border-bonsai-slate-200 p-4 md:p-5 lg:p-6 flex justify-end gap-2">
+          <div
+            className={`border-t border-bonsai-slate-200 p-4 md:p-5 lg:p-6 flex justify-end gap-2 ${footerClassName}`}
+          >
             {footer}
           </div>
         )}

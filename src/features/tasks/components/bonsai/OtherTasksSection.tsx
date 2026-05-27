@@ -37,11 +37,15 @@ export function BacklogTasksSection({
   defaultOpen = true,
   leadingContent,
 }: BacklogTasksSectionProps) {
+  /* Section state: Track open/closed state for the collapsible list */
   const [open, setOpen] = useState(defaultOpen)
+
+  /* Partition unpacking: Parent tasks plus subtasks grouped by parent id */
   const { parentTasks, subtasksByParentId } = partition
 
   if (parentTasks.length === 0 && !leadingContent) return null
 
+  /* Rows rendering: Render optional leading content plus parent/subtask rows */
   const rows = (
     <div className="mt-4 space-y-2 lg:mt-6">
       {leadingContent}
@@ -78,7 +82,8 @@ export function BacklogTasksSection({
   )
 
   return (
-    <section className="max-w-4xl">
+    /* Section wrapper: Full width so it matches the lineup container */
+    <section className="w-full">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

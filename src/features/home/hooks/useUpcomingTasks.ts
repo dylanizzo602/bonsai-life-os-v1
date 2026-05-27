@@ -1,15 +1,15 @@
-/* useUpcomingTasks: First 5 "available" non-habit tasks (same logic as Tasks page Available view) */
+/* useUpcomingTasks: Next 5 due tasks (due date required), sorted soonest-first */
 
 import { useState, useEffect, useMemo } from 'react'
 import { useTasks } from '../../tasks/hooks/useTasks'
 import { getDependenciesForTaskIds } from '../../../lib/supabase/tasks'
 import type { Task } from '../../tasks/types'
-import { getAvailableTasksFromList } from '../../tasks/utils/available'
 import { computeBlockedTaskIds } from '../../tasks/utils/dependencies'
 import { useUserTimeZone } from '../../settings/useUserTimeZone'
+import { taskDateToComparableMs } from '../../tasks/utils/date'
 
 /**
- * Returns the first 5 available tasks (incomplete, not blocked, start <= now), sorted like Tasks page Available view.
+ * Returns the next 5 tasks with due dates (incomplete), sorted by nearest due date first.
  * Excludes habit-linked reminder tasks so the home widget shows only "real" tasks.
  */
 export function useUpcomingTasks(): Task[] {
@@ -43,15 +43,22 @@ export function useUpcomingTasks(): Task[] {
       return parent?.status !== 'deleted' && parent?.status !== 'archived'
     })
 
-    /* Availability + sort: reuse the same Available view logic from Tasks page */
-    const availableSorted = getAvailableTasksFromList(
-      withoutArchivedOrDeletedParents,
-      blockedTaskIds,
-      timeZone,
-    )
-    /* Home widget filter: hide habit reminders (habit-linked tasks) */
-    const nonHabit = availableSorted.filter((t) => !t.habit_id)
+    /* Base pool: hide completed/archived/deleted and require a due date */
+    const dueOnly = withoutArchivedOrDeletedParents.filter((t) => {
+      if (t.status === 'completed' || t.status === 'archived' || t.status === 'deleted') return false
+      if (t.habit_id) return false
+      return taskDateToComparableMs(t.due_date, timeZone) != null
+    })
+
+    /* Sort: nearest due first (timezone-safe for date-only dues) */
+    const sortedByDue = [...dueOnly].sort((a, b) => {
+      const aDue = taskDateToComparableMs(a.due_date, timeZone) ?? Number.MAX_SAFE_INTEGER
+      const bDue = taskDateToComparableMs(b.due_date, timeZone) ?? Number.MAX_SAFE_INTEGER
+      if (aDue !== bDue) return aDue - bDue
+      return (a.title ?? '').localeCompare(b.title ?? '')
+    })
+
     /* Truncate: keep widget compact */
-    return nonHabit.slice(0, 5)
+    return sortedByDue.slice(0, 5)
   }, [tasks, taskById, blockedTaskIds, timeZone])
 }

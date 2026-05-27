@@ -78,6 +78,8 @@
 html {
   min-height: 100%;
   height: 100%;
+  /* Touch behavior: reduce iOS Safari double-tap zoom on interactive UI */
+  touch-action: manipulation;
 }
 
 body {

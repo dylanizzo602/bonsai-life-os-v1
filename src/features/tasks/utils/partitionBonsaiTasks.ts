@@ -1,7 +1,7 @@
 /* partitionBonsaiTasks: Today's Lineup vs backlog (All Tasks pool + rules) */
 
 import type { Task, TaskPriority } from '../types'
-import { isTodayInZone, taskDateToComparableMs } from './date'
+import { isOverdue, isTodayInZone, taskDateToComparableMs } from './date'
 import {
   isPriorityMediumOrAbove,
   isTaskAvailableForWork,
@@ -34,7 +34,7 @@ function isInAllTasksPool(task: Task): boolean {
 }
 
 /**
- * Today's Lineup: due today OR (available to work now AND medium priority or above).
+ * Today's Lineup: overdue OR due today OR (available to work now AND medium priority or above).
  */
 export function isTaskInTodaysLineup(
   task: Task,
@@ -43,12 +43,56 @@ export function isTaskInTodaysLineup(
 ): boolean {
   if (!isBonsaiListTask(task) || !isInAllTasksPool(task)) return false
 
+  /* Due status: overdue tasks are always surfaced in the lineup */
+  const overdue = isOverdue(task.due_date, timeZone)
   const dueToday = isTodayInZone(task.due_date, timeZone)
   const availableMediumPlus =
     isTaskAvailableForWork(task, blockedTaskIds, timeZone) &&
     isPriorityMediumOrAbove(task.priority)
 
-  return dueToday || availableMediumPlus
+  return overdue || dueToday || availableMediumPlus
+}
+
+/**
+ * Daily lineup seed: computed once per day (then persisted) so the lineup does not reshuffle.
+ * Rules:
+ * - Always include overdue and due-today tasks (can exceed the minimum).
+ * - If overdue+due-today count is below `minCount`, pull in next available (workable now) medium+ tasks until `minCount`.
+ * - Sorting uses the same "available" style ordering for consistency.
+ */
+export function buildTodaysLineupSeedTasks(
+  tasks: Task[],
+  blockedTaskIds: Set<string>,
+  timeZone: string,
+  minCount: number = 5,
+): Task[] {
+  /* Base pool: Bonsai-visible tasks that are not completed */
+  const pool = tasks.filter((t) => isBonsaiListTask(t) && isInAllTasksPool(t))
+
+  /* Always-in seed tasks: overdue or due today */
+  const mustInclude = pool.filter(
+    (t) => isOverdue(t.due_date, timeZone) || isTodayInZone(t.due_date, timeZone),
+  )
+  const mustIncludeIds = new Set(mustInclude.map((t) => t.id))
+
+  /* Top-up candidates: available to work now + medium priority or above, excluding already-included */
+  const fillCandidates = pool.filter((t) => {
+    if (mustIncludeIds.has(t.id)) return false
+    return isTaskAvailableForWork(t, blockedTaskIds, timeZone) && isPriorityMediumOrAbove(t.priority)
+  })
+
+  /* Seed selection: include all must-includes; then top up to minCount */
+  const selected: Task[] = [...mustInclude]
+  if (selected.length < minCount) {
+    const sortedFill = sortTasksAvailableStyle(fillCandidates, timeZone)
+    for (const t of sortedFill) {
+      selected.push(t)
+      if (selected.length >= minCount) break
+    }
+  }
+
+  /* Final ordering: keep consistent ordering for the full seed set */
+  return sortTasksAvailableStyle(selected, timeZone)
 }
 
 /** Priority rank for Other tasks sort (higher index = higher priority). */

@@ -6,20 +6,13 @@ import { Modal } from '../../components/Modal'
 import { Button } from '../../components/Button'
 import { Input } from '../../components/Input'
 import { Checkbox } from '../../components/Checkbox'
-import { Select } from '../../components/Select'
-import { RichTextEditor } from '../notes/RichTextEditor'
+import { MaterialIcon } from '../../components/MaterialIcon'
 import { useTaskChecklists } from './hooks/useTaskChecklists'
 import { useTags } from './hooks/useTags'
 import { useGoals } from '../goals/hooks/useGoals'
 import { SubtaskList } from './SubtaskList'
 import {
   PlusIcon,
-  ChevronRightIcon,
-  ChevronDownIcon,
-  CalendarIcon,
-  FlagIcon,
-  TagIcon,
-  HourglassIcon,
   ChecklistIcon,
 } from '../../components/icons'
 import { parseRecurrencePattern, getNextOccurrence } from '../../lib/recurrence'
@@ -35,13 +28,13 @@ import { DatePickerModal } from './modals/DatePickerModal'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { TagModal } from './modals/TagModal'
 import { TimeEstimateModal } from './modals/TimeEstimateModal'
-import { DependenciesSection } from './DependenciesSection'
 import { AttachmentUploadModal } from './modals/AttachmentUploadModal'
 import { AttachmentPreviewModal } from './modals/AttachmentPreviewModal'
 import { StatusPickerModal } from './modals/StatusPickerModal'
+import { TaskTemplatesModal } from './modals/TaskTemplatesModal'
 import { useTaskTemplates } from './hooks/useTaskTemplates'
 import type { ChecklistWithItems } from './hooks/useTaskChecklists'
-import type { TaskTemplate, TaskTemplateData } from './types'
+import type { TaskTemplateData } from './types'
 import {
   createTaskChecklist,
   createChecklistItem,
@@ -166,62 +159,7 @@ async function instantiateDraftChildren(
   }
 }
 
-/**
- * Status circle: OPEN = black dotted stroke no fill, IN PROGRESS = dotted yellow + fill, COMPLETE = solid green + fill.
- */
-function TaskStatusIndicator({ status }: { status: DisplayStatus }) {
-  const size = 20
-  const r = (size - 4) / 2
-  const cx = size / 2
-  const cy = size / 2
-
-  if (status === 'complete') {
-    return (
-      <svg width={size} height={size} className="shrink-0" aria-hidden>
-        <circle
-          cx={cx}
-          cy={cy}
-          r={r}
-          fill="var(--color-green-500, #22c55e)"
-          stroke="var(--color-green-600, #16a34a)"
-          strokeWidth={2}
-        />
-      </svg>
-    )
-  }
-
-  if (status === 'in_progress') {
-    return (
-      <svg width={size} height={size} className="shrink-0" aria-hidden>
-        <circle
-          cx={cx}
-          cy={cy}
-          r={r}
-          fill="var(--color-yellow-400, #facc15)"
-          stroke="var(--color-yellow-500, #eab308)"
-          strokeWidth={2}
-          strokeDasharray="3 2"
-        />
-      </svg>
-    )
-  }
-
-  /* OPEN: black dotted stroke, no fill */
-  return (
-    <svg width={size} height={size} className="shrink-0" aria-hidden>
-      <circle
-        cx={cx}
-        cy={cy}
-        r={r}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeDasharray="2 2"
-        className="text-bonsai-slate-800"
-      />
-    </svg>
-  )
-}
+// NOTE: TaskStatusIndicator removed from header layout; status picker remains available elsewhere in the modal.
 
 /** Render highlighted smart tokens beneath a transparent input (Todoist-style). */
 function SmartQuickAddUnderlay({
@@ -340,6 +278,7 @@ export function AddEditTaskModal({
   onRemoveFromLineUp,
   initialTitle,
 }: AddEditTaskModalProps) {
+  void onRemoveDependency
   /* Profile time zone: format date pills consistently with task list and due logic */
   const timeZone = useUserTimeZone()
   /* Core task form state: title, description, dates, priority, goal, tags, estimate, attachments, status */
@@ -386,10 +325,18 @@ export function AddEditTaskModal({
   /* Template state: applied template snapshot for add mode and inline template name prompt in edit mode */
   const [appliedTemplate, setAppliedTemplate] = useState<TaskTemplateData | null>(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | ''>('')
-  const [isNamingTemplate, setIsNamingTemplate] = useState(false)
-  const [templateName, setTemplateName] = useState('')
-  const [savingTemplate, setSavingTemplate] = useState(false)
-  const [showTemplateManager, setShowTemplateManager] = useState(false)
+  /* Templates modal: new Library + Save Current flow */
+  const [templatesModalOpen, setTemplatesModalOpen] = useState(false)
+  const [templatesModalInitialTab, setTemplatesModalInitialTab] = useState<
+    'library' | 'saveCurrent'
+  >('library')
+  const [templatesModalSelectedTemplateId, setTemplatesModalSelectedTemplateId] = useState<string>('')
+  const [templatesModalInitialName, setTemplatesModalInitialName] = useState<string | undefined>(
+    undefined,
+  )
+  const [templatesModalInitialIcon, setTemplatesModalInitialIcon] = useState<string | undefined>(
+    undefined,
+  )
   /* Draft breakdown state: Local-only checklists and subtasks that can be created before the task exists */
   const [draftChecklists, setDraftChecklists] = useState<DraftChecklist[]>([])
   const [draftChecklistItemTitles, setDraftChecklistItemTitles] = useState<Record<string, string>>({})
@@ -399,6 +346,8 @@ export function AddEditTaskModal({
   const [pendingDraftPasteLines, setPendingDraftPasteLines] = useState<Record<string, string[]>>({})
   const [draftSubtasks, setDraftSubtasks] = useState<string[]>([])
   const [newDraftSubtaskTitle, setNewDraftSubtaskTitle] = useState('')
+  /* Dependency options: cached task list for dependency selects in Advanced Details */
+  const [dependencyTasks, setDependencyTasks] = useState<Task[]>([])
   /* Edit modal: TaskContextPopover from ⋯ or desktop right-click */
   const [taskOptionsMenuOpen, setTaskOptionsMenuOpen] = useState(false)
   const [taskOptionsPosition, setTaskOptionsPosition] = useState({ x: 0, y: 0 })
@@ -435,8 +384,30 @@ export function AddEditTaskModal({
     error: templatesError,
     fetchTemplates,
     saveTemplateFromTask,
+    saveTemplateFromDraft,
+    overwriteTemplateFromTask,
+    overwriteTemplateFromDraft,
     removeTemplate,
   } = useTaskTemplates()
+  void templatesLoading
+
+  /* Dependency task list: load once when Advanced Details is opened in edit mode */
+  useEffect(() => {
+    if (!advancedOpen) return
+    if (!task?.id) return
+    if (!getTasks) return
+    let cancelled = false
+    getTasks()
+      .then((list) => {
+        if (!cancelled) setDependencyTasks(list)
+      })
+      .catch(() => {
+        if (!cancelled) setDependencyTasks([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [advancedOpen, getTasks, task?.id])
 
   /* Smart title parsing: update fields from recognized tokens while typing (add mode only). */
   const scheduleSmartParse = (nextValue: string) => {
@@ -660,10 +631,9 @@ export function AddEditTaskModal({
     }
   }
 
-  /* Format date for pill display using the same zone as Settings / task list */
+  /* Date formatting: keep a local helper for sections that display date previews */
   const formatDate = (iso: string | null | undefined) => formatDateShort(iso, timeZone)
-  const formatEstimate = (min: number | null) =>
-    min == null ? null : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`.replace(/ 0m$/, '')
+  void formatDate
 
   /* Duplicate current task (shared by desktop dropdown and mobile task menu) */
   const duplicateCurrentTask = async (source: Task) => {
@@ -705,115 +675,61 @@ export function AddEditTaskModal({
     openTaskOptionsMenuAt(e.clientX, e.clientY)
   }
 
-  const headerTitle = (
-    <div className="relative flex w-full items-center justify-between gap-3">
-      <span className="text-body font-semibold text-bonsai-brown-700">
-        {isEditMode ? 'Edit Task' : 'Add Task'}
-      </span>
-      {/* Template controls: apply in add mode, save template in edit mode */}
-      {isEditMode && task ? (
-        <div className="flex items-center gap-2">
-          {isNamingTemplate && (
-            <div className="flex items-center gap-2">
-              <Input
-                placeholder="Template name"
-                className="border-bonsai-slate-300"
-                value={templateName}
-                onChange={(e) => setTemplateName(e.target.value)}
-              />
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!templateName.trim() || savingTemplate}
-                onClick={async () => {
-                  if (!task) return
-                  setSavingTemplate(true)
-                  try {
-                    const subtasksForTemplate = fetchSubtasks
-                      ? await fetchSubtasks(task.id)
-                      : []
-                    await saveTemplateFromTask({
-                      name: templateName.trim(),
-                      task,
-                      checklists: (checklists as ChecklistWithItems[]) ?? [],
-                      subtasks: subtasksForTemplate,
-                    })
-                    setIsNamingTemplate(false)
-                    setTemplateName('')
-                  } catch {
-                    // Error surfaced via hook error state
-                  } finally {
-                    setSavingTemplate(false)
-                  }
-                }}
-              >
-                Save
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setIsNamingTemplate(false)
-                  setTemplateName('')
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          )}
-          {!isNamingTemplate && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setIsNamingTemplate(true)
-                setTemplateName(task.title)
-              }}
-            >
-              Save as task template
-            </Button>
-          )}
-          {/* Task actions: ⋯ opens same menu as desktop right-click in modal */}
-          <div className="relative">
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="Task options"
-              onClick={(e) => {
-                if (!task) return
-                openTaskOptionsMenuFromAnchor(e.currentTarget)
-              }}
-            >
-              …
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2">
-          <Select
-            value={selectedTemplateId}
-            onChange={(e) => {
-              const value = e.target.value
-              setSelectedTemplateId(value)
-              const template: TaskTemplate | undefined = templates.find((t) => t.id === value)
-              if (template) {
-                applyTemplateToForm(template.data)
-              }
-            }}
-            options={[
-              { value: '', label: templatesLoading ? 'Loading templates...' : 'No template' },
-              ...templates.map((t) => ({ value: t.id, label: t.name })),
-            ]}
-          />
+  /* Modal header: match new design (title left, template controls + close on right) */
+  const modalHeader = (
+    <div className="px-8 py-6 border-b border-outline-variant/10 flex items-center justify-between">
+      <h2 className="text-lg font-headline font-bold text-on-surface">
+        {isEditMode ? 'Edit Task' : 'New Task'}
+      </h2>
+      <div className="flex items-center gap-6">
+        {/* Task templates: open the new Library/Save Current modal */}
+        <button
+          type="button"
+          onClick={() => {
+            setTemplatesModalInitialTab(isEditMode ? 'saveCurrent' : 'library')
+            setTemplatesModalSelectedTemplateId('')
+            setTemplatesModalInitialName(
+              isEditMode && task
+                ? task.title
+                : selectedTemplateId
+                  ? templates.find((t) => t.id === selectedTemplateId)?.name
+                  : title,
+            )
+            setTemplatesModalInitialIcon(undefined)
+            setTemplatesModalOpen(true)
+          }}
+          className="flex items-center gap-1.5 text-secondary font-medium text-on-surface-variant hover:text-primary transition-colors bg-surface-variant/20 px-3 py-1.5 rounded-lg"
+        >
+          <MaterialIcon name="content_copy" className="text-base" />
+          {selectedTemplateId
+            ? templates.find((t) => t.id === selectedTemplateId)?.name ?? 'Templates'
+            : 'Templates'}
+        </button>
+
+        {/* Edit mode options menu (⋯) */}
+        {isEditMode && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setShowTemplateManager((prev) => !prev)}
+            aria-label="Task options"
+            onClick={(e) => {
+              openTaskOptionsMenuFromAnchor(e.currentTarget)
+            }}
           >
-            Manage
+            …
           </Button>
-        </div>
-      )}
+        )}
+
+        {/* Close button */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1 hover:bg-surface-variant/50 rounded-full transition-colors"
+          aria-label="Close"
+        >
+          <MaterialIcon name="close" className="text-on-surface-variant leading-none" />
+        </button>
+      </div>
     </div>
   )
 
@@ -821,13 +737,20 @@ export function AddEditTaskModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={headerTitle}
+      header={modalHeader}
       fullScreenOnMobile
+      /* Overlay + card: match provided modal shell (blur backdrop + max width + rounded) */
+      overlayClassName="p-4 backdrop-blur-[12px] bg-black/15 md:p-4"
+      /* Mobile: full height; md+: constrain to 90vh like the mock */
+      cardClassName="bg-surface w-full shadow-2xl overflow-hidden flex flex-col md:max-w-2xl md:rounded-2xl md:max-h-[90vh]"
+      /* Body + footer wrappers: match provided padding/spacing */
+      bodyClassName="px-4 py-6 space-y-8 md:px-8 md:py-8"
+      footerClassName="px-4 py-6 bg-surface-variant/5 border-t border-outline-variant/10 gap-3 md:px-8 md:py-6"
       /* Footer: In edit mode, show auto-save message and Close button; in add mode, keep explicit Save */
       footer={
         isEditMode ? (
           <div className="flex w-full items-center justify-between">
-            <span className="text-secondary text-bonsai-slate-500">
+            <span className="text-secondary text-on-surface-variant">
               Changes are automatically saved
             </span>
             <Button variant="secondary" onClick={onClose}>
@@ -836,138 +759,85 @@ export function AddEditTaskModal({
           </div>
         ) : (
           <>
-            <Button variant="secondary" onClick={onClose}>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-6 py-2.5 rounded-full text-on-surface-variant font-bold text-sm hover:bg-surface-variant/30 transition-colors"
+            >
               Cancel
-            </Button>
-            <Button
-              variant="primary"
+            </button>
+            <button
+              type="button"
               onClick={handleSubmit}
               disabled={submitting || !title.trim()}
+              className="px-8 py-2.5 rounded-full bg-primary text-on-primary font-bold text-sm shadow-md hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {submitting ? 'Saving...' : 'Save Task'}
-            </Button>
+              {submitting ? 'Creating…' : 'Create Task'}
+            </button>
           </>
         )
       }
     >
-      <div className="min-h-0 flex-1" onContextMenu={handleEditModalContextMenu}>
-      {/* Main task input: Status circle on left, input field on right */}
-      {showTemplateManager && !isEditMode && (
-        <div className="mb-3 rounded-md border border-bonsai-slate-200 bg-bonsai-slate-50 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-secondary text-bonsai-slate-700">Task templates</span>
-            {templatesError && (
-              <span className="text-xs text-red-600">{templatesError}</span>
-            )}
-          </div>
-          {templates.length === 0 ? (
-            <p className="text-sm text-bonsai-slate-500">
-              No templates yet. Create a task, then use &quot;Save as task template&quot; in the
-              Edit Task view.
-            </p>
-          ) : (
-            <ul className="space-y-1">
-              {templates.map((tmpl) => (
-                <li
-                  key={tmpl.id}
-                  className="flex items-center justify-between gap-2 rounded-md px-2 py-1 hover:bg-bonsai-slate-100"
-                >
-                  <button
-                    type="button"
-                    className="flex-1 text-left text-sm text-bonsai-slate-800"
-                    onClick={() => {
-                      setSelectedTemplateId(tmpl.id)
-                      applyTemplateToForm(tmpl.data)
-                      setShowTemplateManager(false)
-                    }}
-                  >
-                    {tmpl.name}
-                  </button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={async () => {
-                      await removeTemplate(tmpl.id)
-                      if (selectedTemplateId === tmpl.id) {
-                        setSelectedTemplateId('')
-                        setAppliedTemplate(null)
-                      }
-                    }}
-                  >
-                    Delete
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-      <div className="mb-4 flex items-center gap-3">
-        {/* Status circle: Clickable to open status picker popover, aligned with left edge of date picker button below */}
-        <button
-          ref={statusButtonRef}
-          type="button"
-          onClick={() => setStatusPickerOpen(true)}
-          className="shrink-0 flex items-center justify-center rounded hover:bg-bonsai-slate-100 transition-colors"
-          aria-label="Change task status"
-        >
-          <TaskStatusIndicator status={status} />
-        </button>
-        {/* Task title input: In add mode, smart-parse + highlight recognized tokens. */}
-        <div className="flex-1">
+      <div className="space-y-6" onContextMenu={handleEditModalContextMenu}>
+      {/* 2. Main Content */}
+      <div className="space-y-6">
+        {/* Task Title */}
+        <div>
           <div className="relative">
             {/* Underlay: renders highlighted tokens for smart quick add */}
             {!isEditMode && (
               <div
                 aria-hidden
-                className="pointer-events-none absolute inset-0 flex items-center px-3 py-2 md:px-4 md:py-2.5 lg:px-4 lg:py-3 text-body text-bonsai-slate-900 whitespace-pre-wrap"
+                className="pointer-events-none absolute inset-0 flex items-center text-3xl font-headline font-bold text-on-surface focus:ring-0 p-0 whitespace-pre-wrap"
               >
                 <SmartQuickAddUnderlay value={title} matches={smartMatches} />
               </div>
             )}
-            <Input
-              placeholder="What needs to be done?"
-              className={`border-bonsai-slate-300 ${!isEditMode ? 'text-transparent caret-bonsai-slate-900' : ''}`}
-              value={title}
-              onChange={(e) => {
-                const next = e.target.value
-                setTitle(next)
-                if (!isEditMode) scheduleSmartParse(next)
-              }}
-              onBlur={async () => {
-                /* Edit mode: persist title when user leaves the field so "auto-saved" matches behavior */
-                if (!isEditMode || !task || !onUpdateTask) return
-                const trimmed = title.trim()
-                if (!trimmed) {
-                  setTitle(task.title)
-                  return
-                }
-                if (trimmed === task.title) return
-                try {
-                  await onUpdateTask(task.id, { title: trimmed })
-                } catch (error) {
-                  console.error('Failed to auto-save task title from modal:', error)
-                }
-              }}
-              spellCheck
-            />
+          <input
+            autoFocus
+            className={`w-full bg-transparent border-none text-3xl font-headline font-bold text-on-surface focus:ring-0 p-0 placeholder:text-outline-variant/50 ${
+              !isEditMode ? 'text-transparent caret-on-surface' : ''
+            }`}
+            placeholder="Task Title"
+            type="text"
+            value={title}
+            onChange={(e) => {
+              const next = e.target.value
+              setTitle(next)
+              if (!isEditMode) scheduleSmartParse(next)
+            }}
+            onBlur={async () => {
+              /* Edit mode: persist title when user leaves the field so "auto-saved" matches behavior */
+              if (!isEditMode || !task || !onUpdateTask) return
+              const trimmed = title.trim()
+              if (!trimmed) {
+                setTitle(task.title)
+                return
+              }
+              if (trimmed === task.title) return
+              try {
+                await onUpdateTask(task.id, { title: trimmed })
+              } catch (error) {
+                console.error('Failed to auto-save task title from modal:', error)
+              }
+            }}
+            spellCheck
+          />
           </div>
         </div>
       </div>
 
-      {/* Metadata pills: open sub-modals */}
-      <div className="flex flex-wrap gap-2 mb-4">
+      {/* Quick Action Buttons Row */}
+      <div className="flex flex-wrap gap-2">
         <div className="inline-flex items-center gap-1">
           <button
             ref={datePickerButtonRef}
             type="button"
             onClick={() => setDatePickerOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-outline-variant/40 text-xs font-semibold text-on-surface-variant hover:bg-surface-variant/20 transition-colors"
           >
-            <CalendarIcon className="w-4 h-4 text-bonsai-slate-600" />
-            {formatDate(start_date) || formatDate(due_date)
-              ? `Due: ${formatDate(due_date) ?? formatDate(start_date)}`
-              : 'Add start/due date'}
+            <MaterialIcon name="calendar_today" className="text-sm" />
+            Add Date
           </button>
           {(start_date || due_date) && (
             <button
@@ -987,60 +857,107 @@ export function AddEditTaskModal({
           ref={priorityButtonRef}
           type="button"
           onClick={() => setPriorityOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-outline-variant/40 text-xs font-semibold text-on-surface-variant hover:bg-surface-variant/20 transition-colors"
         >
-          <FlagIcon className="w-4 h-4 text-bonsai-slate-600" />
-          {priority === 'medium'
-            ? 'Priority: Normal'
-            : priority === 'none'
-              ? 'Priority: None'
-              : priority
-                ? `Priority: ${priority}`
-                : 'Set priority'}
+          <MaterialIcon name="flag" className="text-sm" />
+          Priority: Normal
         </button>
         <button
           ref={tagButtonRef}
           type="button"
           onClick={() => setTagOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-outline-variant/40 text-xs font-semibold text-on-surface-variant hover:bg-surface-variant/20 transition-colors"
         >
-          <TagIcon className="w-4 h-4 shrink-0 text-bonsai-slate-600" />
-          {tags.length > 0 ? (
-            <span className="flex items-center gap-1">
-              {tags.slice(0, 3).map((t) => (
-                <span
-                  key={t.id}
-                  className={`rounded px-2 py-0.5 text-xs font-medium ${
-                    t.color === 'mint'
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : t.color === 'blue'
-                        ? 'bg-blue-100 text-blue-800'
-                        : t.color === 'lavender'
-                          ? 'bg-violet-100 text-violet-800'
-                          : t.color === 'yellow'
-                            ? 'bg-amber-100 text-amber-800'
-                            : t.color === 'periwinkle'
-                              ? 'bg-indigo-100 text-indigo-800'
-                              : 'bg-bonsai-slate-100 text-bonsai-slate-700'
-                  }`}
-                >
-                  {t.name}
-                </span>
-              ))}
-            </span>
-          ) : (
-            'Add tags'
-          )}
+          <MaterialIcon name="sell" className="text-sm" />
+          Add Tags
         </button>
         <button
           type="button"
           onClick={() => setTimeEstimateOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-outline-variant/40 text-xs font-semibold text-on-surface-variant hover:bg-surface-variant/20 transition-colors"
         >
-          <HourglassIcon className="w-4 h-4 text-bonsai-slate-600" />
-          {formatEstimate(time_estimate) ?? 'Add estimate'}
+          <MaterialIcon name="timer" className="text-sm" />
+          Add Estimate
         </button>
       </div>
+
+      <TaskTemplatesModal
+        isOpen={templatesModalOpen}
+        onClose={() => setTemplatesModalOpen(false)}
+        mode={isEditMode ? 'edit' : 'add'}
+        initialTab={templatesModalInitialTab}
+        initialSelectedTemplateId={templatesModalSelectedTemplateId}
+        initialTemplateName={templatesModalInitialName}
+        initialTemplateIcon={templatesModalInitialIcon}
+        templates={templates}
+        templatesLoading={templatesLoading}
+        templatesError={templatesError}
+        onApplyTemplate={
+          isEditMode
+            ? undefined
+            : (data, templateId) => {
+                setSelectedTemplateId(templateId)
+                applyTemplateToForm(data)
+                setTemplatesModalOpen(false)
+              }
+        }
+        onDeleteTemplate={async (id) => {
+          await removeTemplate(id)
+          if (selectedTemplateId === id) {
+            setSelectedTemplateId('')
+            setAppliedTemplate(null)
+          }
+        }}
+        onCreateFromDraft={async (args) => {
+          await saveTemplateFromDraft(args)
+        }}
+        onOverwriteFromDraft={async (args) => {
+          await overwriteTemplateFromDraft(args)
+        }}
+        onCreateFromTask={async ({ name, icon, included }) => {
+          if (!task) return
+          const subtasksForTemplate = fetchSubtasks ? await fetchSubtasks(task.id) : []
+          await saveTemplateFromTask({
+            name,
+            icon,
+            included,
+            task,
+            checklists: (checklists as ChecklistWithItems[]) ?? [],
+            subtasks: subtasksForTemplate,
+          })
+        }}
+        onOverwriteFromTask={async ({ id, name, icon, included }) => {
+          if (!task) return
+          const subtasksForTemplate = fetchSubtasks ? await fetchSubtasks(task.id) : []
+          await overwriteTemplateFromTask({
+            id,
+            name,
+            icon,
+            included,
+            task,
+            checklists: (checklists as ChecklistWithItems[]) ?? [],
+            subtasks: subtasksForTemplate,
+          })
+        }}
+        draft={{
+          title,
+          description,
+          priority,
+          goal_id: goal_id ?? null,
+          time_estimate,
+          attachments,
+          recurrence_pattern,
+          tags,
+          draftChecklists: draftChecklists.map((cl) => ({
+            title: cl.title,
+            items: cl.items.map((item) => ({
+              title: item.title,
+              completed: item.completed,
+            })),
+          })),
+          draftSubtasks,
+        }}
+      />
 
       <DatePickerModal
         isOpen={datePickerOpen}
@@ -1165,78 +1082,195 @@ export function AddEditTaskModal({
         </>
       )}
 
-      {/* Advanced options toggle */}
-      <button
-        type="button"
-        onClick={() => setAdvancedOpen((prev) => !prev)}
-        className="flex items-center gap-1.5 text-sm text-bonsai-slate-600 hover:text-bonsai-slate-800 mb-4"
+      {/* Advanced details accordion: collapsible container for optional sections */}
+      <details
+        className="group mt-4"
+        open={advancedOpen}
+        onToggle={(e) => setAdvancedOpen((e.currentTarget as HTMLDetailsElement).open)}
       >
-        {advancedOpen ? (
-          <ChevronDownIcon className="w-4 h-4 shrink-0" />
-        ) : (
-          <ChevronRightIcon className="w-4 h-4 shrink-0" />
-        )}
-        <span className="font-medium">Advanced options</span>
-        <span className="text-bonsai-slate-500 font-normal">
-          (description, goals, attachments, breakdown)
-        </span>
-      </button>
-
-      {/* Expanded advanced section */}
-      {advancedOpen && (
-        <div className="space-y-4 pt-2 border-t border-bonsai-slate-200">
-          <div>
-            {/* Description: Rich text editor for notes/details, stores HTML string in description state and auto-saves in edit mode on blur */}
-            <RichTextEditor
-              editorKey={task?.id ?? 'new-task-description'}
-              value={description}
-              onBlur={async (html) => {
-                setDescription(html)
-
+        <summary className="flex items-center justify-between cursor-pointer list-none text-on-surface-variant hover:text-primary transition-colors py-2">
+          <div className="flex items-center gap-2">
+            <MaterialIcon
+              name="expand_more"
+              className="transition-transform group-open:rotate-180 text-lg"
+            />
+            <span className="text-xs font-bold uppercase tracking-wider">
+              Advanced Details
+            </span>
+          </div>
+          <div className="h-px flex-1 bg-outline-variant/20 ml-4" />
+        </summary>
+        <div className="pt-6 space-y-8">
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline">
+              Description &amp; Notes
+            </label>
+            {/* Description textarea: styled to match provided design; edit mode auto-saves on blur */}
+            <textarea
+              className="w-full bg-surface-variant/10 border border-outline-variant/30 rounded-xl px-4 py-3 text-on-surface focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none placeholder:text-outline-variant/60 min-h-[120px]"
+              placeholder="What needs to be done?"
+              value={description ?? ''}
+              onChange={(e) => setDescription(e.target.value)}
+              onBlur={async () => {
                 /* In edit mode, persist description changes immediately so closing the modal doesn't lose edits */
                 if (isEditMode && task && onUpdateTask) {
                   try {
                     await onUpdateTask(task.id, {
-                      description: html.trim() || null,
+                      description: description.trim() || null,
                     })
                   } catch (error) {
                     console.error('Failed to auto-save task description from modal:', error)
                   }
                 }
               }}
-              placeholder="Add notes or details..."
-              className="w-full"
             />
           </div>
 
-          {/* Goal picker */}
+          {/* Dependencies (new design) */}
+          <div className="pt-8 border-t border-outline-variant/10">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+                  <MaterialIcon name="link" className="text-base" />
+                  Blocked by
+                </label>
+                <div className="relative">
+                  <select
+                    className="w-full appearance-none bg-surface-variant/10 border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none cursor-pointer"
+                    disabled={!task?.id || !onAddDependency}
+                    defaultValue=""
+                    onChange={(e) => {
+                      const selected = e.target.value
+                      if (!selected || !task?.id) return
+                      if (!onAddDependency) return
+                      void onAddDependency({ blocker_id: selected, blocked_id: task.id })
+                      e.currentTarget.value = ''
+                    }}
+                  >
+                    <option value="">Select a task blocking this...</option>
+                    {dependencyTasks
+                      .filter((t) => t.id !== task?.id)
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.title}
+                        </option>
+                      ))}
+                  </select>
+                  <MaterialIcon
+                    name="search"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-outline-variant text-base"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+                  <MaterialIcon name="link_off" className="text-base" />
+                  Blocking
+                </label>
+                <div className="relative">
+                  <select
+                    className="w-full appearance-none bg-surface-variant/10 border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none cursor-pointer"
+                    disabled={!task?.id || !onAddDependency}
+                    defaultValue=""
+                    onChange={(e) => {
+                      const selected = e.target.value
+                      if (!selected || !task?.id) return
+                      if (!onAddDependency) return
+                      void onAddDependency({ blocker_id: task.id, blocked_id: selected })
+                      e.currentTarget.value = ''
+                    }}
+                  >
+                    <option value="">Select a task this blocks...</option>
+                    {dependencyTasks
+                      .filter((t) => t.id !== task?.id)
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.title}
+                        </option>
+                      ))}
+                  </select>
+                  <MaterialIcon
+                    name="search"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-outline-variant text-base"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Relationships & Links */}
+          <div className="pt-8 border-t border-outline-variant/10">
+            <div className="flex items-center gap-2 mb-8">
+              <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                Relationships &amp; Links
+              </span>
+            </div>
+            <div className="space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Link to Goal */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+                    <MaterialIcon name="emoji_events" className="text-base" />
+                    Link to Goal
+                  </label>
+                  <div className="relative">
+                    <select
+                      className="w-full appearance-none bg-surface-variant/10 border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none cursor-pointer"
+                      value={goal_id || ''}
+                      onChange={(e) => {
+                        const selectedGoalId = e.target.value || null
+                        setGoalId(selectedGoalId)
+                      }}
+                    >
+                      <option value="">No Goal Selected</option>
+                      {goals.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name}
+                        </option>
+                      ))}
+                    </select>
+                    <MaterialIcon
+                      name="swap_vert"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-outline-variant text-base"
+                    />
+                  </div>
+                </div>
+
+                {/* Link to Parent Task (placeholder field for future wiring) */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+                    <MaterialIcon name="link" className="text-base" />
+                    Link to Parent Task
+                  </label>
+                  <div className="relative">
+                    <input
+                      className="w-full bg-surface-variant/10 border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none placeholder:text-outline-variant/50"
+                      placeholder="URL or reference..."
+                      type="text"
+                      value={''}
+                      onChange={() => {}}
+                      disabled
+                    />
+                    <MaterialIcon
+                      name="open_in_new"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-outline-variant text-base"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div>
-            <label className="block text-sm font-medium text-bonsai-slate-700 mb-1">
-              Link to Goal (optional)
+            <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+              <MaterialIcon name="attach_file" className="text-base" />
+              Attachments
             </label>
-            <Select
-              options={[
-                { value: '', label: 'No goal' },
-                ...goals.map((g) => ({ value: g.id, label: g.name })),
-              ]}
-              value={goal_id || ''}
-              onChange={(e) => {
-                const selectedGoalId = e.target.value || null
-                setGoalId(selectedGoalId)
-                /* Do not change priority when linking a goal — user and row picker control priority; DB no longer forces High */
-              }}
-            />
-            {goal_id && (
-              <p className="mt-1 text-xs text-bonsai-slate-500">
-                Change priority anytime with the priority control above; linking a goal does not override it.
-              </p>
-            )}
-          </div>
-
-          <div>
-            <p className="text-sm font-medium text-bonsai-slate-700 mb-2">Attachments</p>
             {!task?.id ? (
-              <p className="text-sm text-bonsai-slate-500">Save the task first to add attachments.</p>
+              <div className="flex items-center gap-3 p-4 bg-surface-variant/5 border border-dashed border-outline-variant/40 rounded-xl text-sm text-on-surface-variant/50">
+                <MaterialIcon name="upload_file" />
+                <span>Save task first to enable attachments</span>
+              </div>
             ) : (
               <div className="space-y-2">
                 {/* Existing attachments: displayed as clickable items */}
@@ -1285,7 +1319,46 @@ export function AddEditTaskModal({
             )}
           </div>
 
-          <div>
+          {/* Checklist (new design) */}
+          <div className="space-y-3 mt-6">
+            <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+              <MaterialIcon name="checklist" className="text-base" />
+              Checklist
+            </label>
+            <div className="flex gap-2">
+              <input
+                className="flex-1 bg-surface-variant/10 border border-outline-variant/30 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                placeholder="Create a checklist item"
+                type="text"
+                value={newChecklistItem}
+                onChange={(e) => setNewChecklistItem(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return
+                  const next = newChecklistItem.trim()
+                  if (!next) return
+                  addItemOrCreateChecklist(next)
+                  setNewChecklistItem('')
+                }}
+                disabled={checklistsLoading}
+              />
+              <button
+                type="button"
+                className="px-6 py-2 bg-surface-variant/20 rounded-lg text-xs font-bold text-on-surface-variant hover:bg-surface-variant/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => {
+                  const next = newChecklistItem.trim()
+                  if (!next) return
+                  addItemOrCreateChecklist(next)
+                  setNewChecklistItem('')
+                }}
+                disabled={!newChecklistItem.trim() || checklistsLoading}
+              >
+                Add
+              </button>
+            </div>
+          </div>
+
+          {/* Checklist (old UI hidden; logic remains for now) */}
+          <div className="hidden">
             <p className="text-sm font-medium text-bonsai-slate-700 mb-1">Checklists</p>
             {!task?.id ? (
               <>
@@ -2025,7 +2098,46 @@ export function AddEditTaskModal({
             )}
           </div>
 
-          <div>
+          {/* Subtasks (new design) */}
+          <div className="space-y-3 mt-6">
+            <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+              <MaterialIcon name="account_tree" className="text-base" />
+              Subtasks
+            </label>
+            <div className="flex gap-2">
+              <input
+                className="flex-1 bg-surface-variant/10 border border-outline-variant/30 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                placeholder="Add a subtask"
+                type="text"
+                value={newDraftSubtaskTitle}
+                onChange={(e) => setNewDraftSubtaskTitle(e.target.value)}
+              />
+              <button
+                type="button"
+                className="px-6 py-2 bg-primary/10 text-primary rounded-lg text-xs font-bold hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => {
+                  const trimmed = newDraftSubtaskTitle.trim()
+                  if (!trimmed) return
+                  if (!task?.id) {
+                    setDraftSubtasks((prev) => [...prev, trimmed])
+                    setNewDraftSubtaskTitle('')
+                    return
+                  }
+                  if (!createSubtask) return
+                  void (async () => {
+                    await createSubtask(task.id, { title: trimmed })
+                    setNewDraftSubtaskTitle('')
+                  })()
+                }}
+                disabled={!newDraftSubtaskTitle.trim()}
+              >
+                Add
+              </button>
+            </div>
+          </div>
+
+          {/* Subtasks (old UI hidden; logic remains for now) */}
+          <div className="hidden">
             <p className="text-sm font-medium text-bonsai-slate-700 mb-1">Subtasks</p>
             {!task?.id ? (
               <>
@@ -2092,24 +2204,10 @@ export function AddEditTaskModal({
             )}
           </div>
 
-          <div>
-            <p className="text-sm font-medium text-bonsai-slate-700 mb-1">Task Dependencies</p>
-            {task?.id && getTasks && getTaskDependencies && onAddDependency ? (
-              <DependenciesSection
-                currentTaskId={task.id}
-                getTasks={getTasks}
-                getTaskDependencies={getTaskDependencies}
-                onAddDependency={onAddDependency}
-                onRemoveDependency={onRemoveDependency}
-              />
-            ) : (
-              <p className="text-sm text-bonsai-slate-500">
-                Create the task first to add dependencies.
-              </p>
-            )}
-          </div>
+          {/* Dependencies (new design) - moved above Relationships & Links */}
+          <div className="hidden" />
         </div>
-      )}
+      </details>
 
       </div>
 

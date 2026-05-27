@@ -20,12 +20,14 @@ export async function getTaskTemplates(): Promise<TaskTemplate[]> {
 /** Create a new task template with the given name and data snapshot. */
 export async function createTaskTemplate(input: {
   name: string
+  icon?: string | null
   data: TaskTemplateData
 }): Promise<TaskTemplate> {
   const { data, error } = await supabase
     .from('task_templates')
     .insert({
       name: input.name,
+      icon: input.icon ?? null,
       data: input.data,
     })
     .select('*')
@@ -33,6 +35,35 @@ export async function createTaskTemplate(input: {
 
   if (error) {
     console.error('Error creating task template:', error)
+    throw error
+  }
+
+  return data as TaskTemplate
+}
+
+/** Update an existing task template snapshot (and optional metadata) by id. */
+export async function updateTaskTemplate(
+  id: string,
+  input: {
+    name?: string
+    icon?: string | null
+    data: TaskTemplateData
+  },
+): Promise<TaskTemplate> {
+  const { data, error } = await supabase
+    .from('task_templates')
+    .update({
+      ...(input.name != null ? { name: input.name } : {}),
+      ...(input.icon !== undefined ? { icon: input.icon } : {}),
+      data: input.data,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single()
+
+  if (error) {
+    console.error('Error updating task template:', error)
     throw error
   }
 

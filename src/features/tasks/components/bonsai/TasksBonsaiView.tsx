@@ -304,6 +304,7 @@ export function TasksBonsaiView({
             onOpenTask={onOpenEdit}
             onContextMenu={handleContextMenu}
             onToggleComplete={handleToggleComplete}
+            defaultOpen={false}
           />
 
           <div className="mt-10">
@@ -315,6 +316,7 @@ export function TasksBonsaiView({
               onOpenTask={onOpenEdit}
               onContextMenu={handleContextMenu}
               onToggleComplete={handleToggleComplete}
+              defaultOpen={false}
             />
           </div>
         </>
