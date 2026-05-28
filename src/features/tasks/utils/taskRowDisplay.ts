@@ -41,7 +41,7 @@ export function getBacklogDateDisplay(task: Task, timeZone: string): string | nu
   const hasDue = task.due_date != null && task.due_date !== ''
   if (hasStart && !hasDue) {
     const label = formatDueDateOnly(task.start_date, timeZone)
-    return label ? `Starts: ${label.replace(/^Due /, '')}` : null
+    return label ? `Starts ${label.replace(/^Due /, '')}` : null
   }
   if (!hasStart && hasDue) {
     return formatDueDateOnly(task.due_date, timeZone)
@@ -49,7 +49,7 @@ export function getBacklogDateDisplay(task: Task, timeZone: string): string | nu
   if (hasStart && hasDue) {
     const range = formatStartDueDisplay(task.start_date, task.due_date, timeZone)
     if (!range) return null
-    return range.replace(/^Due /, '').replace(/^Started /, 'Started: ')
+    return range.replace(/^Due /, '').replace(/^Started /, 'Started ')
   }
   return null
 }

@@ -26,10 +26,12 @@ import { getPriorityFlagClasses } from '../../utils/priority'
 import { getLineupTagPillClassName } from '../../utils/tagPillStyles'
 
 import { TagModal } from '../../modals/TagModal'
+import { StatusPickerModal } from '../../modals/StatusPickerModal'
 
 import { TaskRowMetadataStrip } from './TaskRowMetadataStrip'
 
 import { BonsaiTaskStatusButton } from './BonsaiTaskStatusButton'
+import { getTaskDisplayStatus, getTaskStatusFromDisplayStatus } from '../../TaskStatusIndicator'
 
 
 
@@ -43,7 +45,7 @@ interface LineupTaskCardProps {
 
   onContextMenu?: (e: MouseEvent) => void
 
-  onToggleComplete: () => void
+  onUpdateStatus?: (taskId: string, status: import('../../types').TaskStatus) => Promise<void>
 
   onTagsUpdated?: () => void
 
@@ -80,7 +82,7 @@ export function LineupTaskCard({
 
   onContextMenu,
 
-  onToggleComplete,
+  onUpdateStatus,
 
   onTagsUpdated,
 
@@ -101,8 +103,10 @@ export function LineupTaskCard({
   const timeZone = useUserTimeZone()
 
   const tagButtonRef = useRef<HTMLButtonElement>(null)
+  const statusButtonRef = useRef<HTMLButtonElement>(null)
 
   const [tagModalOpen, setTagModalOpen] = useState(false)
+  const [statusPickerOpen, setStatusPickerOpen] = useState(false)
 
   const primaryTag = task.tags[0]
 
@@ -150,12 +154,11 @@ export function LineupTaskCard({
 
 
 
+  /* Status click: open the shared status picker popover (matches desktop/tablet behavior). */
   const handleStatusClick = (e: MouseEvent) => {
-
     e.stopPropagation()
-
-    if (task.status !== 'completed') onToggleComplete()
-
+    if (!onUpdateStatus) return
+    setStatusPickerOpen(true)
   }
 
 
@@ -199,6 +202,19 @@ export function LineupTaskCard({
   return (
 
     <>
+      {/* Status picker: reuse the shared popover so mobile has the same status options. */}
+      {onUpdateStatus ? (
+        <StatusPickerModal
+          isOpen={statusPickerOpen}
+          onClose={() => setStatusPickerOpen(false)}
+          value={getTaskDisplayStatus(task.status)}
+          triggerRef={statusButtonRef}
+          onSelect={async (newDisplayStatus) => {
+            const nextStatus = getTaskStatusFromDisplayStatus(newDisplayStatus)
+            await onUpdateStatus(task.id, nextStatus)
+          }}
+        />
+      ) : null}
 
       {/* Mobile: stacked card */}
 
@@ -232,7 +248,12 @@ export function LineupTaskCard({
 
           <div className="mt-1 shrink-0">
 
-            <BonsaiTaskStatusButton status={task.status} onClick={handleStatusClick} />
+            <BonsaiTaskStatusButton
+              status={task.status}
+              buttonRef={statusButtonRef}
+              onClick={handleStatusClick}
+              disabled={!onUpdateStatus}
+            />
 
           </div>
 

@@ -16,3 +16,15 @@ export function getPriorityFlagClasses(priority: TaskPriority): string {
   }
   return map[priority] ?? map.none
 }
+
+/** Human-readable priority label for pills and metadata */
+export function getPriorityLabel(priority: TaskPriority): string {
+  const map: Record<TaskPriority, string> = {
+    none: 'None',
+    low: 'Low',
+    medium: 'Normal',
+    high: 'High',
+    urgent: 'Urgent',
+  }
+  return map[priority] ?? 'None'
+}

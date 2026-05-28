@@ -34,7 +34,8 @@ function isInAllTasksPool(task: Task): boolean {
 }
 
 /**
- * Today's Lineup: overdue OR due today OR (available to work now AND medium priority or above).
+ * Auto-lineup eligibility (used for daily seed only): available to work now, then overdue,
+ * due today, or medium+ priority. Unavailable tasks (blocked, future start, priority none) never qualify.
  */
 export function isTaskInTodaysLineup(
   task: Task,
@@ -42,15 +43,13 @@ export function isTaskInTodaysLineup(
   timeZone: string,
 ): boolean {
   if (!isBonsaiListTask(task) || !isInAllTasksPool(task)) return false
+  if (!isTaskAvailableForWork(task, blockedTaskIds, timeZone)) return false
 
-  /* Due status: overdue tasks are always surfaced in the lineup */
   const overdue = isOverdue(task.due_date, timeZone)
   const dueToday = isTodayInZone(task.due_date, timeZone)
-  const availableMediumPlus =
-    isTaskAvailableForWork(task, blockedTaskIds, timeZone) &&
-    isPriorityMediumOrAbove(task.priority)
+  const mediumPlus = isPriorityMediumOrAbove(task.priority)
 
-  return overdue || dueToday || availableMediumPlus
+  return overdue || dueToday || mediumPlus
 }
 
 /**
@@ -69,9 +68,11 @@ export function buildTodaysLineupSeedTasks(
   /* Base pool: Bonsai-visible tasks that are not completed */
   const pool = tasks.filter((t) => isBonsaiListTask(t) && isInAllTasksPool(t))
 
-  /* Always-in seed tasks: overdue or due today */
+  /* Always-in seed tasks: overdue or due today, and available to work now */
   const mustInclude = pool.filter(
-    (t) => isOverdue(t.due_date, timeZone) || isTodayInZone(t.due_date, timeZone),
+    (t) =>
+      isTaskAvailableForWork(t, blockedTaskIds, timeZone) &&
+      (isOverdue(t.due_date, timeZone) || isTodayInZone(t.due_date, timeZone)),
   )
   const mustIncludeIds = new Set(mustInclude.map((t) => t.id))
 
@@ -193,10 +194,10 @@ export interface BonsaiBacklogPartition {
 /**
  * Build Bonsai sections from the full task list.
  * Universe: All Tasks (not complete), then search.
- * Lineup: due today OR available + medium+; sorted like Available view.
+ * Lineup: persisted daily picks only (no live re-seeding); unavailable tasks hidden.
  * Other: remainder; sorted via sortOtherTasksBacklog.
  */
-/** Whether a task belongs in Today's Lineup (auto rules, manual picks, minus exclusions). */
+/** Whether a task belongs in Today's Lineup (persisted picks minus exclusions; must still be available). */
 export function isTaskInDisplayedLineup(
   task: Task,
   blockedTaskIds: Set<string>,
@@ -205,8 +206,8 @@ export function isTaskInDisplayedLineup(
   lineupExcludedTaskIds: Set<string> = new Set(),
 ): boolean {
   if (lineupExcludedTaskIds.has(task.id)) return false
-  if (lineUpTaskIds.has(task.id)) return true
-  return isTaskInTodaysLineup(task, blockedTaskIds, timeZone)
+  if (!lineUpTaskIds.has(task.id)) return false
+  return isTaskAvailableForWork(task, blockedTaskIds, timeZone)
 }
 
 export function partitionBonsaiSections(

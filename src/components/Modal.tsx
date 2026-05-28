@@ -88,20 +88,28 @@ export function Modal({
     )
   }
 
-  /* Full-screen on mobile: no padding, modal fills viewport; on md+ use centered card */
+  /* Overlay layout: full-screen on mobile should always be edge-to-edge (no padding). */
   const containerClass = fullScreenOnMobile
-    ? 'fixed inset-0 z-50 flex justify-center bg-bonsai-slate-900/30 p-0 md:p-6 items-stretch md:items-center'
+    ? 'fixed inset-0 z-50 flex justify-center bg-bonsai-slate-900/30 items-stretch md:items-center md:p-6'
     : 'fixed inset-0 z-50 flex items-center justify-center bg-bonsai-slate-900/30 p-4 md:p-6'
+
+  /* Overlay classes: ensure callers cannot reintroduce mobile padding in fullscreen mode. */
+  const effectiveOverlayClassName = fullScreenOnMobile
+    ? `${overlayClassName} !p-0`
+    : overlayClassName
+
+  /* Card layout: pin to viewport on mobile so no backdrop gutter shows on top/left/right. */
   const cardClass = fullScreenOnMobile
-    ? 'bg-white shadow-xl w-full min-h-full md:min-h-0 md:max-h-[90vh] md:max-w-2xl md:rounded-lg rounded-none overflow-hidden flex flex-col'
+    ? 'bg-white shadow-xl fixed inset-0 z-50 flex flex-col w-full h-[100dvh] rounded-none overflow-hidden md:static md:inset-auto md:z-auto md:w-full md:h-auto md:max-h-[90vh] md:max-w-2xl md:rounded-lg'
     : 'bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col'
-  /* Body layout: always flex-1 so full-screen modals fill the viewport; toggle scrolling via disableBodyScroll */
+
+  /* Body layout: fullscreen mobile uses no default padding (caller supplies inner padding). */
   const bodyClass = disableBodyScroll
-    ? 'flex-1 min-h-0 overflow-hidden p-4 md:p-5 lg:p-6'
-    : 'flex-1 min-h-0 overflow-y-auto p-4 md:p-5 lg:p-6'
+    ? `flex-1 min-h-0 overflow-hidden ${fullScreenOnMobile ? 'p-0 md:p-5 lg:p-6' : 'p-4 md:p-5 lg:p-6'}`
+    : `flex-1 min-h-0 overflow-y-auto ${fullScreenOnMobile ? 'p-0 md:p-5 lg:p-6' : 'p-4 md:p-5 lg:p-6'}`
 
   return (
-    <div className={`${containerClass} ${overlayClassName}`} onClick={onClose}>
+    <div className={`${containerClass} ${effectiveOverlayClassName}`} onClick={onClose}>
       <div className={`${cardClass} ${cardClassName}`} onClick={(e) => e.stopPropagation()}>
         {/* Header: custom header overrides default title/close layout */}
         {header != null ? (

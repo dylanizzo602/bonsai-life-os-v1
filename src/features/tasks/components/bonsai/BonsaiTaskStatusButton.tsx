@@ -7,6 +7,7 @@ import type { TaskStatus } from '../../types'
 interface BonsaiTaskStatusButtonProps {
   status: TaskStatus
   size?: 'sm' | 'md'
+  buttonRef?: React.Ref<HTMLButtonElement>
   onClick?: (e: React.MouseEvent) => void
   disabled?: boolean
 }
@@ -17,6 +18,7 @@ interface BonsaiTaskStatusButtonProps {
 export function BonsaiTaskStatusButton({
   status,
   size = 'md',
+  buttonRef,
   onClick,
   disabled = false,
 }: BonsaiTaskStatusButtonProps) {
@@ -26,6 +28,7 @@ export function BonsaiTaskStatusButton({
 
   return (
     <button
+      ref={buttonRef}
       type="button"
       onClick={onClick}
       disabled={disabled || displayStatus === 'complete'}
@@ -33,7 +36,7 @@ export function BonsaiTaskStatusButton({
       aria-label={
         displayStatus === 'complete'
           ? getTaskStatusAriaLabel(displayStatus)
-          : 'Mark task complete'
+          : 'Change task status'
       }
     >
       {displayStatus === 'complete' ? (

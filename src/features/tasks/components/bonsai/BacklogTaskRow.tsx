@@ -1,6 +1,7 @@
 /* BacklogTaskRow: Compact row for Other tasks section */
 
 import type { MouseEvent } from 'react'
+import { useRef, useState } from 'react'
 import { FlagIcon, TrophyIcon } from '../../../../components/icons'
 import { MaterialIcon } from '../../../../components/MaterialIcon'
 import { useUserTimeZone } from '../../../settings/useUserTimeZone'
@@ -13,6 +14,8 @@ import {
 import { getPriorityFlagClasses } from '../../utils/priority'
 import { getBacklogTagPillClassName } from '../../utils/tagPillStyles'
 import { BonsaiTaskStatusButton } from './BonsaiTaskStatusButton'
+import { StatusPickerModal } from '../../modals/StatusPickerModal'
+import { getTaskDisplayStatus, getTaskStatusFromDisplayStatus } from '../../TaskStatusIndicator'
 
 interface BacklogTaskRowProps {
   task: Task
@@ -24,6 +27,7 @@ interface BacklogTaskRowProps {
   onOpen: () => void
   onContextMenu?: (e: MouseEvent) => void
   onToggleComplete: () => void
+  onUpdateStatus?: (taskId: string, status: import('../../types').TaskStatus) => Promise<void>
 }
 
 /**
@@ -39,8 +43,11 @@ export function BacklogTaskRow({
   onOpen,
   onContextMenu,
   onToggleComplete,
+  onUpdateStatus,
 }: BacklogTaskRowProps) {
   const timeZone = useUserTimeZone()
+  const statusButtonRef = useRef<HTMLButtonElement>(null)
+  const [statusPickerOpen, setStatusPickerOpen] = useState(false)
   const primaryTag = task.tags[0]
   const dateDisplay = getBacklogDateDisplay(task, timeZone)
   const dateColorClass = getDueDateColorClass(task.due_date, timeZone)
@@ -51,7 +58,22 @@ export function BacklogTaskRow({
       : 'text-body font-medium text-on-surface-variant transition-colors group-hover:text-on-surface'
 
   return (
-    <div
+    <>
+      {/* Status picker: shared popover so backlog rows can change status beyond complete. */}
+      {onUpdateStatus ? (
+        <StatusPickerModal
+          isOpen={statusPickerOpen}
+          onClose={() => setStatusPickerOpen(false)}
+          value={getTaskDisplayStatus(task.status)}
+          triggerRef={statusButtonRef}
+          onSelect={async (newDisplayStatus) => {
+            const nextStatus = getTaskStatusFromDisplayStatus(newDisplayStatus)
+            await onUpdateStatus(task.id, nextStatus)
+          }}
+        />
+      ) : null}
+
+      <div
         role="button"
         tabIndex={0}
         onClick={onOpen}
@@ -89,8 +111,14 @@ export function BacklogTaskRow({
             size={statusSize}
             onClick={(e) => {
               e.stopPropagation()
-              if (task.status !== 'completed') onToggleComplete()
+              if (!onUpdateStatus) {
+                if (task.status !== 'completed') onToggleComplete()
+                return
+              }
+              setStatusPickerOpen(true)
             }}
+            buttonRef={statusButtonRef}
+            disabled={!onUpdateStatus}
           />
         </div>
 
@@ -122,5 +150,6 @@ export function BacklogTaskRow({
           ) : null}
         </div>
       </div>
+    </>
   )
 }

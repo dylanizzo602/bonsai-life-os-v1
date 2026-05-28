@@ -652,6 +652,34 @@ export async function getTaskChecklistItems(
 }
 
 /**
+ * Aggregate completed/total for every checklist item on a task (single items query).
+ */
+export async function getChecklistSummaryForTask(
+  taskId: string,
+): Promise<{ completed: number; total: number }> {
+  const checklists = await getTaskChecklists(taskId)
+  if (checklists.length === 0) {
+    return { completed: 0, total: 0 }
+  }
+
+  const checklistIds = checklists.map((c) => c.id)
+  const { data, error } = await supabase
+    .from('task_checklist_items')
+    .select('completed')
+    .in('checklist_id', checklistIds)
+
+  if (error) {
+    console.error('Error fetching checklist summary for task:', error)
+    throw error
+  }
+
+  const items = (data as Pick<TaskChecklistItem, 'completed'>[]) ?? []
+  const total = items.length
+  const completed = items.filter((row) => row.completed === true).length
+  return { completed, total }
+}
+
+/**
  * Create a checklist item
  */
 export async function createChecklistItem(

@@ -12,6 +12,13 @@ export function getTaskDisplayStatus(status: TaskStatus): TaskDisplayStatus {
   return 'open'
 }
 
+/** Map display status back to TaskStatus for updates */
+export function getTaskStatusFromDisplayStatus(displayStatus: TaskDisplayStatus): TaskStatus {
+  if (displayStatus === 'complete') return 'completed'
+  if (displayStatus === 'in_progress') return 'in_progress'
+  return 'active'
+}
+
 const STATUS_ARIA: Record<TaskDisplayStatus, string> = {
   open: 'Task open',
   in_progress: 'Task in progress',

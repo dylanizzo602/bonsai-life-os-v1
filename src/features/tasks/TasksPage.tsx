@@ -39,8 +39,10 @@ import {
   removeConditionFromRoot,
 } from './utils/filterSummary'
 import {
+  hasLineupSeedRunToday,
   loadLineupExcludedTaskIds,
   loadTodaysLineupTaskIds,
+  markLineupSeedRunToday,
   saveTodaysLineupState,
 } from '../../lib/todaysLineup'
 import { buildTodaysLineupSeedTasks } from './utils/partitionBonsaiTasks'
@@ -211,6 +213,8 @@ export function TasksPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editTask, setEditTask] = useState<Task | null>(null)
+  /* Bump when tasks/checklists change outside list refetch (e.g. edit modal close). */
+  const [enrichmentRefreshKey, setEnrichmentRefreshKey] = useState(0)
  
   /* View mode: backlog pool filter (available | all | custom). Lineup is always a separate section. */
   const [viewMode, setViewMode] = useState<'available' | 'all' | 'custom'>('available')
@@ -275,24 +279,22 @@ export function TasksPage() {
     setLineupExcludedTaskIds(excluded)
   }, [])
 
-  /* Daily seed: if lineup is empty for today, compute once and persist so it stays stable all day */
+  /* Daily seed: run at most once per calendar day; merge with any manual picks already saved */
   useEffect(() => {
     if (tasks.length === 0) return
-    if (lineUpTaskIds.size > 0) return
+    if (hasLineupSeedRunToday()) return
 
     const seedTasks = buildTodaysLineupSeedTasks(tasks, blockedTaskIds, timeZone, 5)
+    markLineupSeedRunToday()
+
     if (seedTasks.length === 0) return
 
-    const seedIds = new Set(seedTasks.map((t) => t.id))
-    persistLineupState(seedIds, lineupExcludedTaskIds)
-  }, [
-    tasks,
-    blockedTaskIds,
-    timeZone,
-    lineUpTaskIds,
-    lineupExcludedTaskIds,
-    persistLineupState,
-  ])
+    const mergedIds = new Set([
+      ...loadTodaysLineupTaskIds(),
+      ...seedTasks.map((t) => t.id),
+    ])
+    persistLineupState(mergedIds, lineupExcludedTaskIds)
+  }, [tasks, blockedTaskIds, timeZone, lineupExcludedTaskIds, persistLineupState])
 
   const addToLineUp = useCallback(
     (id: string) => {
@@ -535,6 +537,12 @@ export function TasksPage() {
     setEditTask(null)
   }
 
+  /** Refetch tasks and row enrichment (checklist counts, subtasks, deps). */
+  const refetchTasksAndEnrichment = useCallback(async () => {
+    await refetch()
+    setEnrichmentRefreshKey((k) => k + 1)
+  }, [refetch])
+
   const bonsaiHideCompletedSubtasks = true
 
   const isBonsaiFilteredMode = isFilterRootActive(filterRoot)
@@ -759,8 +767,10 @@ export function TasksPage() {
               setShowDeleted(true)
               setShowArchived(false)
             }}
-            refetch={refetch}
+            refetch={refetchTasksAndEnrichment}
+            enrichmentRefreshKey={enrichmentRefreshKey}
             toggleComplete={toggleComplete}
+            updateTask={updateTask}
             fetchSubtasks={fetchSubtasks}
             getTaskDependencies={getTaskDependencies}
             createTask={createTask}
@@ -779,7 +789,7 @@ export function TasksPage() {
               } else {
                 await updateTask(task.id, { status: 'archived' })
               }
-              refetch()
+              await refetchTasksAndEnrichment()
             }}
             onMarkDeletedTask={async (task) => {
               if (task.status === 'deleted') {
@@ -787,7 +797,7 @@ export function TasksPage() {
               } else {
                 await updateTask(task.id, { status: 'deleted' })
               }
-              refetch()
+              await refetchTasksAndEnrichment()
             }}
           />
 
@@ -811,7 +821,10 @@ export function TasksPage() {
 
       <AddEditTaskModal
         isOpen={isModalOpen}
-        onClose={closeModal}
+        onClose={() => {
+          closeModal()
+          void refetchTasksAndEnrichment()
+        }}
         onCreateTask={createTask}
         onCreatedTask={(task) => setEditTask(task)}
         task={editTask}
@@ -825,6 +838,7 @@ export function TasksPage() {
         getTaskDependencies={getTaskDependencies}
         onAddDependency={onAddDependency}
         onRemoveDependency={onRemoveDependency}
+        onOpenLinkedTask={openEdit}
         onArchiveTask={async (t) => {
           /* Archive/Unarchive from edit modal: reuse same behavior as right-click context menu */
           if (t.status === 'archived') {
