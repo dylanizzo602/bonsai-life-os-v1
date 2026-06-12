@@ -1,15 +1,19 @@
 /* AddEditSubtaskModal: Modal for adding/editing a subtask; full form state and sub-modals (no subtasks) */
 
-import { useState, useEffect, useRef } from 'react'
-import type { ReactNode } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 import { Modal } from '../../components/Modal'
 import { Button } from '../../components/Button'
+import { MaterialIcon } from '../../components/MaterialIcon'
+import { TaskContextPopover } from './modals/TaskContextPopover'
+import { isDesktopContextMenuViewport } from './utils/taskContextMenu'
 import { Input } from '../../components/Input'
 import { Checkbox } from '../../components/Checkbox'
 import { RichTextEditor } from '../notes/RichTextEditor'
 import { useTaskChecklists } from './hooks/useTaskChecklists'
 import { useTags } from './hooks/useTags'
-import { parseSmartQuickAdd } from './utils/smartQuickAdd'
+import { useSmartQuickAdd } from './hooks/useSmartQuickAdd'
+import type { SmartQuickAddResult } from './utils/smartQuickAdd'
 import {
   PlusIcon,
   ChevronRightIcon,
@@ -180,6 +184,12 @@ export interface AddEditSubtaskModalProps {
   onRemoveDependency?: (dependencyId: string) => Promise<void>
   /** Called when dependencies change (e.g. to refetch parent list enrichment) */
   onDependenciesChanged?: () => void
+  /** Soft-delete (trash) or restore the subtask — matches task context menu behavior */
+  onMarkDeletedTask?: (task: Task) => void | Promise<void>
+  /** Called after the subtask is deleted so the parent list can refresh */
+  onSubtaskDeleted?: () => void
+  /** Duplicate the subtask (e.g. from ⋯ menu) */
+  onDuplicateSubtask?: (task: Task) => Promise<void>
 }
 
 /**
@@ -201,6 +211,9 @@ export function AddEditSubtaskModal({
   onAddDependency,
   onRemoveDependency,
   onDependenciesChanged,
+  onMarkDeletedTask,
+  onSubtaskDeleted,
+  onDuplicateSubtask,
 }: AddEditSubtaskModalProps) {
   /* Profile time zone: date pills match task list / Settings */
   const timeZone = useUserTimeZone()
@@ -238,12 +251,31 @@ export function AddEditSubtaskModal({
   const [newItemTitles, setNewItemTitles] = useState<Record<string, string>>({})
   /* When user pastes multi-line text into a checklist item input, show prompt to keep as 1 item or create many (keyed by checklist id) */
   const [pendingPasteLines, setPendingPasteLines] = useState<Record<string, string[]>>({})
-  /* Smart quick add state: parsed fields + highlight ranges (add mode only) */
-  const [smartTagNames, setSmartTagNames] = useState<string[]>([])
-  const [smartMatches, setSmartMatches] = useState<Array<{ start: number; end: number; kind: string }>>([])
-  const smartParseTimerRef = useRef<number | null>(null)
-
   const isEditMode = Boolean(subtask?.id)
+  /* Edit modal: TaskContextPopover from ⋯ or desktop right-click */
+  const [subtaskOptionsMenuOpen, setSubtaskOptionsMenuOpen] = useState(false)
+  const [subtaskOptionsPosition, setSubtaskOptionsPosition] = useState({ x: 0, y: 0 })
+
+  /* Smart quick add: parse title tokens, highlight matches, dismiss on backspace/delete in add mode. */
+  const applySmartParsedFields = useCallback((parsed: SmartQuickAddResult) => {
+    if (parsed.priority) setPriority(parsed.priority)
+    if (parsed.due_date) setDueDate(parsed.due_date)
+    if (parsed.time_estimate != null) setTimeEstimate(parsed.time_estimate)
+    if (parsed.recurrence_pattern) setRecurrencePattern(parsed.recurrence_pattern)
+  }, [])
+  const {
+    smartTagNames,
+    smartMatches,
+    scheduleSmartParse,
+    handleSmartTitleKeyDown,
+    parseForSubmit,
+    resetSmartQuickAdd,
+    cancelPendingParse,
+  } = useSmartQuickAdd({
+    isEditMode,
+    applyParsedFields: applySmartParsedFields,
+    fieldSetters: { setPriority, setDueDate, setTimeEstimate, setRecurrencePattern },
+  })
   const {
     checklists,
     loading: checklistsLoading,
@@ -289,23 +321,6 @@ export function AddEditSubtaskModal({
     return resolved
   }
 
-  /* Smart title parsing: update fields from recognized tokens while typing (add mode only). */
-  const scheduleSmartParse = (nextValue: string) => {
-    if (smartParseTimerRef.current) {
-      window.clearTimeout(smartParseTimerRef.current)
-    }
-    smartParseTimerRef.current = window.setTimeout(() => {
-      const parsed = parseSmartQuickAdd(nextValue, { now: new Date() })
-      setSmartTagNames(parsed.tagNames)
-      setSmartMatches(parsed.matches)
-      /* Field updates: only apply when parser found an explicit token. */
-      if (parsed.priority) setPriority(parsed.priority)
-      if (parsed.due_date) setDueDate(parsed.due_date)
-      if (parsed.time_estimate != null) setTimeEstimate(parsed.time_estimate)
-      if (parsed.recurrence_pattern) setRecurrencePattern(parsed.recurrence_pattern)
-    }, 200)
-  }
-
   /* Auto-save: When editing an existing subtask, persist title changes so the parent list reflects updates immediately */
   const handleTitleAutoSave = async () => {
     if (!isEditMode || !subtask?.id || !onUpdateTask) return
@@ -345,17 +360,17 @@ export function AddEditSubtaskModal({
       setTimeEstimate(null)
       setAttachments([])
       setStatus('open')
-      setSmartTagNames([])
-      setSmartMatches([])
+      resetSmartQuickAdd()
     }
-  }, [isOpen, subtask?.id])
+  }, [isOpen, subtask?.id, resetSmartQuickAdd])
 
   /* Smart parse cleanup: cancel pending timer when modal closes/unmounts. */
+  useEffect(() => () => cancelPendingParse(), [cancelPendingParse])
+
+  /* Close ⋯ menu when subtask edit modal closes */
   useEffect(() => {
-    return () => {
-      if (smartParseTimerRef.current) window.clearTimeout(smartParseTimerRef.current)
-    }
-  }, [])
+    if (!isOpen) setSubtaskOptionsMenuOpen(false)
+  }, [isOpen])
 
   /* Submit: create or update subtask with all form fields (uses description HTML from rich text editor) */
   const handleSubmit = async () => {
@@ -387,7 +402,7 @@ export function AddEditSubtaskModal({
     setSubmitting(true)
     try {
       /* Parse once on submit so saved title and fields match the latest text. */
-      const parsedOnSubmit = parseSmartQuickAdd(title, { now: new Date() })
+      const parsedOnSubmit = parseForSubmit(title)
       const cleanedTitle = parsedOnSubmit.cleanedTitle.trim() || title.trim()
       const submitTagNames = parsedOnSubmit.tagNames
       /* Smart estimate: if an explicit estimate token was typed, prefer it at create time. */
@@ -422,8 +437,7 @@ export function AddEditSubtaskModal({
           setDueDate(null)
           setPriority('medium')
           setTags([])
-          setSmartTagNames([])
-          setSmartMatches([])
+          resetSmartQuickAdd()
           setTimeEstimate(null)
           setAttachments([])
           onClose()
@@ -440,26 +454,99 @@ export function AddEditSubtaskModal({
   const formatEstimate = (min: number | null) =>
     min == null ? null : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`.replace(/ 0m$/, '')
 
+  /* Open subtask actions menu at screen position or below ⋯ */
+  const openSubtaskOptionsMenuAt = (x: number, y: number) => {
+    setSubtaskOptionsPosition({ x, y })
+    setSubtaskOptionsMenuOpen(true)
+  }
+
+  const openSubtaskOptionsMenuFromAnchor = (anchor: HTMLElement) => {
+    const rect = anchor.getBoundingClientRect()
+    openSubtaskOptionsMenuAt(
+      Math.max(8, Math.min(rect.left, window.innerWidth - 288 - 8)),
+      rect.bottom + 4,
+    )
+  }
+
+  /* Desktop right-click in subtask edit modal: open subtask menu, not parent task menu */
+  const handleSubtaskModalContextMenu = (e: MouseEvent) => {
+    if (!subtask || !isEditMode || !isDesktopContextMenuViewport()) return
+    e.preventDefault()
+    e.stopPropagation()
+    openSubtaskOptionsMenuAt(e.clientX, e.clientY)
+  }
+
+  /* Block context menu bubbling to parent task edit modal (prevents accidental parent delete) */
+  const stopParentContextMenu = (e: MouseEvent) => {
+    e.stopPropagation()
+  }
+
+  /* Modal header: parent context + ⋯ options in edit mode */
+  const subtaskModalHeader = (
+    <div
+      className="flex items-center justify-between p-4 md:p-5 lg:p-6 border-b border-bonsai-slate-200"
+      onContextMenu={stopParentContextMenu}
+    >
+      <div className="flex flex-col gap-0.5 text-body font-semibold text-bonsai-brown-700">
+        <span>Edit Subtask</span>
+        {parentTaskTitle ? (
+          <span className="text-secondary font-normal text-bonsai-slate-600">
+            {parentTaskTitle}
+          </span>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-2">
+        {onMarkDeletedTask ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Subtask options"
+            onClick={(e) => {
+              openSubtaskOptionsMenuFromAnchor(e.currentTarget)
+            }}
+          >
+            …
+          </Button>
+        ) : null}
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-bonsai-slate-400 hover:text-bonsai-slate-600 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 rounded p-1"
+          aria-label="Close modal"
+        >
+          <MaterialIcon name="close" className="text-on-surface-variant leading-none" />
+        </button>
+      </div>
+    </div>
+  )
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
+      header={isEditMode ? subtaskModalHeader : undefined}
       title={
-        /* Modal header: show parent task name so users always know where this subtask belongs. */
-        <div className="flex flex-col gap-0.5">
-          <span>{isEditMode ? 'Edit Subtask' : 'Add Subtask'}</span>
-          {parentTaskTitle ? (
-            <span className="text-secondary font-normal text-bonsai-slate-600">
-              {parentTaskTitle}
-            </span>
-          ) : null}
-        </div>
+        !isEditMode ? (
+          /* Modal header: show parent task name so users always know where this subtask belongs. */
+          <div className="flex flex-col gap-0.5">
+            <span>Add Subtask</span>
+            {parentTaskTitle ? (
+              <span className="text-secondary font-normal text-bonsai-slate-600">
+                {parentTaskTitle}
+              </span>
+            ) : null}
+          </div>
+        ) : undefined
       }
       fullScreenOnMobile
+      cardClassName="subtask-edit-modal"
       /* Footer: In edit mode, show auto-save message and Close button; in add mode, keep explicit Save/Add */
       footer={
         isEditMode ? (
-          <div className="flex w-full items-center justify-between">
+          <div
+            className="flex w-full items-center justify-between"
+            onContextMenu={stopParentContextMenu}
+          >
             <span className="text-secondary text-bonsai-slate-500">
               Changes are automatically saved
             </span>
@@ -483,6 +570,7 @@ export function AddEditSubtaskModal({
         )
       }
     >
+      <div onContextMenu={isEditMode ? handleSubtaskModalContextMenu : stopParentContextMenu}>
       {/* Main subtask input: Status circle on left, input field on right */}
       <div className="mb-4 flex items-center gap-3">
         {/* Status circle: Clickable to open status picker popover, aligned with left edge of date picker button below */}
@@ -514,10 +602,11 @@ export function AddEditSubtaskModal({
               onChange={(e) => {
                 const next = e.target.value
                 setTitle(next)
-                if (!isEditMode) scheduleSmartParse(next)
+                scheduleSmartParse(next)
               }}
               onBlur={handleTitleAutoSave}
               onKeyDown={(e) => {
+                handleSmartTitleKeyDown(e, title)
                 if (e.key === 'Enter') {
                   e.preventDefault()
                   void handleTitleAutoSave()
@@ -1092,6 +1181,37 @@ export function AddEditSubtaskModal({
           </div>
         </div>
       )}
+      </div>
+
+      {/* Subtask actions menu (⋯ or right-click in edit modal) */}
+      {subtask && subtaskOptionsMenuOpen && onMarkDeletedTask ? (
+        <TaskContextPopover
+          isOpen
+          allowMobile={!isDesktopContextMenuViewport()}
+          hideOpenTask
+          onClose={() => setSubtaskOptionsMenuOpen(false)}
+          x={subtaskOptionsPosition.x}
+          y={subtaskOptionsPosition.y}
+          task={subtask}
+          onOpenTask={() => setSubtaskOptionsMenuOpen(false)}
+          onDuplicate={async (t) => {
+            try {
+              await onDuplicateSubtask?.(t)
+            } catch (err) {
+              console.error('Failed to duplicate subtask from edit modal menu:', err)
+            }
+          }}
+          onMarkDeleted={async (t) => {
+            try {
+              await onMarkDeletedTask(t)
+              onSubtaskDeleted?.()
+              onClose()
+            } catch (err) {
+              console.error('Failed to delete subtask from edit modal menu:', err)
+            }
+          }}
+        />
+      ) : null}
     </Modal>
   )
 }

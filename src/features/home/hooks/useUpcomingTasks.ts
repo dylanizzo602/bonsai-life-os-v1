@@ -1,4 +1,4 @@
-/* useUpcomingTasks: Next 5 due tasks (due date required), sorted soonest-first */
+/* useUpcomingTasks: Next 5 tasks due within 7 days, sorted soonest-first */
 
 import { useState, useEffect, useMemo } from 'react'
 import { useTasks } from '../../tasks/hooks/useTasks'
@@ -6,10 +6,10 @@ import { getDependenciesForTaskIds } from '../../../lib/supabase/tasks'
 import type { Task } from '../../tasks/types'
 import { computeBlockedTaskIds } from '../../tasks/utils/dependencies'
 import { useUserTimeZone } from '../../settings/useUserTimeZone'
-import { taskDateToComparableMs } from '../../tasks/utils/date'
+import { isDueWithinNextDays, taskDateToComparableMs } from '../../tasks/utils/date'
 
 /**
- * Returns the next 5 tasks with due dates (incomplete), sorted by nearest due date first.
+ * Returns the next 5 incomplete tasks due within the next 7 days, sorted by nearest due date first.
  * Excludes habit-linked reminder tasks so the home widget shows only "real" tasks.
  */
 export function useUpcomingTasks(): Task[] {
@@ -43,11 +43,11 @@ export function useUpcomingTasks(): Task[] {
       return parent?.status !== 'deleted' && parent?.status !== 'archived'
     })
 
-    /* Base pool: hide completed/archived/deleted and require a due date */
+    /* Base pool: hide completed/archived/deleted; require due date within the next 7 days */
     const dueOnly = withoutArchivedOrDeletedParents.filter((t) => {
       if (t.status === 'completed' || t.status === 'archived' || t.status === 'deleted') return false
       if (t.habit_id) return false
-      return taskDateToComparableMs(t.due_date, timeZone) != null
+      return isDueWithinNextDays(t.due_date, timeZone)
     })
 
     /* Sort: nearest due first (timezone-safe for date-only dues) */

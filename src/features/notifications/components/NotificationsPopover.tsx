@@ -54,7 +54,7 @@ export function NotificationsPopover({
 
   const {
     visibleReminders,
-    dismissHabit,
+    dismissReminder,
     dismissAll,
     runHabitAction,
     actionInFlightIds,
@@ -139,10 +139,10 @@ export function NotificationsPopover({
       showCloseButton={isMobile}
       onClose={onClose}
       onDismissAll={dismissAll}
-      onDismissHabit={dismissHabit}
-      onTargetComplete={(row) => void runHabitAction(row.habit.id, row, 'completed')}
-      onMinimum={(row) => void runHabitAction(row.habit.id, row, 'minimum')}
-      onSkip={(row) => void runHabitAction(row.habit.id, row, 'skipped')}
+      onDismissReminder={dismissReminder}
+      onTargetComplete={(row) => void runHabitAction(row.rowKey, row, 'completed')}
+      onMinimum={(row) => void runHabitAction(row.rowKey, row, 'minimum')}
+      onSkip={(row) => void runHabitAction(row.rowKey, row, 'skipped')}
       actionInFlightIds={actionInFlightIds}
       onGoToTasks={onGoToTasks}
     />
@@ -195,7 +195,7 @@ interface NotificationsPanelProps {
   showCloseButton: boolean
   onClose: () => void
   onDismissAll: () => void
-  onDismissHabit: (habitId: string) => void
+  onDismissReminder: (rowKey: string) => void
   onTargetComplete: (row: InAppNotifications['visibleReminders'][number]) => void
   onMinimum: (row: InAppNotifications['visibleReminders'][number]) => void
   onSkip: (row: InAppNotifications['visibleReminders'][number]) => void
@@ -209,7 +209,7 @@ function NotificationsPanel({
   showCloseButton,
   onClose,
   onDismissAll,
-  onDismissHabit,
+  onDismissReminder,
   onTargetComplete,
   onMinimum,
   onSkip,
@@ -253,7 +253,7 @@ function NotificationsPanel({
         ) : (
           <div className="space-y-3">
             {reminders.map((row) => (
-              <div key={row.habit.id} className="relative">
+              <div key={row.rowKey} className="relative">
                 <HabitReminderItem
                   habit={row.habit}
                   task={row.task}
@@ -262,13 +262,13 @@ function NotificationsPanel({
                   onTargetComplete={() => onTargetComplete(row)}
                   onMinimum={() => onMinimum(row)}
                   onSkip={() => onSkip(row)}
-                  actionsDisabled={actionInFlightIds.has(row.habit.id)}
+                  actionsDisabled={actionInFlightIds.has(row.rowKey)}
                   density="compact"
                   showStreakBreakdown={false}
                 />
                 <button
                   type="button"
-                  onClick={() => onDismissHabit(row.habit.id)}
+                  onClick={() => onDismissReminder(row.rowKey)}
                   className="absolute right-2 top-2 rounded-md border border-outline-variant/40 bg-surface-container-lowest px-2 py-0.5 text-xs font-semibold text-primary shadow-sm hover:bg-primary/10"
                   aria-label="Dismiss reminder"
                 >

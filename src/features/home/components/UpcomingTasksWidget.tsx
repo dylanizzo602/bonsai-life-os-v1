@@ -14,7 +14,7 @@ export interface UpcomingTasksWidgetProps {
 }
 
 /**
- * Upcoming tasks bento widget (7-column span): up to 5 tasks, Bonsai row styling.
+ * Upcoming tasks bento widget (7-column span): up to 5 tasks due within 7 days.
  */
 export function UpcomingTasksWidget({
   onAddTask,

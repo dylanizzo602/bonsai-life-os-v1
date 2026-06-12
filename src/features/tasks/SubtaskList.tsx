@@ -23,8 +23,8 @@ interface SubtaskListProps {
   onCreateSubtask: (taskId: string, title: string) => Promise<Task>
   /** Update task (for subtask edits) */
   onUpdateTask: (id: string, updates: import('./types').UpdateTaskInput) => Promise<Task>
-  /** Delete task (for subtasks) */
-  onDeleteTask: (id: string) => Promise<void>
+  /** Soft-delete (trash) or restore a subtask */
+  onMarkDeletedTask?: (task: Task) => void | Promise<void>
   /** Toggle subtask completion (status: completed | active) */
   onToggleComplete: (id: string, completed: boolean) => Promise<Task>
   /** Fetch all tasks (for dependency modal) */
@@ -60,7 +60,7 @@ export function SubtaskList({
   fetchSubtasks,
   onCreateSubtask,
   onUpdateTask,
-  onDeleteTask: _onDeleteTask,
+  onMarkDeletedTask,
   onToggleComplete: _onToggleComplete,
   getTasks,
   getTaskDependencies,
@@ -218,6 +218,18 @@ export function SubtaskList({
     setEditingSubtask(null)
   }
 
+  /* Refresh subtasks after delete from edit modal or context menu */
+  const handleSubtaskRemoved = async () => {
+    try {
+      const updated = await fetchSubtasks(taskId)
+      setSubtasks(updated.filter((s) => s.status !== 'deleted'))
+      onSubtasksChanged?.()
+    } catch (err) {
+      console.error('Error reloading subtasks after delete:', err)
+    }
+    closeEditModal()
+  }
+
   /* Handle subtask update from modal */
   const handleSubtaskUpdated = async () => {
     if (editingSubtask) {
@@ -324,6 +336,13 @@ export function SubtaskList({
           onAddDependency={onAddDependency}
           onRemoveDependency={onRemoveDependency}
           onDependenciesChanged={loadEnrichment}
+          onMarkDeletedTask={onMarkDeletedTask}
+          onSubtaskDeleted={handleSubtaskRemoved}
+          onDuplicateSubtask={async (t) => {
+            const duplicated = await onCreateSubtask(taskId, `${t.title} (copy)`)
+            setSubtasks((prev) => [...prev, duplicated])
+            onSubtasksChanged?.()
+          }}
         />
       )}
       {/* Subtask context menu: Right-click on a subtask shows Rename / Duplicate / Mark deleted (no lineup/archiving) */}
@@ -349,17 +368,21 @@ export function SubtaskList({
               setContextSubtask(null)
             }
           }}
-          onMarkDeleted={async (t) => {
-            try {
-              await _onDeleteTask(t.id)
-              setSubtasks((prev) => prev.filter((s) => s.id !== t.id))
-              onSubtasksChanged?.()
-            } catch (err) {
-              console.error('Error deleting subtask:', err)
-            } finally {
-              setContextSubtask(null)
-            }
-          }}
+          onMarkDeleted={
+            onMarkDeletedTask
+              ? async (t) => {
+                  try {
+                    await onMarkDeletedTask(t)
+                    setSubtasks((prev) => prev.filter((s) => s.id !== t.id))
+                    onSubtasksChanged?.()
+                  } catch (err) {
+                    console.error('Error deleting subtask:', err)
+                  } finally {
+                    setContextSubtask(null)
+                  }
+                }
+              : undefined
+          }
           onUnlinkFromParent={(t) => {
             ;(async () => {
               try {

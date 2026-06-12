@@ -22,8 +22,8 @@ interface TaskItemProps {
   onCreateSubtask: (taskId: string, title: string) => Promise<Task>
   /** Update task (used for subtask title edits) */
   onUpdateTask: (id: string, updates: { title?: string }) => Promise<Task>
-  /** Delete task (used for subtasks) */
-  onDeleteTask: (id: string) => Promise<void>
+  /** Soft-delete subtask (move to trash) */
+  onMarkDeletedSubtask?: (task: Task) => void | Promise<void>
   /** Toggle completion (used for subtasks) */
   onToggleSubtaskComplete: (id: string, completed: boolean) => Promise<Task>
 }
@@ -39,7 +39,7 @@ export function TaskItem({
   fetchSubtasks,
   onCreateSubtask,
   onUpdateTask,
-  onDeleteTask,
+  onMarkDeletedSubtask,
   onToggleSubtaskComplete,
 }: TaskItemProps) {
   const timeZone = useUserTimeZone()
@@ -181,7 +181,7 @@ export function TaskItem({
                 fetchSubtasks={fetchSubtasks}
                 onCreateSubtask={onCreateSubtask}
                 onUpdateTask={onUpdateTask}
-                onDeleteTask={onDeleteTask}
+                onMarkDeletedTask={onMarkDeletedSubtask}
                 onToggleComplete={onToggleSubtaskComplete}
               />
             )}

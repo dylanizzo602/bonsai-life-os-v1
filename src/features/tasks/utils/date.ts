@@ -183,6 +183,22 @@ export function isTodayInZone(isoString: string | null | undefined, timeZone: st
   return d.year === now.year && d.month === now.month && d.day === now.day
 }
 
+/**
+ * True when dueDate falls from the start of today through the end of today + `dayCount` in `timeZone`.
+ * Matches the Tasks filter preset "Next 7 days" when `dayCount` is 7.
+ */
+export function isDueWithinNextDays(
+  dueDate: string | null | undefined,
+  timeZone: string,
+  dayCount = 7,
+): boolean {
+  const dueMs = taskDateToComparableMs(dueDate, timeZone)
+  if (dueMs == null) return false
+  const todayStart = DateTime.now().setZone(timeZone).startOf('day')
+  const windowEnd = todayStart.plus({ days: dayCount }).endOf('day')
+  return dueMs >= todayStart.toMillis() && dueMs <= windowEnd.toMillis()
+}
+
 /** Return true when an ISO string is tomorrow's calendar day in `timeZone`. */
 function isTomorrowInZone(isoString: string | null | undefined, timeZone: string): boolean {
   const d = toZonedDateTime(isoString, timeZone)

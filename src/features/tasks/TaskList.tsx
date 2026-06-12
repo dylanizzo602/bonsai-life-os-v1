@@ -108,7 +108,7 @@ export function TaskList({
   onMarkDeletedTask,
   /* Rest kept for interface; used when SubtaskList / TaskListItem need them */
   updateTask,
-  deleteTask,
+  deleteTask: _deleteTask,
   toggleComplete,
   fetchSubtasks,
   createSubtask,
@@ -538,7 +538,6 @@ export function TaskList({
                     fetchSubtasks &&
                     createSubtask &&
                     updateTask &&
-                    deleteTask &&
                     toggleComplete && (
                     <div className="ml-4 pl-3 border-l-2 border-bonsai-slate-200 lg:ml-8 lg:pl-4">
                       <SubtaskList
@@ -547,7 +546,7 @@ export function TaskList({
                         fetchSubtasks={fetchSubtasks}
                         onCreateSubtask={(taskId, title) => createSubtask(taskId, { title })}
                         onUpdateTask={updateTask}
-                        onDeleteTask={deleteTask}
+                        onMarkDeletedTask={onMarkDeletedTask}
                         onToggleComplete={toggleComplete}
                         getTasks={getTasks}
                         getTaskDependencies={getTaskDependencies}

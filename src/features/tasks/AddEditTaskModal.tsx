@@ -1,6 +1,6 @@
 /* AddEditTaskModal: Modal for adding/editing a task; full form state, templates, and sub-modals */
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
 import { Modal } from '../../components/Modal'
 import { Button } from '../../components/Button'
@@ -18,7 +18,8 @@ import {
 import { parseRecurrencePattern, getNextOccurrence } from '../../lib/recurrence'
 import { formatDateShort } from './utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
-import { parseSmartQuickAdd } from './utils/smartQuickAdd'
+import { useSmartQuickAdd } from './hooks/useSmartQuickAdd'
+import type { SmartQuickAddResult } from './utils/smartQuickAdd'
 import { TaskContextPopover } from './modals/TaskContextPopover'
 import {
   isDesktopContextMenuViewport,
@@ -31,7 +32,9 @@ import { TimeEstimateModal } from './modals/TimeEstimateModal'
 import { AttachmentUploadModal } from './modals/AttachmentUploadModal'
 import { AttachmentPreviewModal } from './modals/AttachmentPreviewModal'
 import { StatusPickerModal } from './modals/StatusPickerModal'
+import { TaskStatusIndicator, getTaskStatusAriaLabel } from './TaskStatusIndicator'
 import { TaskTemplatesModal } from './modals/TaskTemplatesModal'
+import { RichTextEditor } from '../notes/RichTextEditor'
 import { useTaskTemplates } from './hooks/useTaskTemplates'
 import type { ChecklistWithItems } from './hooks/useTaskChecklists'
 import type { TaskTemplateData } from './types'
@@ -159,8 +162,6 @@ async function instantiateDraftChildren(
   }
 }
 
-// NOTE: TaskStatusIndicator removed from header layout; status picker remains available elsewhere in the modal.
-
 /** Render highlighted smart tokens beneath a transparent input (Todoist-style). */
 function SmartQuickAddUnderlay({
   value,
@@ -263,7 +264,7 @@ export function AddEditTaskModal({
   fetchSubtasks,
   createSubtask,
   updateTask,
-  deleteTask,
+  deleteTask: _deleteTask,
   toggleComplete,
   getTasks,
   getTaskDependencies,
@@ -351,12 +352,28 @@ export function AddEditTaskModal({
   /* Edit modal: TaskContextPopover from ⋯ or desktop right-click */
   const [taskOptionsMenuOpen, setTaskOptionsMenuOpen] = useState(false)
   const [taskOptionsPosition, setTaskOptionsPosition] = useState({ x: 0, y: 0 })
-  /* Smart quick add state: parsed fields + highlight ranges (add mode only) */
-  const [smartTagNames, setSmartTagNames] = useState<string[]>([])
-  const [smartMatches, setSmartMatches] = useState<Array<{ start: number; end: number; kind: string }>>([])
-  const smartParseTimerRef = useRef<number | null>(null)
-
   const isEditMode = Boolean(task?.id)
+
+  /* Smart quick add: parse title tokens, highlight matches, dismiss on backspace/delete in add mode. */
+  const applySmartParsedFields = useCallback((parsed: SmartQuickAddResult) => {
+    if (parsed.priority) setPriority(parsed.priority)
+    if (parsed.due_date) setDueDate(parsed.due_date)
+    if (parsed.time_estimate != null) setTimeEstimate(parsed.time_estimate)
+    if (parsed.recurrence_pattern) setRecurrencePattern(parsed.recurrence_pattern)
+  }, [])
+  const {
+    smartTagNames,
+    smartMatches,
+    scheduleSmartParse,
+    handleSmartTitleKeyDown,
+    parseForSubmit,
+    resetSmartQuickAdd,
+    cancelPendingParse,
+  } = useSmartQuickAdd({
+    isEditMode,
+    applyParsedFields: applySmartParsedFields,
+    fieldSetters: { setPriority, setDueDate, setTimeEstimate, setRecurrencePattern },
+  })
   const {
     checklists,
     loading: checklistsLoading,
@@ -408,23 +425,6 @@ export function AddEditTaskModal({
       cancelled = true
     }
   }, [advancedOpen, getTasks, task?.id])
-
-  /* Smart title parsing: update fields from recognized tokens while typing (add mode only). */
-  const scheduleSmartParse = (nextValue: string) => {
-    if (smartParseTimerRef.current) {
-      window.clearTimeout(smartParseTimerRef.current)
-    }
-    smartParseTimerRef.current = window.setTimeout(() => {
-      const parsed = parseSmartQuickAdd(nextValue, { now: new Date() })
-      setSmartTagNames(parsed.tagNames)
-      setSmartMatches(parsed.matches)
-      /* Field updates: only apply when parser found an explicit token. */
-      if (parsed.priority) setPriority(parsed.priority)
-      if (parsed.due_date) setDueDate(parsed.due_date)
-      if (parsed.time_estimate != null) setTimeEstimate(parsed.time_estimate)
-      if (parsed.recurrence_pattern) setRecurrencePattern(parsed.recurrence_pattern)
-    }, 200)
-  }
 
   /* Tag resolution: map @tag names to tag ids (create missing tags), then merge with selected tags. */
   const resolveSmartTagIds = async (names: string[]): Promise<string[]> => {
@@ -516,17 +516,12 @@ export function AddEditTaskModal({
       setDraftChecklistItemTitles({})
       setDraftSubtasks([])
       setNewDraftSubtaskTitle('')
-      setSmartTagNames([])
-      setSmartMatches([])
+      resetSmartQuickAdd()
     }
-  }, [isOpen, task?.id, initialTitle])
+  }, [isOpen, task?.id, initialTitle, resetSmartQuickAdd])
 
   /* Smart parse cleanup: cancel pending timer when modal closes/unmounts. */
-  useEffect(() => {
-    return () => {
-      if (smartParseTimerRef.current) window.clearTimeout(smartParseTimerRef.current)
-    }
-  }, [])
+  useEffect(() => () => cancelPendingParse(), [cancelPendingParse])
 
   /* Submit: create or update task with all form fields (invoked by callers that still want explicit save) */
   const handleSubmit = async () => {
@@ -564,7 +559,7 @@ export function AddEditTaskModal({
     setSubmitting(true)
     try {
       /* Parse once on submit so saved title and fields match the latest text. */
-      const parsedOnSubmit = parseSmartQuickAdd(title, { now: new Date() })
+      const parsedOnSubmit = parseForSubmit(title)
       const cleanedTitle = parsedOnSubmit.cleanedTitle.trim() || title.trim()
       const submitTagNames = parsedOnSubmit.tagNames
       /* Smart estimate: if an explicit estimate token was typed, prefer it at create time. */
@@ -618,8 +613,7 @@ export function AddEditTaskModal({
         setPriority('medium')
         setGoalId(null)
         setTags([])
-        setSmartTagNames([])
-        setSmartMatches([])
+        resetSmartQuickAdd()
         setTimeEstimate(null)
         setAttachments([])
         onClose()
@@ -670,6 +664,8 @@ export function AddEditTaskModal({
   /* Desktop right-click in edit modal: custom menu, not browser default */
   const handleEditModalContextMenu = (e: MouseEvent) => {
     if (!task || !isEditMode || !isDesktopContextMenuViewport()) return
+    /* Ignore events from nested subtask edit modal so delete targets the subtask, not the parent */
+    if ((e.target as HTMLElement).closest('.subtask-edit-modal')) return
     e.preventDefault()
     e.stopPropagation()
     openTaskOptionsMenuAt(e.clientX, e.clientY)
@@ -781,9 +777,18 @@ export function AddEditTaskModal({
       <div className="space-y-6" onContextMenu={handleEditModalContextMenu}>
       {/* 2. Main Content */}
       <div className="space-y-6">
-        {/* Task Title */}
-        <div>
-          <div className="relative">
+        {/* Task title row: status circle opens picker; title input supports smart quick add in create mode */}
+        <div className="flex items-start gap-3">
+          <button
+            ref={statusButtonRef}
+            type="button"
+            onClick={() => setStatusPickerOpen(true)}
+            className="mt-1.5 shrink-0 flex items-center justify-center rounded hover:bg-surface-variant/30 transition-colors"
+            aria-label={getTaskStatusAriaLabel(status)}
+          >
+            <TaskStatusIndicator status={status} size={24} />
+          </button>
+          <div className="relative flex-1 min-w-0">
             {/* Underlay: renders highlighted tokens for smart quick add */}
             {!isEditMode && (
               <div
@@ -793,36 +798,37 @@ export function AddEditTaskModal({
                 <SmartQuickAddUnderlay value={title} matches={smartMatches} />
               </div>
             )}
-          <input
-            autoFocus
-            className={`w-full bg-transparent border-none text-3xl font-headline font-bold text-on-surface focus:ring-0 p-0 placeholder:text-outline-variant/50 ${
-              !isEditMode ? 'text-transparent caret-on-surface' : ''
-            }`}
-            placeholder="Task Title"
-            type="text"
-            value={title}
-            onChange={(e) => {
-              const next = e.target.value
-              setTitle(next)
-              if (!isEditMode) scheduleSmartParse(next)
-            }}
-            onBlur={async () => {
-              /* Edit mode: persist title when user leaves the field so "auto-saved" matches behavior */
-              if (!isEditMode || !task || !onUpdateTask) return
-              const trimmed = title.trim()
-              if (!trimmed) {
-                setTitle(task.title)
-                return
-              }
-              if (trimmed === task.title) return
-              try {
-                await onUpdateTask(task.id, { title: trimmed })
-              } catch (error) {
-                console.error('Failed to auto-save task title from modal:', error)
-              }
-            }}
-            spellCheck
-          />
+            <input
+              autoFocus
+              className={`w-full bg-transparent border-none text-3xl font-headline font-bold text-on-surface focus:ring-0 p-0 placeholder:text-outline-variant/50 ${
+                !isEditMode ? 'text-transparent caret-on-surface' : ''
+              }`}
+              placeholder="Task Title"
+              type="text"
+              value={title}
+              onChange={(e) => {
+                const next = e.target.value
+                setTitle(next)
+                scheduleSmartParse(next)
+              }}
+              onKeyDown={(e) => handleSmartTitleKeyDown(e, title)}
+              onBlur={async () => {
+                /* Edit mode: persist title when user leaves the field so "auto-saved" matches behavior */
+                if (!isEditMode || !task || !onUpdateTask) return
+                const trimmed = title.trim()
+                if (!trimmed) {
+                  setTitle(task.title)
+                  return
+                }
+                if (trimmed === task.title) return
+                try {
+                  await onUpdateTask(task.id, { title: trimmed })
+                } catch (error) {
+                  console.error('Failed to auto-save task title from modal:', error)
+                }
+              }}
+              spellCheck
+            />
           </div>
         </div>
       </div>
@@ -1105,24 +1111,25 @@ export function AddEditTaskModal({
             <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline">
               Description &amp; Notes
             </label>
-            {/* Description textarea: styled to match provided design; edit mode auto-saves on blur */}
-            <textarea
-              className="w-full bg-surface-variant/10 border border-outline-variant/30 rounded-xl px-4 py-3 text-on-surface focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none placeholder:text-outline-variant/60 min-h-[120px]"
-              placeholder="What needs to be done?"
-              value={description ?? ''}
-              onChange={(e) => setDescription(e.target.value)}
-              onBlur={async () => {
+            {/* Description: Rich text editor stores HTML; edit mode auto-saves on blur */}
+            <RichTextEditor
+              editorKey={task?.id ?? 'new-task-description'}
+              value={description}
+              onBlur={async (html) => {
+                setDescription(html)
                 /* In edit mode, persist description changes immediately so closing the modal doesn't lose edits */
                 if (isEditMode && task && onUpdateTask) {
                   try {
                     await onUpdateTask(task.id, {
-                      description: description.trim() || null,
+                      description: html.trim() || null,
                     })
                   } catch (error) {
                     console.error('Failed to auto-save task description from modal:', error)
                   }
                 }
               }}
+              placeholder="What needs to be done?"
+              className="w-full bg-surface-variant/10 border border-outline-variant/30 rounded-xl px-4 py-3 min-h-[120px]"
             />
           </div>
 
@@ -2185,14 +2192,14 @@ export function AddEditTaskModal({
                   </ul>
                 )}
               </>
-            ) : fetchSubtasks && createSubtask && updateTask && deleteTask && toggleComplete ? (
+            ) : fetchSubtasks && createSubtask && updateTask && toggleComplete ? (
               <SubtaskList
                 taskId={task.id}
                 parentTaskTitle={task.title}
                 fetchSubtasks={fetchSubtasks}
                 onCreateSubtask={(taskId, title) => createSubtask(taskId, { title })}
                 onUpdateTask={updateTask}
-                onDeleteTask={deleteTask}
+                onMarkDeletedTask={onMarkDeletedTask}
                 onToggleComplete={toggleComplete}
                 getTasks={getTasks}
                 getTaskDependencies={getTaskDependencies}

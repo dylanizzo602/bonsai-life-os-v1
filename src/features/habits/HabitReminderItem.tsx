@@ -55,7 +55,8 @@ export function HabitReminderItem({
 }: HabitReminderItemProps) {
   const timeZone = useUserTimeZone()
   const wallTime = reminderTime ?? habit.reminder_time
-  const dueSource = task.due_date ?? remindAt
+  /* Prefer occurrence-specific remindAt (notification menu) over linked task due */
+  const dueSource = remindAt ?? task.due_date
   const effectiveRemindAt = habitReminderEffectiveInstant(dueSource, wallTime, timeZone)
 
   const dueStatus = effectiveRemindAt != null ? getDueStatus(effectiveRemindAt, timeZone) : null

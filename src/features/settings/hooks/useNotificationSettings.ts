@@ -12,6 +12,7 @@ import {
   getPushDiagnostics,
 } from '../../../lib/notifications/pushClient'
 import { supabase } from '../../../lib/supabase/client'
+import { syncAccountTimeZoneMetadata } from '../../../lib/supabase/account'
 import { registerServiceWorker, requestNotificationPermission } from '../../../lib/notifications/pushClient'
 
 /* Ordered list of notification types shown in the settings UI */
@@ -189,6 +190,14 @@ export function useNotificationSettings(): UseNotificationSettingsState {
           console.error('Error upserting notification device subscription:', deviceError)
           setError('Unable to save this device for push notifications. Please try again.')
           return
+        }
+
+        /* Timezone sync: server-side noon notifications require IANA zone in user metadata. */
+        const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+        if (browserTimeZone) {
+          void syncAccountTimeZoneMetadata(browserTimeZone).catch((syncErr) => {
+            console.error('Failed to sync timezone when enabling push:', syncErr)
+          })
         }
       }
 

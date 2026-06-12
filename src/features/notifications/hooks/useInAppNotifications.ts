@@ -1,19 +1,17 @@
 /* useInAppNotifications: Habit reminders in the notification bell (no placeholders) */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
-  buildHabitReminderRows,
-  filterActionableHabitReminders,
+  buildHabitNotificationRows,
   habitReminderTargetLabel,
 } from '../../habits/utils/habitReminderRows'
 import { useHabits } from '../../habits/hooks/useHabits'
 import { useTasks } from '../../tasks/hooks/useTasks'
 import { useUserTimeZone } from '../../settings/useUserTimeZone'
-import { formatStartDueDisplay, habitReminderEffectiveInstant } from '../../tasks/utils/date'
-import { isoInstantToLocalCalendarYMD } from '../../../lib/localCalendarDate'
+import { formatStartDueDisplay } from '../../tasks/utils/date'
 import {
-  loadDismissedHabitIds,
-  saveDismissedHabitIds,
+  loadDismissedHabitReminderKeys,
+  saveDismissedHabitReminderKeys,
 } from '../dismissedHabitNotifications'
 
 /**
@@ -30,92 +28,84 @@ export function useInAppNotifications() {
     refetch: refetchHabits,
   } = useHabits()
 
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => loadDismissedHabitIds())
-  const [actionInFlightIds, setActionInFlightIds] = useState<Set<string>>(new Set())
-
-  /* Reload dismissals when the calendar day changes */
-  useEffect(() => {
-    setDismissedIds(loadDismissedHabitIds())
-  }, [todayYMD])
-
-  const allRows = useMemo(
-    () => buildHabitReminderRows(tasks, habitsWithStreaks),
-    [tasks, habitsWithStreaks],
+  const [dismissedRowKeys, setDismissedRowKeys] = useState<Set<string>>(() =>
+    loadDismissedHabitReminderKeys(),
   )
+  const [actionInFlightIds, setActionInFlightIds] = useState<Set<string>>(new Set())
 
   const visibleReminders = useMemo(
     () =>
-      filterActionableHabitReminders(
-        allRows,
+      buildHabitNotificationRows(
+        tasks,
+        habitsWithStreaks,
         timeZone,
         todayYMD,
         entriesByHabit,
-        dismissedIds,
+        dismissedRowKeys,
       ),
-    [allRows, timeZone, todayYMD, entriesByHabit, dismissedIds],
+    [tasks, habitsWithStreaks, timeZone, todayYMD, entriesByHabit, dismissedRowKeys],
   )
 
   const unreadCount = visibleReminders.length
 
-  const persistDismiss = useCallback((next: Set<string>) => {
-    setDismissedIds(next)
-    saveDismissedHabitIds(next)
-  }, [])
-
-  const dismissHabit = useCallback(
-    (habitId: string) => {
-      persistDismiss(new Set(dismissedIds).add(habitId))
+  const dismissReminder = useCallback(
+    (rowKey: string) => {
+      setDismissedRowKeys((prev) => {
+        const next = new Set(prev).add(rowKey)
+        saveDismissedHabitReminderKeys(next)
+        return next
+      })
     },
-    [dismissedIds, persistDismiss],
+    [],
   )
 
   const dismissAll = useCallback(() => {
-    const next = new Set(dismissedIds)
-    for (const { habit } of visibleReminders) {
-      next.add(habit.id)
-    }
-    persistDismiss(next)
-  }, [dismissedIds, visibleReminders, persistDismiss])
+    setDismissedRowKeys((prev) => {
+      const next = new Set(prev)
+      for (const { rowKey } of visibleReminders) {
+        next.add(rowKey)
+      }
+      saveDismissedHabitReminderKeys(next)
+      return next
+    })
+  }, [visibleReminders])
+
+  const refetch = useCallback(async () => {
+    await Promise.all([refetchHabits(), refetchTasks()])
+  }, [refetchHabits, refetchTasks])
 
   const runHabitAction = useCallback(
     async (
-      habitId: string,
+      rowKey: string,
       row: (typeof visibleReminders)[number],
       status: 'completed' | 'minimum' | 'skipped',
     ) => {
-      setActionInFlightIds((prev) => new Set(prev).add(habitId))
+      setActionInFlightIds((prev) => new Set(prev).add(rowKey))
       try {
-        const { habit, task, remindAt } = row
-        const occurrenceSourceIso = habit.todo_remind_at ?? remindAt ?? task.due_date
-        const occurrenceDate =
-          isoInstantToLocalCalendarYMD(occurrenceSourceIso) ?? todayYMD
-        await setHabitEntry(habitId, occurrenceDate, status)
+        const { habit, occurrenceDate } = row
+        await setHabitEntry(habit.id, occurrenceDate, status)
         await refetchHabits()
         await refetchTasks()
-        if (status === 'completed' || status === 'skipped') {
-          persistDismiss(new Set(dismissedIds).add(habitId))
-        }
+        setDismissedRowKeys((prev) => {
+          const next = new Set(prev).add(rowKey)
+          saveDismissedHabitReminderKeys(next)
+          return next
+        })
       } finally {
         setActionInFlightIds((prev) => {
           const next = new Set(prev)
-          next.delete(habitId)
+          next.delete(rowKey)
           return next
         })
       }
     },
-    [todayYMD, setHabitEntry, refetchHabits, refetchTasks, dismissedIds, persistDismiss],
+    [setHabitEntry, refetchHabits, refetchTasks],
   )
 
   const getReminderBody = useCallback(
     (row: (typeof visibleReminders)[number]) => {
-      const { habit, task, remindAt } = row
-      const dueSource = task.due_date ?? remindAt
-      const effectiveIso = habitReminderEffectiveInstant(
-        dueSource,
-        habit.reminder_time ?? null,
-        timeZone,
-      )
-      const dueLabel = formatStartDueDisplay(undefined, effectiveIso, timeZone) ?? 'Due now'
+      const { habit, remindAt } = row
+      const dueLabel = formatStartDueDisplay(undefined, remindAt, timeZone) ?? 'Due now'
       return `${habitReminderTargetLabel(habit)} · ${dueLabel}`
     },
     [timeZone],
@@ -124,13 +114,13 @@ export function useInAppNotifications() {
   return {
     visibleReminders,
     unreadCount,
-    dismissHabit,
+    dismissReminder,
+    /** @deprecated Use dismissReminder(rowKey) */
+    dismissHabit: dismissReminder,
     dismissAll,
     runHabitAction,
     actionInFlightIds,
     getReminderBody,
-    refetch: async () => {
-      await Promise.all([refetchHabits(), refetchTasks()])
-    },
+    refetch,
   }
 }

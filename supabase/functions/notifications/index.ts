@@ -125,7 +125,8 @@ function isWithinMorningBriefingNoonWindow(timeZone: string): boolean {
   const nowZ = DateTime.now().setZone(zone)
   const noonZ = nowZ.set({ hour: 12, minute: 0, second: 0, millisecond: 0 })
   const elapsedMs = nowZ.toMillis() - noonZ.toMillis()
-  const NOON_WINDOW_MS = 60 * 1000
+  /* Five-minute window: cron may not fire exactly at noon, so allow a short grace period. */
+  const NOON_WINDOW_MS = 5 * 60 * 1000
   return elapsedMs >= 0 && elapsedMs <= NOON_WINDOW_MS
 }
 
@@ -188,6 +189,27 @@ async function loadPreferencesByUserIds(
     result[userId] = buildPreferencesMap(rows)
   }
   return result
+}
+
+/* Fetch distinct user ids with at least one active push subscription (for briefing and other push rules). */
+async function loadActivePushUserIds(
+  supabase: ReturnType<typeof getServiceClient>,
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('notification_devices')
+    .select('user_id')
+    .eq('is_active', true)
+
+  if (error) {
+    console.error('Error fetching active push device users:', error)
+    return []
+  }
+
+  const ids = new Set<string>()
+  for (const row of (data ?? []) as { user_id: string }[]) {
+    if (row.user_id) ids.add(row.user_id)
+  }
+  return Array.from(ids)
 }
 
 /* Lightweight email adapter: sends via external provider when configured, logs otherwise */
@@ -426,6 +448,9 @@ serve(async (req) => {
     const allUserIds = new Set<string>()
     for (const t of taskCandidates ?? []) allUserIds.add((t as any).user_id)
     for (const h of habitTaskRows ?? []) allUserIds.add((h as any).user_id)
+    /* Push subscribers: morning briefing must run even when the user has no due tasks today. */
+    const pushUserIds = await loadActivePushUserIds(supabase)
+    for (const id of pushUserIds) allUserIds.add(id)
 
     const userIdList = Array.from(allUserIds)
     const prefsByUser = await loadPreferencesByUserIds(supabase, userIdList)
@@ -617,13 +642,13 @@ serve(async (req) => {
       }
     }
 
-    for (const task of overdueTaskRows) {
+    for (const task of overdueTaskRows as {
       id: string
       user_id: string
       title: string
       due_date: string | null
       status: string
-    }) {
+    }[]) {
       const userId = task.user_id
       const prefs = prefsByUser[userId] ?? {}
       const basePayload = {

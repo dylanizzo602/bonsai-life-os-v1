@@ -22,7 +22,7 @@ export function InboxWidget({
   loading,
   error,
   onAddItem,
-  onDeleteItem: _onDeleteItem,
+  onDeleteItem,
   onConvertToTask,
 }: InboxWidgetProps) {
   const [draft, setDraft] = useState('')
@@ -78,16 +78,28 @@ export function InboxWidget({
                   className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary/40 transition-colors group-hover:bg-primary"
                   aria-hidden
                 />
-                <span className="min-w-0 flex-1 truncate pr-10">{item.name}</span>
-                <button
-                  type="button"
-                  onClick={() => onConvertToTask(item)}
-                  className="absolute right-0 flex items-center justify-center rounded-full p-1 text-primary opacity-0 transition-all duration-200 hover:bg-primary/10 group-hover:opacity-100"
-                  title="Convert to Task"
-                  aria-label={`Convert "${item.name}" to task`}
-                >
-                  <MaterialIcon name="check_circle" className="text-[20px]" />
-                </button>
+                <span className="min-w-0 flex-1 truncate pr-16">{item.name}</span>
+                {/* Row actions: delete from inbox or convert to task (shown on hover) */}
+                <div className="absolute right-0 flex items-center gap-0.5 opacity-0 transition-all duration-200 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => void onDeleteItem(item.id)}
+                    className="flex items-center justify-center rounded-full p-1 text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
+                    title="Delete from inbox"
+                    aria-label={`Delete "${item.name}" from inbox`}
+                  >
+                    <MaterialIcon name="close" className="text-[20px]" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onConvertToTask(item)}
+                    className="flex items-center justify-center rounded-full p-1 text-primary transition-colors hover:bg-primary/10"
+                    title="Convert to Task"
+                    aria-label={`Convert "${item.name}" to task`}
+                  >
+                    <MaterialIcon name="check_circle" className="text-[20px]" />
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
