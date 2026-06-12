@@ -1,6 +1,7 @@
 /* PriorityPickerModal: Compact popover for selecting task priority (None, Low, Normal, High, Urgent) */
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { FlagIcon } from '../../../components/icons'
 import type { TaskPriority } from '../types'
 import { getPriorityFlagClasses } from '../utils/priority'
@@ -116,17 +117,22 @@ export function PriorityPickerModal({ isOpen, onClose, value, onSelect, triggerR
 
   if (!isOpen) return null
 
-  return (
-    <>
-      {/* Popover: Compact dropdown positioned below priority flag */}
+  /* Portal above fullscreen task modal (same stacking as StatusPickerModal / TagModal) */
+  const overlay = (
+    <div className="fixed inset-0 z-[9999]" aria-hidden onClick={onClose} />
+  )
+
+  const popover = (
       <div
         ref={popoverRef}
-        className="fixed z-50 flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-lg border border-bonsai-slate-200 bg-white shadow-lg"
+        className="fixed z-[10000] flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-lg border border-bonsai-slate-200 bg-white shadow-lg"
         style={{
           top: `${position.top}px`,
           left: `${position.left}px`,
         }}
         role="menu"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         {/* Priority options: Compact vertical list with flag icon and label */}
         <div className="flex flex-col p-1.5 min-w-[180px]">
@@ -134,7 +140,11 @@ export function PriorityPickerModal({ isOpen, onClose, value, onSelect, triggerR
             <button
               key={opt.value}
               type="button"
-              onClick={() => handleSelect(opt.value)}
+              onClick={(e) => {
+                e.stopPropagation()
+                void handleSelect(opt.value)
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
               className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                 value === opt.value
                   ? 'bg-bonsai-sage-50 text-bonsai-slate-800'
@@ -166,6 +176,13 @@ export function PriorityPickerModal({ isOpen, onClose, value, onSelect, triggerR
           ))}
         </div>
       </div>
-    </>
+  )
+
+  return createPortal(
+    <>
+      {overlay}
+      {popover}
+    </>,
+    document.body,
   )
 }

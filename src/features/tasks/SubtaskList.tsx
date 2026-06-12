@@ -4,7 +4,10 @@ import { Input } from '../../components/Input'
 import { Button } from '../../components/Button'
 import { CompactTaskItem } from './CompactTaskItem'
 import { AddEditSubtaskModal } from './AddEditSubtaskModal'
-import { getTaskChecklists, getTaskChecklistItems, getTaskDependencies as fetchTaskDependencies } from '../../lib/supabase/tasks'
+import {
+  getChecklistSummaryForTask,
+  getTaskDependencies as fetchTaskDependencies,
+} from '../../lib/supabase/tasks'
 import type { Task } from './types'
 import { TaskContextPopover } from './modals/TaskContextPopover'
 import { handleDesktopTaskContextMenu } from './utils/taskContextMenu'
@@ -141,25 +144,19 @@ export function SubtaskList({
     await Promise.all(
       subtasks.map(async (subtask) => {
         try {
-          const [checklists, deps] = await Promise.all([
-            getTaskChecklists(subtask.id).catch((err) => {
+          const [checklistSummary, deps] = await Promise.all([
+            getChecklistSummaryForTask(subtask.id).catch((err) => {
               console.error(`Error fetching checklists for subtask ${subtask.id}:`, err)
-              return []
+              return { completed: 0, total: 0 }
             }),
             fetchTaskDependencies(subtask.id).catch((err) => {
               console.error(`Error fetching dependencies for subtask ${subtask.id}:`, err)
               return { blocking: [], blockedBy: [] }
             }),
           ])
-          let completed = 0
-          let total = 0
-          for (const c of checklists) {
-            const items = await getTaskChecklistItems(c.id).catch(() => [])
-            total += items.length
-            completed += items.filter((i) => i.completed).length
-          }
           enrichment[subtask.id] = {
-            checklistSummary: total > 0 ? { completed, total } : undefined,
+            checklistSummary:
+              checklistSummary.total > 0 ? checklistSummary : undefined,
             ...getDependencyEnrichmentFlags(deps.blockedBy, deps.blocking, taskLookup),
           }
         } catch (err) {

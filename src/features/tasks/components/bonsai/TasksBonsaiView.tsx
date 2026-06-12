@@ -49,6 +49,7 @@ interface TasksBonsaiViewProps {
   onShowDeleted: () => void
   refetch?: () => void
   toggleComplete: (id: string, completed: boolean) => Promise<Task>
+  updateTask: (id: string, input: import('../../types').UpdateTaskInput) => Promise<Task>
   fetchSubtasks?: (taskId: string) => Promise<Task[]>
   getTaskDependencies?: (taskId: string) => Promise<{
     blocking: import('../../types').TaskDependency[]
@@ -58,6 +59,8 @@ interface TasksBonsaiViewProps {
   onArchiveTask?: (task: Task) => void | Promise<void>
   onMarkDeletedTask?: (task: Task) => void | Promise<void>
   hideCompletedSubtasks?: boolean
+  /** Increment to refetch checklist/subtask row metadata (e.g. after closing edit modal). */
+  enrichmentRefreshKey?: number
   lineUpTaskIds: Set<string>
   onAddToLineUp?: (id: string) => void
   onRemoveFromLineUp?: (id: string) => void
@@ -95,12 +98,14 @@ export function TasksBonsaiView({
   onShowDeleted,
   refetch,
   toggleComplete,
+  updateTask,
   fetchSubtasks,
   getTaskDependencies,
   createTask,
   onArchiveTask,
   onMarkDeletedTask,
   hideCompletedSubtasks = true,
+  enrichmentRefreshKey = 0,
   lineUpTaskIds,
   onAddToLineUp,
   onRemoveFromLineUp,
@@ -172,6 +177,7 @@ export function TasksBonsaiView({
     allTasks: tasks,
     fetchSubtasks,
     getTaskDependencies,
+    refreshKey: enrichmentRefreshKey,
   })
 
   const getEnrichment = useCallback(
@@ -188,6 +194,16 @@ export function TasksBonsaiView({
 
   const handleToggleComplete = async (task: Task) => {
     await toggleComplete(task.id, task.status !== 'completed')
+    refetch?.()
+  }
+
+  /* Status updates: Match desktop/tablet behavior (complete uses toggleComplete; others use updateTask). */
+  const handleUpdateStatus = async (taskId: string, status: import('../../types').TaskStatus) => {
+    if (status === 'completed') {
+      await toggleComplete(taskId, true)
+    } else {
+      await updateTask(taskId, { status })
+    }
     refetch?.()
   }
 
@@ -261,7 +277,7 @@ export function TasksBonsaiView({
                   goalName={task.goal_id ? goalNameById.get(task.goal_id) ?? null : null}
                   onOpen={() => onOpenEdit(task)}
                   onContextMenu={(e) => handleContextMenu(task, e)}
-                  onToggleComplete={() => handleToggleComplete(task)}
+                  onUpdateStatus={handleUpdateStatus}
                   {...tagHandlers}
                 />
               ))
@@ -288,7 +304,7 @@ export function TasksBonsaiView({
                     goalName={task.goal_id ? goalNameById.get(task.goal_id) ?? null : null}
                     onOpen={() => onOpenEdit(task)}
                     onContextMenu={(e) => handleContextMenu(task, e)}
-                    onToggleComplete={() => handleToggleComplete(task)}
+                    onUpdateStatus={handleUpdateStatus}
                     {...tagHandlers}
                   />
                 ))
@@ -304,6 +320,7 @@ export function TasksBonsaiView({
             onOpenTask={onOpenEdit}
             onContextMenu={handleContextMenu}
             onToggleComplete={handleToggleComplete}
+            onUpdateStatus={handleUpdateStatus}
             defaultOpen={false}
           />
 
@@ -316,6 +333,7 @@ export function TasksBonsaiView({
               onOpenTask={onOpenEdit}
               onContextMenu={handleContextMenu}
               onToggleComplete={handleToggleComplete}
+              onUpdateStatus={handleUpdateStatus}
               defaultOpen={false}
             />
           </div>

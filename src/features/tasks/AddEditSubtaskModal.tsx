@@ -12,26 +12,23 @@ import { Checkbox } from '../../components/Checkbox'
 import { RichTextEditor } from '../notes/RichTextEditor'
 import { useTaskChecklists } from './hooks/useTaskChecklists'
 import { useTags } from './hooks/useTags'
+import { useGoals } from '../goals/hooks/useGoals'
+import { TaskStatusIndicator } from './TaskStatusIndicator'
 import { useSmartQuickAdd } from './hooks/useSmartQuickAdd'
 import type { SmartQuickAddResult } from './utils/smartQuickAdd'
-import {
-  PlusIcon,
-  ChevronRightIcon,
-  ChevronDownIcon,
-  CalendarIcon,
-  FlagIcon,
-  TagIcon,
-  HourglassIcon,
-  ChecklistIcon,
-} from '../../components/icons'
+import { PlusIcon, ChecklistIcon, FlagIcon } from '../../components/icons'
 import { DatePickerModal } from './modals/DatePickerModal'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { TagModal } from './modals/TagModal'
 import { TimeEstimateModal } from './modals/TimeEstimateModal'
-import { DependenciesSection } from './DependenciesSection'
 import { AttachmentUploadModal } from './modals/AttachmentUploadModal'
 import { AttachmentPreviewModal } from './modals/AttachmentPreviewModal'
 import { StatusPickerModal } from './modals/StatusPickerModal'
+import { getPriorityFlagClasses, getPriorityLabel } from './utils/priority'
+import {
+  formatTimeEstimateMinutes,
+  getLineupDateDisplay,
+} from './utils/taskRowDisplay'
 import type {
   Task,
   Tag,
@@ -41,8 +38,8 @@ import type {
   TaskPriority,
   TaskStatus,
   TaskAttachment,
+  TaskDependency,
 } from './types'
-import { formatDateShort } from './utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
@@ -60,63 +57,6 @@ function getTaskStatus(displayStatus: DisplayStatus): TaskStatus {
   if (displayStatus === 'complete') return 'completed'
   if (displayStatus === 'in_progress') return 'in_progress'
   return 'active'
-}
-
-/**
- * Status circle: OPEN = black dotted stroke no fill, IN PROGRESS = dotted yellow + fill, COMPLETE = solid green + fill.
- */
-function TaskStatusIndicator({ status }: { status: DisplayStatus }) {
-  const size = 20
-  const r = (size - 4) / 2
-  const cx = size / 2
-  const cy = size / 2
-
-  if (status === 'complete') {
-    return (
-      <svg width={size} height={size} className="shrink-0" aria-hidden>
-        <circle
-          cx={cx}
-          cy={cy}
-          r={r}
-          fill="var(--color-green-500, #22c55e)"
-          stroke="var(--color-green-600, #16a34a)"
-          strokeWidth={2}
-        />
-      </svg>
-    )
-  }
-
-  if (status === 'in_progress') {
-    return (
-      <svg width={size} height={size} className="shrink-0" aria-hidden>
-        <circle
-          cx={cx}
-          cy={cy}
-          r={r}
-          fill="var(--color-yellow-400, #facc15)"
-          stroke="var(--color-yellow-500, #eab308)"
-          strokeWidth={2}
-          strokeDasharray="3 2"
-        />
-      </svg>
-    )
-  }
-
-  /* OPEN: black dotted stroke, no fill */
-  return (
-    <svg width={size} height={size} className="shrink-0" aria-hidden>
-      <circle
-        cx={cx}
-        cy={cy}
-        r={r}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeDasharray="2 2"
-        className="text-bonsai-slate-800"
-      />
-    </svg>
-  )
 }
 
 /** Render highlighted smart tokens beneath a transparent input (Todoist-style). */
@@ -223,6 +163,7 @@ export function AddEditSubtaskModal({
   const [due_date, setDueDate] = useState<string | null>(null)
   const [recurrence_pattern, setRecurrencePattern] = useState<string | null>(null)
   const [priority, setPriority] = useState<TaskPriority>('medium')
+  const [goal_id, setGoalId] = useState<string | null>(null)
   const [tags, setTags] = useState<Tag[]>([])
   const [time_estimate, setTimeEstimate] = useState<number | null>(null)
   const [attachments, setAttachments] = useState<TaskAttachment[]>([])
@@ -248,9 +189,19 @@ export function AddEditSubtaskModal({
   const [attachmentModalOpen, setAttachmentModalOpen] = useState(false)
   const [previewAttachment, setPreviewAttachment] = useState<TaskAttachment | null>(null)
   const [newChecklistTitle, setNewChecklistTitle] = useState('')
+  const [newChecklistItem, setNewChecklistItem] = useState('')
   const [newItemTitles, setNewItemTitles] = useState<Record<string, string>>({})
-  /* When user pastes multi-line text into a checklist item input, show prompt to keep as 1 item or create many (keyed by checklist id) */
-  const [pendingPasteLines, setPendingPasteLines] = useState<Record<string, string[]>>({})
+  /* When user pastes multi-line text into the checklist add row */
+  const [pendingPasteLines, setPendingPasteLines] = useState<string[] | null>(null)
+  /* When user pastes multi-line text into a per-list item input */
+  const [pendingDraftPasteLines, setPendingDraftPasteLines] = useState<Record<string, string[]>>({})
+  /* Dependency options for Relationships section */
+  const [dependencyTasks, setDependencyTasks] = useState<Task[]>([])
+  const [taskDeps, setTaskDeps] = useState<{
+    blockedBy: TaskDependency[]
+    blocking: TaskDependency[]
+  }>({ blockedBy: [], blocking: [] })
+
   const isEditMode = Boolean(subtask?.id)
   /* Edit modal: TaskContextPopover from ⋯ or desktop right-click */
   const [subtaskOptionsMenuOpen, setSubtaskOptionsMenuOpen] = useState(false)
@@ -281,6 +232,8 @@ export function AddEditSubtaskModal({
     loading: checklistsLoading,
     addChecklist,
     addItem,
+    addItemOrCreateChecklist,
+    addItemsOrCreateChecklist,
     toggleItem,
     updateChecklistTitle,
     updateItemTitle,
@@ -302,6 +255,59 @@ export function AddEditSubtaskModal({
     deleteTagFromAllTasks,
     setTagsForTask,
   } = useTags(subtask?.user_id ?? null)
+  const { goals } = useGoals()
+
+  /* Dependency task list: load when Advanced Details opens in edit mode */
+  useEffect(() => {
+    if (!advancedOpen) return
+    if (!subtask?.id) return
+    if (!getTasks) return
+    let cancelled = false
+    getTasks()
+      .then((list) => {
+        if (!cancelled) setDependencyTasks(list)
+      })
+      .catch(() => {
+        if (!cancelled) setDependencyTasks([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [advancedOpen, getTasks, subtask?.id])
+
+  const refreshTaskDependencies = async () => {
+    if (!subtask?.id || !getTaskDependencies) return
+    try {
+      const deps = await getTaskDependencies(subtask.id)
+      setTaskDeps({ blockedBy: deps.blockedBy, blocking: deps.blocking })
+      onDependenciesChanged?.()
+    } catch {
+      setTaskDeps({ blockedBy: [], blocking: [] })
+    }
+  }
+
+  useEffect(() => {
+    if (!advancedOpen || !subtask?.id || !getTaskDependencies) {
+      setTaskDeps({ blockedBy: [], blocking: [] })
+      return
+    }
+    let cancelled = false
+    getTaskDependencies(subtask.id)
+      .then((deps) => {
+        if (!cancelled) {
+          setTaskDeps({ blockedBy: deps.blockedBy, blocking: deps.blocking })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setTaskDeps({ blockedBy: [], blocking: [] })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [advancedOpen, getTaskDependencies, subtask?.id])
+
+  const dependencyTaskTitle = (taskId: string) =>
+    dependencyTasks.find((t) => t.id === taskId)?.title ?? 'Unknown task'
 
   /* Tag resolution: map @tag names to tag ids (create missing tags), then merge with selected tags. */
   const resolveSmartTagIds = async (names: string[]): Promise<string[]> => {
@@ -345,6 +351,7 @@ export function AddEditSubtaskModal({
       setDueDate(subtask.due_date ?? null)
       setRecurrencePattern(subtask.recurrence_pattern ?? null)
       setPriority(subtask.priority ?? 'medium')
+      setGoalId(subtask.goal_id ?? null)
       setTags(Array.isArray(subtask.tags) ? subtask.tags : [])
       setTimeEstimate(subtask.time_estimate ?? null)
       setAttachments(Array.isArray(subtask.attachments) ? subtask.attachments : [])
@@ -356,6 +363,7 @@ export function AddEditSubtaskModal({
       setDueDate(null)
       setRecurrencePattern(null)
       setPriority('medium')
+      setGoalId(null)
       setTags([])
       setTimeEstimate(null)
       setAttachments([])
@@ -385,6 +393,7 @@ export function AddEditSubtaskModal({
           due_date: due_date || null,
           recurrence_pattern: recurrence_pattern ?? null,
           priority,
+          goal_id,
           time_estimate,
           attachments: attachments.length ? attachments : undefined,
           status: getTaskStatus(status),
@@ -450,9 +459,47 @@ export function AddEditSubtaskModal({
     }
   }
 
-  /* Format date pill text using shared helper so date-only values respect local calendar day */
-  const formatEstimate = (min: number | null) =>
-    min == null ? null : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`.replace(/ 0m$/, '')
+  /* Pill labels: match edit task modal */
+  const datePillLabel =
+    !start_date && !due_date
+      ? 'Add Date'
+      : getLineupDateDisplay({ start_date, due_date } as Task, timeZone) ?? 'Add Date'
+  const priorityPillLabel =
+    priority === 'none' ? 'Priority' : getPriorityLabel(priority)
+  const tagsPillLabel =
+    tags.length === 0
+      ? 'Add Tags'
+      : tags.length === 1
+        ? tags[0].name
+        : `${tags[0].name} (+${tags.length - 1})`
+  const estimatePillLabel =
+    time_estimate != null && time_estimate > 0
+      ? formatTimeEstimateMinutes(time_estimate) ?? 'Add Estimate'
+      : 'Add Estimate'
+
+  /* Modal header: subtask title + parent context */
+  const modalHeader = (
+    <div className="px-4 py-4 border-b border-outline-variant/10 flex items-center justify-between md:px-8 md:py-6">
+      <div className="min-w-0 flex-1">
+        <h2 className="text-lg font-headline font-bold text-on-surface">
+          {isEditMode ? 'Edit Subtask' : 'New Subtask'}
+        </h2>
+        {parentTaskTitle ? (
+          <p className="text-secondary text-on-surface-variant truncate mt-0.5">
+            Subtask of {parentTaskTitle}
+          </p>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        className="shrink-0 p-1 hover:bg-surface-variant/50 rounded-full transition-colors"
+        aria-label="Close"
+      >
+        <MaterialIcon name="close" className="text-on-surface-variant leading-none" />
+      </button>
+    </div>
+  )
 
   /* Open subtask actions menu at screen position or below ⋯ */
   const openSubtaskOptionsMenuAt = (x: number, y: number) => {
@@ -524,22 +571,12 @@ export function AddEditSubtaskModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      header={isEditMode ? subtaskModalHeader : undefined}
-      title={
-        !isEditMode ? (
-          /* Modal header: show parent task name so users always know where this subtask belongs. */
-          <div className="flex flex-col gap-0.5">
-            <span>Add Subtask</span>
-            {parentTaskTitle ? (
-              <span className="text-secondary font-normal text-bonsai-slate-600">
-                {parentTaskTitle}
-              </span>
-            ) : null}
-          </div>
-        ) : undefined
-      }
+      header={isEditMode ? subtaskModalHeader : modalHeader}
       fullScreenOnMobile
-      cardClassName="subtask-edit-modal"
+      overlayClassName="backdrop-blur-[12px] bg-black/15 md:p-4"
+      cardClassName="bg-surface w-full shadow-2xl overflow-hidden flex flex-col md:max-w-2xl md:rounded-2xl md:max-h-[90vh] subtask-edit-modal"
+      bodyClassName="p-0 md:px-8 md:py-8"
+      footerClassName="px-4 py-4 bg-surface-variant/5 border-t border-outline-variant/10 gap-3 md:px-8 md:py-6"
       /* Footer: In edit mode, show auto-save message and Close button; in add mode, keep explicit Save/Add */
       footer={
         isEditMode ? (
@@ -547,7 +584,7 @@ export function AddEditSubtaskModal({
             className="flex w-full items-center justify-between"
             onContextMenu={stopParentContextMenu}
           >
-            <span className="text-secondary text-bonsai-slate-500">
+            <span className="text-secondary text-on-surface-variant">
               Changes are automatically saved
             </span>
             <Button variant="secondary" onClick={onClose}>
@@ -556,137 +593,127 @@ export function AddEditSubtaskModal({
           </div>
         ) : (
           <>
-            <Button variant="secondary" onClick={onClose}>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-6 py-2.5 rounded-full text-on-surface-variant font-bold text-sm hover:bg-surface-variant/30 transition-colors"
+            >
               Cancel
-            </Button>
-            <Button
-              variant="primary"
+            </button>
+            <button
+              type="button"
               onClick={handleSubmit}
               disabled={submitting || !title.trim()}
+              className="px-8 py-2.5 rounded-full bg-primary text-on-primary font-bold text-sm shadow-md hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {submitting ? 'Adding...' : 'Add Subtask'}
-            </Button>
+              {submitting ? 'Creating…' : 'Create Subtask'}
+            </button>
           </>
         )
       }
     >
-      <div onContextMenu={isEditMode ? handleSubtaskModalContextMenu : stopParentContextMenu}>
-      {/* Main subtask input: Status circle on left, input field on right */}
-      <div className="mb-4 flex items-center gap-3">
-        {/* Status circle: Clickable to open status picker popover, aligned with left edge of date picker button below */}
+      <div
+        className="space-y-6 px-4 py-6 md:px-0 md:py-0"
+        onContextMenu={isEditMode ? handleSubtaskModalContextMenu : stopParentContextMenu}
+      >
+      {/* Title row: status circle + title with smart quick-add highlights in add mode */}
+      <div className="flex items-start gap-3">
         <button
           ref={statusButtonRef}
           type="button"
           onClick={() => setStatusPickerOpen(true)}
-          className="shrink-0 flex items-center justify-center rounded hover:bg-bonsai-slate-100 transition-colors"
+          className="mt-0.5 shrink-0 flex items-center justify-center rounded hover:bg-surface-variant/30 transition-colors"
           aria-label="Change subtask status"
         >
-          <TaskStatusIndicator status={status} />
+          <TaskStatusIndicator status={status} size={20} />
         </button>
-        {/* Subtask title input: In add mode, smart-parse + highlight recognized tokens. */}
-        <div className="flex-1">
-          <div className="relative">
-            {/* Underlay: renders highlighted tokens for smart quick add */}
-            {!isEditMode && (
-              <div
-                aria-hidden
-                className="pointer-events-none absolute inset-0 flex items-center px-3 py-2 md:px-4 md:py-2.5 lg:px-4 lg:py-3 text-body text-bonsai-slate-900 whitespace-pre-wrap"
-              >
-                <SmartQuickAddUnderlay value={title} matches={smartMatches} />
-              </div>
-            )}
-            <Input
-              placeholder="What needs to be done?"
-              className={`border-bonsai-slate-300 ${!isEditMode ? 'text-transparent caret-bonsai-slate-900' : ''}`}
-              value={title}
-              onChange={(e) => {
-                const next = e.target.value
-                setTitle(next)
-                scheduleSmartParse(next)
-              }}
-              onBlur={handleTitleAutoSave}
-              onKeyDown={(e) => {
-                handleSmartTitleKeyDown(e, title)
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  void handleTitleAutoSave()
-                }
-              }}
-              spellCheck
-            />
+        <div className="relative flex-1 min-w-0">
+          {/* Underlay: smart quick-add highlights while typing */}
+          <div
+            aria-hidden
+            className={`pointer-events-none absolute inset-0 flex items-center text-[15px] font-semibold leading-tight text-on-surface whitespace-pre-wrap ${
+              smartMatches.length === 0 ? 'opacity-0' : ''
+            }`}
+          >
+            <SmartQuickAddUnderlay value={title} matches={smartMatches} />
           </div>
+          <input
+            autoFocus
+            className={`w-full bg-transparent border-none text-[15px] font-semibold leading-tight text-on-surface focus:ring-0 p-0 placeholder:text-outline-variant/50 ${
+              smartMatches.length > 0 ? 'text-transparent caret-on-surface' : ''
+            }`}
+            placeholder="Subtask title"
+            type="text"
+            value={title}
+            onChange={(e) => {
+              const next = e.target.value
+              setTitle(next)
+              scheduleSmartParse(next)
+            }}
+            onBlur={handleTitleAutoSave}
+            onKeyDown={(e) => {
+              handleSmartTitleKeyDown(e, title)
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                void handleTitleAutoSave()
+              }
+            }}
+            spellCheck
+          />
         </div>
       </div>
 
-      {/* Metadata pills: open sub-modals */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        <button
-          ref={datePickerButtonRef}
-          type="button"
-          onClick={() => setDatePickerOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
-        >
-          <CalendarIcon className="w-4 h-4 text-bonsai-slate-600" />
-          {formatDateShort(start_date, timeZone) || formatDateShort(due_date, timeZone)
-            ? `Due: ${formatDateShort(due_date, timeZone) ?? formatDateShort(start_date, timeZone)}`
-            : 'Add start/due date'}
-        </button>
+      {/* Quick action pills */}
+      <div className="flex flex-wrap gap-2 overflow-visible">
+        <div className="inline-flex shrink-0 items-center gap-1">
+          <button
+            ref={datePickerButtonRef}
+            type="button"
+            onClick={() => setDatePickerOpen(true)}
+            className="flex shrink-0 items-center gap-1.5 overflow-visible whitespace-nowrap rounded-full border border-outline-variant/40 px-3 py-1.5 text-xs font-semibold text-on-surface-variant hover:bg-surface-variant/20 transition-colors"
+          >
+            <MaterialIcon name="calendar_today" className="shrink-0 text-sm leading-none" />
+            {datePillLabel}
+          </button>
+          {(start_date || due_date) && (
+            <button
+              type="button"
+              onClick={() => {
+                setStartDate(null)
+                setDueDate(null)
+              }}
+              className="rounded-full px-2 py-1.5 text-sm font-medium text-bonsai-slate-500 hover:text-bonsai-slate-700 hover:bg-bonsai-slate-100 transition-colors"
+              aria-label="Clear start and due date"
+            >
+              Clear
+            </button>
+          )}
+        </div>
         <button
           ref={priorityButtonRef}
           type="button"
           onClick={() => setPriorityOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
+          className="flex shrink-0 items-center gap-1.5 overflow-visible whitespace-nowrap rounded-full border border-outline-variant/40 px-3 py-1.5 text-xs font-semibold text-on-surface-variant hover:bg-surface-variant/20 transition-colors"
         >
-          <FlagIcon className="w-4 h-4 text-bonsai-slate-600" />
-          {priority === 'medium'
-            ? 'Priority: Normal'
-            : priority === 'none'
-              ? 'Priority: None'
-              : priority
-                ? `Priority: ${priority}`
-                : 'Set priority'}
+          <FlagIcon className={`h-4 w-4 shrink-0 ${getPriorityFlagClasses(priority)}`} />
+          {priorityPillLabel}
         </button>
         <button
           ref={tagButtonRef}
           type="button"
           onClick={() => setTagOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
+          className="flex shrink-0 items-center gap-1.5 overflow-visible whitespace-nowrap rounded-full border border-outline-variant/40 px-3 py-1.5 text-xs font-semibold text-on-surface-variant hover:bg-surface-variant/20 transition-colors"
         >
-          <TagIcon className="w-4 h-4 shrink-0 text-bonsai-slate-600" />
-          {tags.length > 0 ? (
-            <span className="flex items-center gap-1">
-              {tags.slice(0, 3).map((t) => (
-                <span
-                  key={t.id}
-                  className={`rounded px-2 py-0.5 text-xs font-medium ${
-                    t.color === 'mint'
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : t.color === 'blue'
-                        ? 'bg-blue-100 text-blue-800'
-                        : t.color === 'lavender'
-                          ? 'bg-violet-100 text-violet-800'
-                          : t.color === 'yellow'
-                            ? 'bg-amber-100 text-amber-800'
-                            : t.color === 'periwinkle'
-                              ? 'bg-indigo-100 text-indigo-800'
-                              : 'bg-bonsai-slate-100 text-bonsai-slate-700'
-                  }`}
-                >
-                  {t.name}
-                </span>
-              ))}
-            </span>
-          ) : (
-            'Add tags'
-          )}
+          <MaterialIcon name="sell" className="shrink-0 text-sm leading-none" />
+          {tagsPillLabel}
         </button>
         <button
           type="button"
           onClick={() => setTimeEstimateOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-bonsai-slate-100 px-3 py-1.5 text-sm font-medium text-bonsai-slate-700 hover:bg-bonsai-slate-200 transition-colors"
+          className="flex shrink-0 items-center gap-1.5 overflow-visible whitespace-nowrap rounded-full border border-outline-variant/40 px-3 py-1.5 text-xs font-semibold text-on-surface-variant hover:bg-surface-variant/20 transition-colors"
         >
-          <HourglassIcon className="w-4 h-4 text-bonsai-slate-600" />
-          {formatEstimate(time_estimate) ?? 'Add estimate'}
+          <MaterialIcon name="timer" className="shrink-0 text-sm leading-none" />
+          {estimatePillLabel}
         </button>
       </div>
 
@@ -739,13 +766,34 @@ export function AddEditSubtaskModal({
         onClose={() => setPriorityOpen(false)}
         value={priority}
         triggerRef={priorityButtonRef}
-        onSelect={setPriority}
+        onSelect={async (newPriority) => {
+          setPriority(newPriority)
+          if (isEditMode && subtask?.id && onUpdateTask) {
+            try {
+              await onUpdateTask(subtask.id, { priority: newPriority })
+            } catch (err) {
+              console.error('Failed to save priority from subtask modal:', err)
+            }
+          }
+        }}
       />
       <TagModal
         isOpen={tagOpen}
         onClose={() => setTagOpen(false)}
         value={tags}
-        onSave={setTags}
+        onSave={async (nextTags) => {
+          setTags(nextTags)
+          if (subtask?.id) {
+            try {
+              await setTagsForTask(
+                subtask.id,
+                nextTags.map((t) => t.id),
+              )
+            } catch (err) {
+              console.error('Failed to save tags from subtask modal:', err)
+            }
+          }
+        }}
         triggerRef={tagButtonRef}
         taskId={subtask?.id ?? null}
         searchTags={searchTags}
@@ -789,56 +837,63 @@ export function AddEditSubtaskModal({
         </>
       )}
 
-      {/* Advanced options toggle */}
-      <button
-        type="button"
-        onClick={() => setAdvancedOpen((prev) => !prev)}
-        className="flex items-center gap-1.5 text-sm text-bonsai-slate-600 hover:text-bonsai-slate-800 mb-4"
+      {/* Advanced Details: same order as task modal (no subtasks section) */}
+      <details
+        className="group mt-4"
+        open={advancedOpen}
+        onToggle={(e) => setAdvancedOpen((e.currentTarget as HTMLDetailsElement).open)}
       >
-        {advancedOpen ? (
-          <ChevronDownIcon className="w-4 h-4 shrink-0" />
-        ) : (
-          <ChevronRightIcon className="w-4 h-4 shrink-0" />
-        )}
-        <span className="font-medium">Advanced options</span>
-        <span className="text-bonsai-slate-500 font-normal">
-          (description, attachments, breakdown)
-        </span>
-      </button>
-
-      {/* Expanded advanced section */}
-      {advancedOpen && (
-        <div className="space-y-4 pt-2 border-t border-bonsai-slate-200">
-          <div>
-            {/* Description: Rich text editor for subtask notes/details; stores HTML string in description state and auto-saves in edit mode on blur */}
-            <RichTextEditor
-              editorKey={subtask?.id ?? 'new-subtask-description'}
-              value={description}
-              onBlur={async (html) => {
-                setDescription(html)
-                /* In edit mode, persist description changes immediately so closing the modal doesn't lose edits */
-                if (isEditMode && subtask && onUpdateTask) {
-                  try {
-                    await onUpdateTask(subtask.id, {
-                      description: html.trim() || null,
-                    })
-                  } catch {
-                    // Error handled by parent; keep local state so user can retry
-                  }
-                }
-              }}
-              placeholder="Add notes or details..."
-              className="w-full"
+        <summary className="flex items-center justify-between cursor-pointer list-none text-on-surface-variant hover:text-primary transition-colors py-2">
+          <div className="flex items-center gap-2">
+            <MaterialIcon
+              name="expand_more"
+              className="transition-transform group-open:rotate-180 text-lg"
             />
+            <span className="text-xs font-bold uppercase tracking-wider">
+              Advanced Details
+            </span>
+          </div>
+          <div className="h-px flex-1 bg-outline-variant/20 ml-4" />
+        </summary>
+        <div className="pt-6 space-y-8">
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline">
+              Description &amp; Notes
+            </label>
+            <div className="w-full bg-surface-variant/10 border border-outline-variant/30 rounded-xl px-4 py-3 text-on-surface focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary outline-none">
+              <RichTextEditor
+                editorKey={subtask?.id ?? 'new-subtask-description'}
+                value={description ?? ''}
+                placeholder="What needs to be done?"
+                minHeightClassName="min-h-[120px]"
+                onBlur={async (html) => {
+                  setDescription(html)
+                  if (isEditMode && subtask && onUpdateTask) {
+                    try {
+                      await onUpdateTask(subtask.id, {
+                        description: html.trim() || null,
+                      })
+                    } catch (error) {
+                      console.error('Failed to auto-save subtask description:', error)
+                    }
+                  }
+                }}
+              />
+            </div>
           </div>
 
           <div>
-            <p className="text-sm font-medium text-bonsai-slate-700 mb-2">Attachments</p>
+            <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+              <MaterialIcon name="attach_file" className="text-base" />
+              Attachments
+            </label>
             {!subtask?.id ? (
-              <p className="text-sm text-bonsai-slate-500">Save the subtask first to add attachments.</p>
+              <div className="flex items-center gap-3 p-4 bg-surface-variant/5 border border-dashed border-outline-variant/40 rounded-xl text-sm text-on-surface-variant/50">
+                <MaterialIcon name="upload_file" />
+                <span>Save subtask first to enable attachments</span>
+              </div>
             ) : (
-              <div className="space-y-2">
-                {/* Existing attachments: displayed as clickable items */}
+              <div className="space-y-2 mt-2">
                 {attachments.length > 0 && (
                   <div className="flex items-center gap-2 flex-wrap">
                     {attachments.map((a) => {
@@ -871,7 +926,6 @@ export function AddEditSubtaskModal({
                     })}
                   </div>
                 )}
-                {/* Add attachment button */}
                 <button
                   type="button"
                   onClick={() => setAttachmentModalOpen(true)}
@@ -884,37 +938,96 @@ export function AddEditSubtaskModal({
             )}
           </div>
 
-          <div>
-            <p className="text-sm font-medium text-bonsai-slate-700 mb-1">Checklists</p>
+          {/* Checklist */}
+          <div className="space-y-3">
+            <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+              <MaterialIcon name="checklist" className="text-base" />
+              Checklist
+            </label>
             {!subtask?.id ? (
               <p className="text-sm text-bonsai-slate-500">Create the subtask first to add checklists.</p>
             ) : (
               <>
-                <div className="flex gap-2 mb-3">
-                  <Input
-                    placeholder="Create a new checklist"
-                    className="border-bonsai-slate-300 flex-1"
-                    value={newChecklistTitle}
-                    onChange={(e) => setNewChecklistTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        addChecklist(newChecklistTitle)
-                        setNewChecklistTitle('')
+                <div className="flex gap-2">
+                  <input
+                    className="flex-1 bg-surface-variant/10 border border-outline-variant/30 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                    placeholder="Create a checklist item"
+                    type="text"
+                    value={newChecklistItem}
+                    onChange={(e) => setNewChecklistItem(e.target.value)}
+                    onPaste={(e) => {
+                      const text = e.clipboardData.getData('text')
+                      const lines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+                      if (lines.length > 1) {
+                        e.preventDefault()
+                        setPendingPasteLines(lines)
                       }
                     }}
-                  />
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      addChecklist(newChecklistTitle)
-                      setNewChecklistTitle('')
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return
+                      const next = newChecklistItem.trim()
+                      if (!next) return
+                      void addItemOrCreateChecklist(next)
+                      setNewChecklistItem('')
                     }}
-                    disabled={!newChecklistTitle.trim() || checklistsLoading}
+                    disabled={checklistsLoading}
+                  />
+                  <button
+                    type="button"
+                    className="px-6 py-2 bg-surface-variant/20 rounded-lg text-xs font-bold text-on-surface-variant hover:bg-surface-variant/30 transition-colors disabled:opacity-50"
+                    onClick={() => {
+                      const next = newChecklistItem.trim()
+                      if (!next) return
+                      void addItemOrCreateChecklist(next)
+                      setNewChecklistItem('')
+                    }}
+                    disabled={!newChecklistItem.trim() || checklistsLoading}
                   >
                     Add
-                  </Button>
+                  </button>
                 </div>
+              </>
+            )}
+          </div>
+
+          {/* Checklist lists (edit mode only) */}
+          <div className="mt-4">
+            {subtask?.id ? (
+              <>
+                {pendingPasteLines && pendingPasteLines.length > 1 && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-3 py-2 text-body mb-3">
+                    <span className="flex items-center gap-2 text-bonsai-slate-700">
+                      <ChecklistIcon className="h-4 w-4 shrink-0 text-bonsai-slate-500" />
+                      Multiple lines detected in the pasted text.
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          void addItemOrCreateChecklist(pendingPasteLines.join(' '))
+                          setNewChecklistItem('')
+                          setPendingPasteLines(null)
+                        }}
+                        disabled={checklistsLoading}
+                      >
+                        Keep 1 item
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={async () => {
+                          await addItemsOrCreateChecklist(pendingPasteLines)
+                          setNewChecklistItem('')
+                          setPendingPasteLines(null)
+                        }}
+                        disabled={checklistsLoading}
+                      >
+                        Create {pendingPasteLines.length} items
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 {checklistsLoading && checklists.length === 0 ? (
                   <p className="text-sm text-bonsai-slate-500">Loading checklists...</p>
                 ) : (
@@ -1082,7 +1195,7 @@ export function AddEditSubtaskModal({
                                 const lines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
                                 if (lines.length > 1) {
                                   e.preventDefault()
-                                  setPendingPasteLines((prev) => ({ ...prev, [c.id]: lines }))
+                                  setPendingDraftPasteLines((prev) => ({ ...prev, [c.id]: lines }))
                                 }
                               }}
                               onKeyDown={(e) => {
@@ -1105,7 +1218,7 @@ export function AddEditSubtaskModal({
                             </Button>
                           </div>
                           {/* Multi-line paste prompt: keep as one item or create one item per line */}
-                          {pendingPasteLines[c.id] && pendingPasteLines[c.id].length > 1 && (
+                          {pendingDraftPasteLines[c.id] && pendingDraftPasteLines[c.id].length > 1 && (
                             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-3 py-2 text-body">
                               <span className="flex items-center gap-2 text-bonsai-slate-700">
                                 <ChecklistIcon className="h-4 w-4 shrink-0 text-bonsai-slate-500" />
@@ -1116,11 +1229,11 @@ export function AddEditSubtaskModal({
                                   variant="secondary"
                                   size="sm"
                                   onClick={async () => {
-                                    const lines = pendingPasteLines[c.id]
+                                    const lines = pendingDraftPasteLines[c.id]
                                     if (!lines) return
                                     await addItem(c.id, lines.join(' '))
                                     setNewItemTitles((prev) => ({ ...prev, [c.id]: '' }))
-                                    setPendingPasteLines((prev) => {
+                                    setPendingDraftPasteLines((prev) => {
                                       const next = { ...prev }
                                       delete next[c.id]
                                       return next
@@ -1134,13 +1247,13 @@ export function AddEditSubtaskModal({
                                   variant="primary"
                                   size="sm"
                                   onClick={async () => {
-                                    const lines = pendingPasteLines[c.id]
+                                    const lines = pendingDraftPasteLines[c.id]
                                     if (!lines) return
-                                    for (const title of lines) {
-                                      await addItem(c.id, title)
+                                    for (const lineTitle of lines) {
+                                      await addItem(c.id, lineTitle)
                                     }
                                     setNewItemTitles((prev) => ({ ...prev, [c.id]: '' }))
-                                    setPendingPasteLines((prev) => {
+                                    setPendingDraftPasteLines((prev) => {
                                       const next = { ...prev }
                                       delete next[c.id]
                                       return next
@@ -1148,7 +1261,7 @@ export function AddEditSubtaskModal({
                                   }}
                                   disabled={checklistsLoading}
                                 >
-                                  Create {pendingPasteLines[c.id].length} items
+                                  Create {pendingDraftPasteLines[c.id].length} items
                                 </Button>
                               </div>
                             </div>
@@ -1158,29 +1271,209 @@ export function AddEditSubtaskModal({
                     ))}
                   </ul>
                 )}
+                <div className="flex gap-2 mt-3">
+                  <Input
+                    placeholder="Create another list"
+                    className="border-bonsai-slate-300 flex-1"
+                    value={newChecklistTitle}
+                    onChange={(e) => setNewChecklistTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        addChecklist(newChecklistTitle)
+                        setNewChecklistTitle('')
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      addChecklist(newChecklistTitle)
+                      setNewChecklistTitle('')
+                    }}
+                    disabled={!newChecklistTitle.trim() || checklistsLoading}
+                  >
+                    Add list
+                  </Button>
+                </div>
               </>
-            )}
+            ) : null}
           </div>
 
-          <div>
-            <p className="text-sm font-medium text-bonsai-slate-700 mb-1">Task Dependencies</p>
-            {subtask?.id && getTasks && getTaskDependencies && onAddDependency ? (
-              <DependenciesSection
-                currentTaskId={subtask.id}
-                getTasks={getTasks}
-                getTaskDependencies={getTaskDependencies}
-                onAddDependency={onAddDependency}
-                onRemoveDependency={onRemoveDependency}
-                onDependenciesChanged={onDependenciesChanged}
-              />
+          {/* Relationships & Links (no subtasks section) */}
+          <div className="pt-8 border-t border-outline-variant/10 space-y-8">
+            <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+              Relationships &amp; Links
+            </span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+                  <MaterialIcon name="link" className="text-base" />
+                  Parent Task
+                </label>
+                {parentTaskTitle ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-outline-variant/30 bg-surface-variant/10 px-4 py-2.5">
+                    <span className="flex-1 text-sm text-on-surface truncate">{parentTaskTitle}</span>
+                  </div>
+                ) : (
+                  <p className="text-secondary text-on-surface-variant">No parent task</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+                  <MaterialIcon name="emoji_events" className="text-base" />
+                  Link to Goal
+                </label>
+                <div className="relative">
+                  <select
+                    className="w-full appearance-none bg-surface-variant/10 border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none cursor-pointer"
+                    value={goal_id || ''}
+                    onChange={async (e) => {
+                      const selectedGoalId = e.target.value || null
+                      setGoalId(selectedGoalId)
+                      if (isEditMode && subtask && onUpdateTask) {
+                        try {
+                          await onUpdateTask(subtask.id, { goal_id: selectedGoalId })
+                        } catch (err) {
+                          console.error('Failed to save goal from subtask modal:', err)
+                        }
+                      }
+                    }}
+                    disabled={!subtask?.id}
+                  >
+                    <option value="">No Goal Selected</option>
+                    {goals.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                  <MaterialIcon
+                    name="swap_vert"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-outline-variant text-base"
+                  />
+                </div>
+              </div>
+            </div>
+            {subtask?.id && getTaskDependencies && onAddDependency ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+                    <MaterialIcon name="link" className="text-base" />
+                    Blocked by
+                  </label>
+                  {taskDeps.blockedBy.length > 0 ? (
+                    <ul className="space-y-1.5 mb-2">
+                      {taskDeps.blockedBy.map((dep) => (
+                        <li
+                          key={dep.id}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-outline-variant/30 bg-surface-variant/10 px-3 py-2 text-sm"
+                        >
+                          <span className="truncate">{dependencyTaskTitle(dep.blocker_id)}</span>
+                          {onRemoveDependency ? (
+                            <button
+                              type="button"
+                              className="shrink-0 text-secondary text-error hover:underline"
+                              onClick={() => {
+                                void onRemoveDependency(dep.id).then(() => refreshTaskDependencies())
+                              }}
+                            >
+                              Remove
+                            </button>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <div className="relative">
+                    <select
+                      className="w-full appearance-none bg-surface-variant/10 border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none cursor-pointer"
+                      disabled={!onAddDependency}
+                      defaultValue=""
+                      onChange={(e) => {
+                        const selected = e.target.value
+                        if (!selected || !subtask?.id || !onAddDependency) return
+                        void onAddDependency({
+                          blocker_id: selected,
+                          blocked_id: subtask.id,
+                        }).then(() => refreshTaskDependencies())
+                        e.currentTarget.value = ''
+                      }}
+                    >
+                      <option value="">Select a task blocking this...</option>
+                      {dependencyTasks
+                        .filter((t) => t.id !== subtask.id)
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.title}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+                    <MaterialIcon name="link_off" className="text-base" />
+                    Blocking
+                  </label>
+                  {taskDeps.blocking.length > 0 ? (
+                    <ul className="space-y-1.5 mb-2">
+                      {taskDeps.blocking.map((dep) => (
+                        <li
+                          key={dep.id}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-outline-variant/30 bg-surface-variant/10 px-3 py-2 text-sm"
+                        >
+                          <span className="truncate">{dependencyTaskTitle(dep.blocked_id)}</span>
+                          {onRemoveDependency ? (
+                            <button
+                              type="button"
+                              className="shrink-0 text-secondary text-error hover:underline"
+                              onClick={() => {
+                                void onRemoveDependency(dep.id).then(() => refreshTaskDependencies())
+                              }}
+                            >
+                              Remove
+                            </button>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <div className="relative">
+                    <select
+                      className="w-full appearance-none bg-surface-variant/10 border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none cursor-pointer"
+                      disabled={!onAddDependency}
+                      defaultValue=""
+                      onChange={(e) => {
+                        const selected = e.target.value
+                        if (!selected || !subtask?.id || !onAddDependency) return
+                        void onAddDependency({
+                          blocker_id: subtask.id,
+                          blocked_id: selected,
+                        }).then(() => refreshTaskDependencies())
+                        e.currentTarget.value = ''
+                      }}
+                    >
+                      <option value="">Select a task this blocks...</option>
+                      {dependencyTasks
+                        .filter((t) => t.id !== subtask.id)
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.title}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
             ) : (
               <p className="text-sm text-bonsai-slate-500">
-                Create the subtask first to add dependencies.
+                Create the subtask first to manage dependencies.
               </p>
             )}
           </div>
         </div>
-      )}
+      </details>
       </div>
 
       {/* Subtask actions menu (⋯ or right-click in edit modal) */}

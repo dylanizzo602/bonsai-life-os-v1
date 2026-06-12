@@ -2,10 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { Task } from '../types'
-import {
-  getTaskChecklists,
-  getTaskChecklistItems,
-} from '../../../lib/supabase/tasks'
+import { getChecklistSummaryForTask } from '../../../lib/supabase/tasks'
 import {
   EMPTY_TASK_ENRICHMENT,
   type TaskRowEnrichment,
@@ -21,6 +18,8 @@ interface UseTaskRowEnrichmentOptions {
     blocking: import('../types').TaskDependency[]
     blockedBy: import('../types').TaskDependency[]
   }>
+  /** Bump after task/checklist edits so row metadata refetches (e.g. modal close). */
+  refreshKey?: number
 }
 
 /**
@@ -31,6 +30,7 @@ export function useTaskRowEnrichment({
   allTasks,
   fetchSubtasks,
   getTaskDependencies,
+  refreshKey = 0,
 }: UseTaskRowEnrichmentOptions) {
   const [enrichmentById, setEnrichmentById] = useState<Record<string, TaskRowEnrichment>>({})
   const [loading, setLoading] = useState(false)
@@ -79,23 +79,17 @@ export function useTaskRowEnrichment({
               return
             }
 
-            const [checklists, subtasksResult] = await Promise.all([
-              getTaskChecklists(task.id).catch(() => []),
+            const [checklistSummary, subtasksResult] = await Promise.all([
+              getChecklistSummaryForTask(task.id).catch(() => ({ completed: 0, total: 0 })),
               fetchSubtasks(task.id).catch(() => []),
             ])
             const subtasks = Array.isArray(subtasksResult) ? subtasksResult : []
             const subtaskCount = subtasks.length
             const incompleteSubtaskCount = subtasks.filter((s) => s.status !== 'completed').length
             const subtaskTimeTotal = subtasks.reduce((sum, st) => sum + (st.time_estimate ?? 0), 0)
-            let completed = 0
-            let total = 0
-            for (const c of checklists) {
-              const items = await getTaskChecklistItems(c.id).catch(() => [])
-              total += items.length
-              completed += items.filter((i) => i.completed).length
-            }
             enrichment[task.id] = {
-              checklistSummary: total > 0 ? { completed, total } : undefined,
+              checklistSummary:
+                checklistSummary.total > 0 ? checklistSummary : undefined,
               hasSubtasks: subtaskCount > 0,
               subtaskCount,
               incompleteSubtaskCount,
@@ -117,7 +111,7 @@ export function useTaskRowEnrichment({
     return () => {
       cancelled = true
     }
-  }, [taskIdsKey, taskLookupKey, tasks, allTasks, fetchSubtasks, getTaskDependencies])
+  }, [taskIdsKey, taskLookupKey, tasks, allTasks, fetchSubtasks, getTaskDependencies, refreshKey])
 
   const getEnrichment = (taskId: string): TaskRowEnrichment =>
     enrichmentById[taskId] ?? EMPTY_TASK_ENRICHMENT

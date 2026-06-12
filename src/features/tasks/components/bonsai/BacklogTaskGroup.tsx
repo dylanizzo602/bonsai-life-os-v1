@@ -14,6 +14,7 @@ interface BacklogTaskGroupProps {
   onOpen: (task: Task) => void
   onContextMenu: (task: Task, e: MouseEvent) => void
   onToggleComplete: (task: Task) => void
+  onUpdateStatus?: (taskId: string, status: import('../../types').TaskStatus) => Promise<void>
 }
 
 /**
@@ -28,6 +29,7 @@ export function BacklogTaskGroup({
   onOpen,
   onContextMenu,
   onToggleComplete,
+  onUpdateStatus,
 }: BacklogTaskGroupProps) {
   const [expanded, setExpanded] = useState(false)
   const visibleSubtasks = hideCompletedSubtasks
@@ -45,8 +47,9 @@ export function BacklogTaskGroup({
         onOpen={() => onOpen(task)}
         onContextMenu={(e) => onContextMenu(task, e)}
         onToggleComplete={() => onToggleComplete(task)}
+        onUpdateStatus={onUpdateStatus}
       />
-      {expanded && visibleSubtasks.length > 0 ? (
+      {expanded ? (
         <div className="ml-4 space-y-2 border-l-2 border-surface-container-highest pl-4 lg:ml-12 lg:space-y-1 lg:border-l lg:border-outline-variant/30 lg:pl-0">
           {visibleSubtasks.map((sub) => (
             <BacklogTaskRow
@@ -57,8 +60,20 @@ export function BacklogTaskGroup({
               onOpen={() => onOpen(sub)}
               onContextMenu={(e) => onContextMenu(sub, e)}
               onToggleComplete={() => onToggleComplete(sub)}
+              onUpdateStatus={onUpdateStatus}
             />
           ))}
+          {/* Add subtask: opens parent in edit modal where subtasks are managed */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpen(task)
+            }}
+            className="w-full py-1 text-left text-secondary font-medium text-primary hover:underline"
+          >
+            + Add a new subtask
+          </button>
         </div>
       ) : null}
     </div>

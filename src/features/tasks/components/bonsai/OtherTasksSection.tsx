@@ -17,6 +17,7 @@ interface BacklogTasksSectionProps {
   onOpenTask: (task: Task) => void
   onContextMenu: (task: Task, e: React.MouseEvent) => void
   onToggleComplete: (task: Task) => void
+  onUpdateStatus?: (taskId: string, status: import('../../types').TaskStatus) => Promise<void>
   /** Whether the section starts expanded (default true). */
   defaultOpen?: boolean
   /** Optional slot above task rows (e.g. habit reminders). */
@@ -34,6 +35,7 @@ export function BacklogTasksSection({
   onOpenTask,
   onContextMenu,
   onToggleComplete,
+  onUpdateStatus,
   defaultOpen = true,
   leadingContent,
 }: BacklogTasksSectionProps) {
@@ -64,6 +66,7 @@ export function BacklogTasksSection({
               onOpen={onOpenTask}
               onContextMenu={onContextMenu}
               onToggleComplete={onToggleComplete}
+              onUpdateStatus={onUpdateStatus}
             />
           )
         }
@@ -75,6 +78,7 @@ export function BacklogTasksSection({
             onOpen={() => onOpenTask(task)}
             onContextMenu={(e) => onContextMenu(task, e)}
             onToggleComplete={() => onToggleComplete(task)}
+            onUpdateStatus={onUpdateStatus}
           />
         )
       })}

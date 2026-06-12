@@ -1,6 +1,7 @@
 /* TagModal: Popover for searching/creating tags, selecting colors, and managing task tags */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import type { Tag, TagColorId } from '../types'
 
 /* Color palette: Tag color options for new tags (matches plan) */
@@ -308,14 +309,27 @@ export function TagModal({
 
   if (!isOpen) return null
 
-  return (
-    <>
+  /* Portal: render above fullscreen task modal (same z-index pattern as StatusPickerModal) */
+  const overlay = (
+    <div
+      className="fixed inset-0 z-[9999]"
+      aria-hidden
+      onClick={() => {
+        onSave(selectedTags)
+        onClose()
+      }}
+    />
+  )
+
+  const popover = (
       <div
         ref={popoverRef}
-        className="fixed z-50 flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-lg border border-bonsai-slate-200 bg-white shadow-lg min-w-[280px] max-w-[320px]"
+        className="fixed z-[10000] flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-lg border border-bonsai-slate-200 bg-white shadow-lg min-w-[280px] max-w-[320px]"
         style={{ top: `${position.top}px`, left: `${position.left}px` }}
         role="dialog"
         aria-label="Add or manage tags"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         {/* Search/create input with explicit Create button; shrink-0 */}
         <div className="shrink-0 space-y-2 p-3">
@@ -568,6 +582,13 @@ export function TagModal({
           </p>
         </div>
       </div>
-    </>
+  )
+
+  return createPortal(
+    <>
+      {overlay}
+      {popover}
+    </>,
+    document.body,
   )
 }

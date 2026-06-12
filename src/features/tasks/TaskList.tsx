@@ -7,6 +7,7 @@ import type { HabitWithStreaks } from '../habits/types'
 import { TaskContextPopover } from './modals/TaskContextPopover'
 import { handleDesktopTaskContextMenu } from './utils/taskContextMenu'
 import {
+  getChecklistSummaryForTask,
   getTaskChecklists,
   getTaskChecklistItems,
   toggleChecklistItemComplete,
@@ -181,10 +182,10 @@ export function TaskList({
       await Promise.all(
         mainListTasks.map(async (task) => {
           try {
-            const [checklists, subtasksResult, deps] = await Promise.all([
-              getTaskChecklists(task.id).catch((err) => {
+            const [checklistSummary, subtasksResult, deps] = await Promise.all([
+              getChecklistSummaryForTask(task.id).catch((err) => {
                 console.error(`Error fetching checklists for task ${task.id}:`, err)
-                return []
+                return { completed: 0, total: 0 }
               }),
               fetchSubtasks(task.id).catch((err) => {
                 console.error(`Error fetching subtasks for task ${task.id}:`, err)
@@ -199,13 +200,7 @@ export function TaskList({
             const subtaskCount = subtasks.length
             const incompleteSubtaskCount = subtasks.filter((s) => s.status !== 'completed').length
             const subtaskTimeTotal = subtasks.reduce((sum, st) => sum + (st.time_estimate ?? 0), 0)
-            let completed = 0
-            let total = 0
-            for (const c of checklists) {
-              const items = await getTaskChecklistItems(c.id).catch(() => [])
-              total += items.length
-              completed += items.filter((i) => i.completed).length
-            }
+            const { completed, total } = checklistSummary
             const depFlags = getDependencyEnrichmentFlags(
               deps.blockedBy,
               deps.blocking,

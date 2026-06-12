@@ -13,6 +13,8 @@ type TodaysLineupStorage = {
   taskIds?: string[]
   /** Auto-lineup tasks the user removed for today (date-scoped) */
   excludedTaskIds?: string[]
+  /** True after the once-per-day auto-seed has run for this date */
+  dailySeedApplied?: boolean
 }
 
 function readTodaysLineupStorage(): TodaysLineupStorage | null {
@@ -48,18 +50,44 @@ export function getTodaysLineupOrderedIds(): string[] {
   return parsed.taskIds
 }
 
+/** True when today's automatic lineup seed has already run (resets at midnight). */
+export function hasLineupSeedRunToday(): boolean {
+  const parsed = readTodaysLineupStorage()
+  return parsed?.dailySeedApplied === true
+}
+
+/** Mark that the once-per-day lineup seed has run for today. */
+export function markLineupSeedRunToday(): void {
+  const parsed = readTodaysLineupStorage()
+  try {
+    localStorage.setItem(
+      TODAYS_LINEUP_STORAGE_KEY,
+      JSON.stringify({
+        date: getTodayYMD(),
+        taskIds: parsed?.taskIds ?? [],
+        excludedTaskIds: parsed?.excludedTaskIds ?? [],
+        dailySeedApplied: true,
+      }),
+    )
+  } catch {
+    // ignore
+  }
+}
+
 /** Persist Today's Lineup picks and exclusions to localStorage with current date. */
 export function saveTodaysLineupState(
   taskIds: Set<string>,
   excludedTaskIds: Set<string> = loadLineupExcludedTaskIds(),
 ): void {
   try {
+    const parsed = readTodaysLineupStorage()
     localStorage.setItem(
       TODAYS_LINEUP_STORAGE_KEY,
       JSON.stringify({
         date: getTodayYMD(),
         taskIds: Array.from(taskIds),
         excludedTaskIds: Array.from(excludedTaskIds),
+        dailySeedApplied: parsed?.dailySeedApplied ?? false,
       }),
     )
   } catch {
