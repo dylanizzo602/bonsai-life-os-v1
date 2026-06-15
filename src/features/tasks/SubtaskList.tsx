@@ -51,6 +51,12 @@ interface SubtaskListProps {
   onSubtasksChanged?: () => void
   /** When true, allow creating/linking subtasks; when false, list is read-only (used outside edit modal) */
   allowCreateAndLink?: boolean
+  /** When true, hide the internal add input (parent modal owns creation) */
+  hideCreateControls?: boolean
+  /** When true, hide link-existing control (parent modal owns add+link field) */
+  hideLinkControl?: boolean
+  /** Bump to refetch subtasks after parent creates via external add control */
+  refreshTrigger?: number
 }
 
 /**
@@ -74,6 +80,9 @@ export function SubtaskList({
   hideCompletedSubtasks = false,
   onSubtasksChanged,
   allowCreateAndLink = false,
+  hideCreateControls = false,
+  hideLinkControl = false,
+  refreshTrigger = 0,
 }: SubtaskListProps) {
   const [subtasks, setSubtasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
@@ -116,7 +125,7 @@ export function SubtaskList({
     [onUpdateTask, fetchSubtasks, taskId, onSubtasksChanged],
   )
 
-  /* Load subtasks when taskId changes */
+  /* Load subtasks when taskId or refreshTrigger changes */
   useEffect(() => {
     const load = async () => {
       try {
@@ -130,7 +139,7 @@ export function SubtaskList({
       }
     }
     load()
-  }, [taskId, fetchSubtasks])
+  }, [taskId, fetchSubtasks, refreshTrigger])
 
   /* Fetch enrichment for subtasks: checklists, dependencies (reusable for dependency popover refresh) */
   const loadEnrichment = useCallback(async () => {
@@ -241,16 +250,12 @@ export function SubtaskList({
     }
   }
 
-  if (loading) {
-    return <div className="text-sm text-bonsai-slate-500">Loading subtasks...</div>
-  }
-
   return (
-    <div className="space-y-4">
-      {/* Subtasks list: displayed as CompactTaskItem components (used in modals) */}
-      {subtasks.length === 0 ? (
-        <p className="text-sm text-bonsai-slate-500 italic">No subtasks yet</p>
-      ) : (
+    <div className="space-y-2">
+      {/* Subtasks list: CompactTaskItem rows */}
+      {loading ? (
+        <p className="text-secondary text-on-surface-variant">Loading subtasks...</p>
+      ) : subtasks.length > 0 ? (
         <div className="space-y-2">
           {subtasks
             .filter((subtask) =>
@@ -282,38 +287,37 @@ export function SubtaskList({
               )
             })}
         </div>
+      ) : null}
+      {/* Add subtask: internal input unless parent modal owns creation */}
+      {allowCreateAndLink && !hideCreateControls && (
+        <div className="flex gap-2">
+          <Input
+            ref={addInputRef}
+            placeholder="Add a subtask..."
+            value={newSubtaskTitle}
+            onChange={(e) => setNewSubtaskTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleCreate()
+            }}
+            className="flex-1"
+          />
+          <Button onClick={handleCreate} size="sm" variant="primary">
+            Add
+          </Button>
+        </div>
       )}
-      {/* Add subtask and link existing: only available when explicitly enabled (edit task modal) */}
-      {allowCreateAndLink && (
-        <>
-          <div className="flex gap-2">
-            <Input
-              ref={addInputRef}
-              placeholder="Add a subtask..."
-              value={newSubtaskTitle}
-              onChange={(e) => setNewSubtaskTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreate()
-              }}
-              className="flex-1"
-            />
-            <Button onClick={handleCreate} size="sm" variant="primary">
-              Add
-            </Button>
-          </div>
-          {getTasks && (
-            <div className="mt-2">
-              <TaskSearchSelect
-                getTasks={getTasksForLinking}
-                onSelectTask={handleLinkExistingTask}
-                excludeTaskIds={[taskId, ...subtasks.map((s) => s.id)]}
-                placeholder="Link existing task as subtask..."
-                aria-label="Link existing task as subtask"
-                className="w-full"
-              />
-            </div>
-          )}
-        </>
+      {/* Link existing task: hidden when parent modal owns add+link field */}
+      {allowCreateAndLink && getTasks && !hideLinkControl && (
+        <div className={hideCreateControls ? '' : 'mt-2'}>
+          <TaskSearchSelect
+            getTasks={getTasksForLinking}
+            onSelectTask={handleLinkExistingTask}
+            excludeTaskIds={[taskId, ...subtasks.map((s) => s.id)]}
+            placeholder="Link existing task as subtask..."
+            aria-label="Link existing task as subtask"
+            className="w-full"
+          />
+        </div>
       )}
 
       {/* Edit subtask modal */}

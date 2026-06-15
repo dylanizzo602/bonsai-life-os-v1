@@ -6,7 +6,6 @@ import {
   BlockedIcon,
   WarningIcon,
   RepeatIcon,
-  FlagIcon,
   TrophyIcon,
   ChevronDownIcon,
   HourglassIcon,
@@ -22,7 +21,8 @@ import { getDueStatus, formatStartDueDisplay } from './utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
 import type { TaskListItemProps } from './taskListItemTypes'
 import type { TaskPriority, TaskStatus } from './types'
-import { getPriorityFlagClasses } from './utils/priority'
+import { PriorityFlagIcon } from './components/PriorityFlagIcon'
+import { getTagPillClasses } from './utils/tagPillStyles'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
 type DisplayStatus = 'open' | 'in_progress' | 'complete'
@@ -126,19 +126,8 @@ export function TaskListItemCompactLayout({
   const [isPriorityModalOpen, setIsPriorityModalOpen] = useState(false)
   const priorityButtonRef = useRef<HTMLButtonElement>(null)
   const tagDisplay = task.tags?.[0] ?? null
-  /* Tag pill class by color (mint, blue, lavender, yellow, periwinkle, default) */
   const tagPillClass = tagDisplay
-    ? tagDisplay.color === 'mint'
-      ? 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800'
-      : tagDisplay.color === 'blue'
-        ? 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800'
-        : tagDisplay.color === 'lavender'
-          ? 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-violet-100 text-violet-800'
-          : tagDisplay.color === 'yellow'
-            ? 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800'
-            : tagDisplay.color === 'periwinkle'
-              ? 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800'
-              : 'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-bonsai-slate-100 text-bonsai-slate-700'
+    ? `shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${getTagPillClasses(tagDisplay.color)}`
     : ''
 
   /* Subtask display: show completed/total when total is available (matches checklist "x/y") */
@@ -158,30 +147,26 @@ export function TaskListItemCompactLayout({
         setIsPriorityModalOpen(true)
       }}
       className={`ml-1 shrink-0 inline-flex items-center justify-center rounded p-0.5 transition-colors hover:bg-bonsai-slate-100 disabled:cursor-default disabled:hover:bg-transparent ${
-        task.goal_id
-          ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
-          : getPriorityFlagClasses(priority)
+        task.goal_id ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600' : ''
       }`}
       aria-label={task.goal_id ? 'Edit priority (linked to goal)' : 'Edit priority'}
     >
       {task.goal_id ? (
         <TrophyIcon className="w-3.5 h-3.5" />
       ) : (
-        <FlagIcon className="w-3.5 h-3.5" />
+        <PriorityFlagIcon priority={priority} className="text-sm" />
       )}
     </button>
   ) : (
     <span
       className={`ml-1 shrink-0 inline-flex ${
-        task.goal_id
-          ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
-          : getPriorityFlagClasses(priority)
+        task.goal_id ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600' : ''
       }`}
     >
       {task.goal_id ? (
         <TrophyIcon className="w-3.5 h-3.5" />
       ) : (
-        <FlagIcon className="w-3.5 h-3.5" />
+        <PriorityFlagIcon priority={priority} className="text-sm" />
       )}
     </span>
   )

@@ -52,15 +52,19 @@
   - `dueReminders` > 0 for reminder test data.
   - `dueHabitReminders` > 0 when habit reminders are due.
 
-### 6. Inspect notifications table
+### 6. Inspect notifications and habit reminder tables
 
 - Query the `notifications` table for the test user:
   - Confirm rows exist for:
     - `type` = `task_overdue`, `reminder_due`, `habit_reminder_due`
     - `channel` = `email` / `push_web` / `push_mobile` depending on preferences.
+  - For habit reminders, confirm `dedupe_key` uses per-day keys like `habit_reminder_due:{habitId}:{YYYY-MM-DD}`.
   - Confirm:
     - `status` = `sent` when the adapter ran successfully.
     - `status` = `error` and `error` message populated when the adapter failed.
+- Query `habit_reminder_notifications` for missed habit days:
+  - One row per habit per `occurrence_date` with `status = pending` until logged or dismissed.
+  - Missed consecutive days accumulate (e.g. June 1 and June 2 both pending).
 
 ### 7. Verify email and push behavior
 

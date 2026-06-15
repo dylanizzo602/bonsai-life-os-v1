@@ -29,7 +29,7 @@ interface UseSmartQuickAddOptions {
 
 /**
  * Hook for Todoist-style smart quick add while typing a new task/subtask title.
- * Backspace/Delete inside a highlighted token dismisses it so it is no longer parsed.
+ * Backspace/Delete on a highlighted token dismisses it without deleting title text.
  */
 export function useSmartQuickAdd({ isEditMode, applyParsedFields, fieldSetters }: UseSmartQuickAddOptions) {
   const [smartTagNames, setSmartTagNames] = useState<string[]>([])
@@ -63,7 +63,7 @@ export function useSmartQuickAdd({ isEditMode, applyParsedFields, fieldSetters }
     [applyParsedFields, isEditMode, runSmartParse],
   )
 
-  /* Dismiss-on-edit: backspace/delete inside a highlighted span stops smart recognition for that text. */
+  /* Dismiss-on-backspace: remove highlight and stop parsing that span; keep title text unchanged. */
   const handleSmartTitleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>, title: string) => {
       if (isEditMode) return
@@ -80,6 +80,9 @@ export function useSmartQuickAdd({ isEditMode, applyParsedFields, fieldSetters }
 
       const spanText = getDismissedSpanText(title, affectedMatch)
       if (!spanText) return
+
+      /* Swallow the key so highlighted text stays in the title; only smart recognition is cleared. */
+      e.preventDefault()
 
       const nextDismissed = dismissedSpans.includes(spanText)
         ? dismissedSpans

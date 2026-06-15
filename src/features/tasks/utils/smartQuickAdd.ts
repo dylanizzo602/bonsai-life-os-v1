@@ -196,7 +196,7 @@ function isDismissedSpan(
   return dismissed.has(raw.slice(start, end).toLowerCase())
 }
 
-/** Backspace: dismiss when deleting a character inside a highlighted smart token. */
+/** Backspace: dismiss when the caret is inside a highlighted smart token (selection included). */
 export function findMatchAffectedByBackspace(
   matches: SmartQuickAddMatch[],
   cursor: number,
@@ -205,12 +205,11 @@ export function findMatchAffectedByBackspace(
   if (cursor !== selectionEnd) {
     return findMatchOverlappingRange(matches, cursor, selectionEnd)
   }
-  const deleteIndex = cursor - 1
-  if (deleteIndex < 0) return null
-  return matches.find((m) => deleteIndex >= m.start && deleteIndex < m.end) ?? null
+  /* Caret after the first character through the end of the token: backspace dismisses, does not delete text. */
+  return matches.find((m) => cursor > m.start && cursor <= m.end) ?? null
 }
 
-/** Delete: dismiss when removing a character inside a highlighted smart token. */
+/** Delete: dismiss when the caret is inside a highlighted smart token (selection included). */
 export function findMatchAffectedByDelete(
   matches: SmartQuickAddMatch[],
   cursor: number,

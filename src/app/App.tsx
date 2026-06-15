@@ -117,7 +117,7 @@ function App() {
           />
         )
       case 'weekly-briefing':
-        return <WeeklyBriefingPage />
+        return <WeeklyBriefingPage onClose={() => setActiveSection('home')} />
       case 'goals':
         return <GoalsPage />
       case 'tasks':

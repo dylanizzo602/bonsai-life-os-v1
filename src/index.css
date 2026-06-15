@@ -203,6 +203,14 @@ body {
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     user-select: none;
   }
+  /* Filled Material Symbols (priority flags, etc.) */
+  .material-symbols-filled {
+    font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  /* Active swatch ring in edit-tag color picker */
+  .tag-swatch-active {
+    box-shadow: 0 0 0 2px white, 0 0 0 4px var(--color-primary);
+  }
   /* Settings section label: uppercase tracking */
   .settings-section-label {
     font-size: 0.75rem;

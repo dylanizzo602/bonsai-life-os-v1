@@ -404,3 +404,73 @@ export async function getEntriesForHabit(
 
   return (data ?? []) as HabitEntry[]
 }
+
+export type ResetHabitsFreshStartResult = {
+  habitsReset: number
+}
+
+/**
+ * Reset all habits for the signed-in user to a fresh-start state:
+ * clears entries, reminder notifications, habit push dedupe, bumps created_at to today,
+ * and reschedules todo_remind_at + linked tasks from today.
+ */
+export async function resetHabitsFreshStart(): Promise<ResetHabitsFreshStartResult> {
+  const { error: rpcError } = await supabase.rpc('reset_habits_fresh_start')
+  if (rpcError) {
+    console.error('Error resetting habits (RPC):', rpcError)
+    throw rpcError
+  }
+
+  const habits = await getHabits()
+  const todayYmd = todayLocalYMD()
+  let habitsReset = 0
+
+  for (const habit of habits) {
+    const addToTodos = habit.add_to_todos
+    const synthetic = {
+      add_to_todos: addToTodos,
+      reminder_time: habit.reminder_time,
+      desired_action: habit.desired_action,
+      minimum_action: habit.minimum_action,
+    }
+
+    let todoRemindAt: string | null = null
+    if (addToTodos && shouldScheduleHabitTodo(synthetic)) {
+      todoRemindAt = computeInitialTodoRemindAtForHabit(
+        {
+          reminder_time: habit.reminder_time,
+          desired_action: habit.desired_action,
+          minimum_action: habit.minimum_action,
+          frequency: habit.frequency,
+          frequency_target: habit.frequency_target,
+          monthly_interval: habit.monthly_interval,
+          monthly_day: habit.monthly_day,
+        },
+        todayYmd,
+      )
+    }
+
+    const { data, error } = await supabase
+      .from('habits')
+      .update({ todo_remind_at: todoRemindAt })
+      .eq('id', habit.id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error rescheduling habit after fresh start:', error)
+      throw error
+    }
+
+    const updatedHabit = data as Habit
+    try {
+      await upsertLinkedTaskForHabit(updatedHabit)
+    } catch (e) {
+      console.error('Error syncing linked task after habit fresh start:', e)
+    }
+
+    habitsReset += 1
+  }
+
+  return { habitsReset }
+}

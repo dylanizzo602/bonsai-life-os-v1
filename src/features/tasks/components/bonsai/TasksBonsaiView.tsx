@@ -6,7 +6,7 @@ import { MaterialIcon } from '../../../../components/MaterialIcon'
 import { TaskContextPopover } from '../../modals/TaskContextPopover'
 import { handleDesktopTaskContextMenu } from '../../utils/taskContextMenu'
 import { useTaskRowEnrichment } from '../../hooks/useTaskRowEnrichment'
-import type { CreateTaskInput, Task, Tag, TagColorId } from '../../types'
+import type { CreateTaskInput, Task, Tag, TagColorId, UpdateTaskInput } from '../../types'
 import { EMPTY_TASK_ENRICHMENT } from '../../types/taskRowEnrichment'
 import { useUserTimeZone } from '../../../settings/useUserTimeZone'
 import {
@@ -129,6 +129,15 @@ export function TasksBonsaiView({
     [lineupTasks],
   )
 
+  /* Parent titles: label standalone subtask rows in backlog sections */
+  const parentTitleById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const t of tasks) {
+      map.set(t.id, t.title ?? '')
+    }
+    return map
+  }, [tasks])
+
   /* Backlog split: blocked or future start → unavailable; same sort order preserved per bucket */
   const { availableBacklogPartition, unavailableBacklogPartition } = useMemo(() => {
     const { availablePool, unavailablePool } = splitBacklogPoolByAvailability(
@@ -207,6 +216,12 @@ export function TasksBonsaiView({
     refetch?.()
   }
 
+  /* Priority and other field updates: shared handler for bonsai row controls */
+  const handleUpdateTask = async (taskId: string, input: UpdateTaskInput) => {
+    await updateTask(taskId, input)
+    refetch?.()
+  }
+
   const tagHandlers = {
     onTagsUpdated: refetch,
     setTagsForTask,
@@ -278,6 +293,7 @@ export function TasksBonsaiView({
                   onOpen={() => onOpenEdit(task)}
                   onContextMenu={(e) => handleContextMenu(task, e)}
                   onUpdateStatus={handleUpdateStatus}
+                  onUpdateTask={handleUpdateTask}
                   {...tagHandlers}
                 />
               ))
@@ -305,6 +321,7 @@ export function TasksBonsaiView({
                     onOpen={() => onOpenEdit(task)}
                     onContextMenu={(e) => handleContextMenu(task, e)}
                     onUpdateStatus={handleUpdateStatus}
+                    onUpdateTask={handleUpdateTask}
                     {...tagHandlers}
                   />
                 ))
@@ -316,11 +333,13 @@ export function TasksBonsaiView({
             title="Available tasks"
             partition={availableBacklogPartition}
             getEnrichment={getEnrichment}
+            parentTitleById={parentTitleById}
             hideCompletedSubtasks={hideCompletedSubtasks}
             onOpenTask={onOpenEdit}
             onContextMenu={handleContextMenu}
             onToggleComplete={handleToggleComplete}
             onUpdateStatus={handleUpdateStatus}
+            onUpdateTask={handleUpdateTask}
             defaultOpen={false}
           />
 
@@ -329,11 +348,13 @@ export function TasksBonsaiView({
               title="Unavailable tasks"
               partition={unavailableBacklogPartition}
               getEnrichment={getEnrichment}
+              parentTitleById={parentTitleById}
               hideCompletedSubtasks={hideCompletedSubtasks}
               onOpenTask={onOpenEdit}
               onContextMenu={handleContextMenu}
               onToggleComplete={handleToggleComplete}
               onUpdateStatus={handleUpdateStatus}
+              onUpdateTask={handleUpdateTask}
               defaultOpen={false}
             />
           </div>

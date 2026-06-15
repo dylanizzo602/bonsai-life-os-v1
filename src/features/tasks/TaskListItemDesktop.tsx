@@ -5,7 +5,6 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CalendarIcon,
-  FlagIcon,
   TrophyIcon,
   ParagraphIcon,
   ChecklistIcon,
@@ -41,7 +40,9 @@ import {
 import { useUserTimeZone } from '../settings/useUserTimeZone'
 import { parseRecurrencePattern, formatRecurrenceForTooltip } from '../../lib/recurrence'
 import type { TaskPriority, TaskStatus } from './types'
-import { getPriorityFlagClasses } from './utils/priority'
+import { getPriorityLabel } from './utils/priority'
+import { PriorityFlagIcon } from './components/PriorityFlagIcon'
+import { getTagPillClasses } from './utils/tagPillStyles'
 
 /** Display status for the status circle: OPEN, IN PROGRESS, COMPLETE (maps from TaskStatus) */
 type DisplayStatus = 'open' | 'in_progress' | 'complete'
@@ -123,19 +124,6 @@ function TaskStatusIndicator({ status }: { status: DisplayStatus }) {
     </svg>
   )
 }
-
-/** Human-readable priority label for display next to the flag (full task view) */
-function getPriorityLabel(priority: TaskPriority): string {
-  const map: Record<TaskPriority, string> = {
-    none: 'None',
-    low: 'Low',
-    medium: 'Normal',
-    high: 'High',
-    urgent: 'Urgent',
-  }
-  return map[priority] ?? 'None'
-}
-
 
 /**
  * Desktop task row: single full-width row with left-aligned metadata and right-aligned dates/priority.
@@ -490,19 +478,7 @@ export function TaskListItemDesktopLayout({
                 (task.tags ?? []).slice(0, 3).map((t) => (
                   <span
                     key={t.id}
-                    className={`rounded px-2 py-0.5 text-xs font-medium ${
-                      t.color === 'mint'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : t.color === 'blue'
-                          ? 'bg-blue-100 text-blue-800'
-                          : t.color === 'lavender'
-                            ? 'bg-violet-100 text-violet-800'
-                            : t.color === 'yellow'
-                              ? 'bg-amber-100 text-amber-800'
-                              : t.color === 'periwinkle'
-                                ? 'bg-indigo-100 text-indigo-800'
-                                : 'bg-bonsai-slate-100 text-bonsai-slate-700'
-                    }`}
+                    className={`rounded px-2 py-0.5 text-xs font-medium ${getTagPillClasses(t.color)}`}
                   >
                     {t.name}
                   </span>
@@ -635,9 +611,7 @@ export function TaskListItemDesktopLayout({
             if (onUpdateTask) setIsPriorityModalOpen(true)
           }}
           className={`flex items-center gap-1.5 rounded p-1 text-sm transition-colors hover:bg-bonsai-slate-100 ${
-            task.goal_id
-              ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600'
-              : getPriorityFlagClasses(priority)
+            task.goal_id ? 'stroke-yellow-500 fill-yellow-100 text-yellow-600' : ''
           }`}
           aria-label={task.goal_id ? 'Edit priority (linked to goal)' : 'Edit priority'}
           disabled={!onUpdateTask}
@@ -645,7 +619,7 @@ export function TaskListItemDesktopLayout({
           {task.goal_id ? (
             <TrophyIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" />
           ) : (
-            <FlagIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" />
+            <PriorityFlagIcon priority={priority} className="text-base md:text-xl" />
           )}
           <span className="shrink-0 text-sm text-bonsai-slate-600">{getPriorityLabel(priority)}</span>
         </button>

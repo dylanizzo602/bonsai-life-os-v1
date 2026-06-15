@@ -1,23 +1,9 @@
 /* tagPillStyles: Shared tag pill Tailwind classes for task rows */
 
-import type { Tag, TagColorId } from '../types'
+import type { Tag } from '../types'
+import { getTagPillClasses } from './tagColors'
 
-const TAG_COLORS: { id: TagColorId; bgClass: string; textClass: string }[] = [
-  { id: 'slate', bgClass: 'bg-bonsai-slate-100', textClass: 'text-bonsai-slate-700' },
-  { id: 'mint', bgClass: 'bg-emerald-100', textClass: 'text-emerald-800' },
-  { id: 'blue', bgClass: 'bg-blue-100', textClass: 'text-blue-800' },
-  { id: 'lavender', bgClass: 'bg-violet-100', textClass: 'text-violet-800' },
-  { id: 'yellow', bgClass: 'bg-amber-100', textClass: 'text-amber-800' },
-  { id: 'periwinkle', bgClass: 'bg-indigo-100', textClass: 'text-indigo-800' },
-]
-
-/** Tailwind classes for a colored tag pill */
-export function getTagPillClasses(color: TagColorId): string {
-  const found = TAG_COLORS.find((c) => c.id === color)
-  return found
-    ? `${found.bgClass} ${found.textClass}`
-    : `${TAG_COLORS[0].bgClass} ${TAG_COLORS[0].textClass}`
-}
+export { TAG_COLOR_OPTIONS, DEFAULT_TAG_COLOR, getTagDotClass, getTagPillClasses } from './tagColors'
 
 /** Lineup card tag pill (uppercase tracking per mock) */
 export function getLineupTagPillClassName(tag: Tag): string {

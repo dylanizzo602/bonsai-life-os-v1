@@ -54,12 +54,13 @@ export function getBacklogDateDisplay(task: Task, timeZone: string): string | nu
   return null
 }
 
-/** Material flag color class from priority */
+/** Material flag color class from priority (matches PriorityFlagIcon) */
 export function getPriorityFlagColorClass(priority: Task['priority']): string {
-  if (priority === 'urgent' || priority === 'high') return 'text-error'
-  if (priority === 'medium') return 'text-primary'
+  if (priority === 'urgent') return 'text-error'
+  if (priority === 'high') return 'text-[#F97316]'
+  if (priority === 'medium') return 'text-[#FACC15]'
   if (priority === 'low') return 'text-outline'
-  return 'text-outline'
+  return 'text-outline-variant'
 }
 
 /** Subtask progress label "3/5" */

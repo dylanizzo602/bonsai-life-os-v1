@@ -249,7 +249,8 @@ export function partitionBonsaiSections(
 }
 
 /**
- * Backlog rows: top-level tasks with subtasks grouped (excluding lineup parents).
+ * Backlog rows: top-level tasks with subtasks grouped under parents in the same bucket.
+ * Subtasks whose parent is unavailable, in lineup, or otherwise absent from this pool render as standalone rows.
  */
 export function buildBacklogPartition(
   backlogPool: Task[],
@@ -259,25 +260,34 @@ export function buildBacklogPartition(
   const inPool = backlogPool.filter(
     (t) => isBonsaiListTask(t) && !lineupIds.has(t.id),
   )
-  const parentTasks = sortOtherTasksBacklog(
-    inPool.filter((t) => !t.parent_id),
-    timeZone,
-  )
+  const poolIds = new Set(inPool.map((t) => t.id))
+  const parentTasks: Task[] = []
   const subtasksByParentId = new Map<string, Task[]>()
 
   for (const task of inPool) {
-    if (!task.parent_id) continue
-    if (lineupIds.has(task.parent_id)) continue
-    const list = subtasksByParentId.get(task.parent_id) ?? []
-    list.push(task)
-    subtasksByParentId.set(task.parent_id, list)
+    if (!task.parent_id) {
+      parentTasks.push(task)
+      continue
+    }
+
+    /* Nest only when the parent is in this same availability bucket (and not in lineup). */
+    const parentInSamePool =
+      poolIds.has(task.parent_id) && !lineupIds.has(task.parent_id)
+    if (parentInSamePool) {
+      const list = subtasksByParentId.get(task.parent_id) ?? []
+      list.push(task)
+      subtasksByParentId.set(task.parent_id, list)
+    } else {
+      parentTasks.push(task)
+    }
   }
 
+  const sortedParentTasks = sortOtherTasksBacklog(parentTasks, timeZone)
   for (const [parentId, subtasks] of subtasksByParentId) {
     subtasksByParentId.set(parentId, sortOtherTasksBacklog(subtasks, timeZone))
   }
 
-  return { parentTasks, subtasksByParentId }
+  return { parentTasks: sortedParentTasks, subtasksByParentId }
 }
 
 export interface BonsaiBacklogAvailabilitySplit {
@@ -287,31 +297,20 @@ export interface BonsaiBacklogAvailabilitySplit {
 
 /**
  * Split sorted backlog pool into available vs unavailable while preserving sort order.
- * Subtasks inherit their parent's bucket when the parent is in the backlog (not lineup).
+ * Each task is classified on its own start/block rules so subtasks can surface separately from an unavailable parent.
  */
 export function splitBacklogPoolByAvailability(
   backlogPool: Task[],
-  allTasks: Task[],
-  lineupIds: Set<string>,
+  _allTasks: Task[],
+  _lineupIds: Set<string>,
   blockedTaskIds: Set<string>,
   timeZone: string,
 ): BonsaiBacklogAvailabilitySplit {
-  const taskById = new Map(allTasks.map((t) => [t.id, t] as const))
   const availablePool: Task[] = []
   const unavailablePool: Task[] = []
 
-  const bucketFor = (task: Task): 'available' | 'unavailable' => {
-    const subject =
-      task.parent_id && !lineupIds.has(task.parent_id)
-        ? taskById.get(task.parent_id) ?? task
-        : task
-    return isTaskBacklogUnavailable(subject, blockedTaskIds, timeZone)
-      ? 'unavailable'
-      : 'available'
-  }
-
   for (const task of backlogPool) {
-    if (bucketFor(task) === 'unavailable') {
+    if (isTaskBacklogUnavailable(task, blockedTaskIds, timeZone)) {
       unavailablePool.push(task)
     } else {
       availablePool.push(task)

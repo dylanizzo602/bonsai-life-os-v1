@@ -8,6 +8,8 @@ import { useNotificationSettings } from './hooks/useNotificationSettings'
 import { useTaskImportExport } from './hooks/useTaskImportExport'
 import { requestNotificationPermission, registerServiceWorker } from '../../lib/notifications/pushClient'
 import { bulkInsertMorningBriefingEntries, getAllMorningBriefingEntries } from '../../lib/supabase/reflections'
+import { resetHabitsFreshStart } from '../../lib/supabase/habits'
+import { saveDismissedHabitReminderKeys } from '../notifications/dismissedHabitNotifications'
 import {
   downloadCsv,
   exportMorningBriefingEntriesToCsv,
@@ -87,6 +89,9 @@ export function SettingsPage() {
     errorCount: number
     firstErrors: string[]
   } | null>(null)
+
+  const [habitsResetLoading, setHabitsResetLoading] = useState(false)
+  const [habitsResetMessage, setHabitsResetMessage] = useState<string | null>(null)
 
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() => {
     if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported'
@@ -234,6 +239,31 @@ export function SettingsPage() {
     [clearStatus, importFromFile, tasksMapping],
   )
 
+  const handleResetHabitsFreshStart = useCallback(async () => {
+    const confirmed = window.confirm(
+      'Reset all habits to a fresh start? This clears habit log history and reminder notifications, then reschedules from today. Habit names and settings are kept.',
+    )
+    if (!confirmed) return
+
+    try {
+      clearStatus()
+      setHabitsResetLoading(true)
+      setHabitsResetMessage(null)
+      const { habitsReset } = await resetHabitsFreshStart()
+      saveDismissedHabitReminderKeys(new Set())
+      setHabitsResetMessage(
+        `Reset ${habitsReset} habit${habitsReset === 1 ? '' : 's'}. History and reminders cleared; schedules start from today.`,
+      )
+    } catch (err) {
+      console.error('Error resetting habits:', err)
+      setHabitsResetMessage(
+        err instanceof Error ? err.message : 'Could not reset habits. Try again after refreshing.',
+      )
+    } finally {
+      setHabitsResetLoading(false)
+    }
+  }, [clearStatus])
+
   return (
     <div className="mx-auto min-h-full w-full max-w-[800px]">
       {/* Page header */}
@@ -300,6 +330,8 @@ export function SettingsPage() {
           reflectionsFileInputRef={reflectionsFileInputRef}
           tasksImportLoading={tasksImportLoading}
           reflectionsImportLoading={reflectionsImportLoading}
+          habitsResetLoading={habitsResetLoading}
+          habitsResetMessage={habitsResetMessage}
           tasksMappingError={tasksMappingError}
           tasksMappingLoaded={Boolean(tasksMapping)}
           tasksImportSummary={
@@ -328,6 +360,7 @@ export function SettingsPage() {
           onTasksFileChange={(f) => void handleImportTasksFile(f)}
           onTasksMappingFileChange={(f) => void handleLoadTasksMappingFile(f)}
           onReflectionsFileChange={(f) => void handleImportReflectionsCsvFile(f)}
+          onResetHabitsFreshStart={() => void handleResetHabitsFreshStart()}
         />
 
         {/* Sign out */}

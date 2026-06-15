@@ -1,8 +1,8 @@
 /* TimeEstimateModal: Compact popover for setting task time estimate with flexible input (minutes/hours) and subtask rollup */
 
-import { useState, useEffect, useRef } from 'react'
-import { Input } from '../../../components/Input'
-import { Button } from '../../../components/Button'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
+import { MaterialIcon } from '../../../components/MaterialIcon'
 import { getSubtasks } from '../../../lib/supabase/tasks'
 import type { Task } from '../types'
 
@@ -45,9 +45,9 @@ function parseTimeInput(input: string): number | null {
   /* Match minutes: "30m", "15min", "15 minutes", etc. */
   const minuteMatch = trimmed.match(/(\d+)\s*(?:m|min|mins|minute|minutes)\b/i)
   if (minuteMatch) {
-    const minutes = parseInt(minuteMatch[1], 10)
-    if (!isNaN(minutes)) {
-      totalMinutes += minutes
+    const parsedMinutes = parseInt(minuteMatch[1], 10)
+    if (!isNaN(parsedMinutes)) {
+      totalMinutes += parsedMinutes
     }
   }
 
@@ -74,6 +74,8 @@ function formatMinutes(minutes: number | null): string {
   return `${hours}h ${remainingMinutes}m`
 }
 
+const AUTO_SAVE_DEBOUNCE_MS = 500
+
 export function TimeEstimateModal({
   isOpen,
   onClose,
@@ -85,17 +87,21 @@ export function TimeEstimateModal({
 }: TimeEstimateModalProps) {
   /* Popover ref: Reference to the popover element for positioning */
   const popoverRef = useRef<HTMLDivElement>(null)
-  /* Position state: Store calculated popover position */
-  const [position, setPosition] = useState({ top: 0, left: 0 })
+  /* Position state: Store calculated popover position and arrow offset */
+  const [position, setPosition] = useState({ top: 0, left: 0, arrowLeft: '50%' })
   /* Input state: Store user input as string */
   const [inputValue, setInputValue] = useState('')
   /* Subtasks state: Store fetched subtasks for rollup calculation */
   const [subtasks, setSubtasks] = useState<Task[]>([])
+  /* Auto-save refs: Track last persisted value and debounce timer */
+  const lastSavedRef = useRef<number | null | undefined>(undefined)
+  const saveDebounceRef = useRef<number | null>(null)
 
   /* Initialize input value when popover opens or minutes change */
   useEffect(() => {
     if (isOpen) {
       setInputValue(minutes != null ? formatMinutes(minutes) : '')
+      lastSavedRef.current = minutes
     }
   }, [isOpen, minutes])
 
@@ -116,12 +122,10 @@ export function TimeEstimateModal({
       }
     }
 
-    fetchSubtasksData()
+    void fetchSubtasksData()
   }, [isOpen, taskId])
 
-  /* Position: center on mobile/tablet (< 1024px); below trigger on desktop (or center when no trigger) */
-  const DESKTOP_BREAKPOINT = 1024
-
+  /* Position: Anchor below trigger when available; otherwise center in viewport */
   useEffect(() => {
     if (!isOpen || !popoverRef.current) return
 
@@ -131,43 +135,40 @@ export function TimeEstimateModal({
       const padding = 8
       const viewportWidth = window.innerWidth
       const viewportHeight = window.innerHeight
-      const popoverWidth = popoverRect.width > 0 ? popoverRect.width : 384
-      const popoverHeight = popoverRect.height > 0 ? popoverRect.height : 200
-
-      /* Mobile/tablet: always center in viewport */
-      if (viewportWidth < DESKTOP_BREAKPOINT) {
-        const top = Math.max(padding, (viewportHeight - popoverHeight) / 2)
-        const left = Math.max(padding, (viewportWidth - popoverWidth) / 2)
-        setPosition({ top, left })
-        return
-      }
+      const popoverWidth = popoverRect.width > 0 ? popoverRect.width : 360
+      const popoverHeight = popoverRect.height > 0 ? popoverRect.height : 120
 
       if (triggerRef?.current) {
         const triggerRect = triggerRef.current.getBoundingClientRect()
-        let top = triggerRect.bottom + 4
-        let left = triggerRect.left
-        if (left + popoverWidth > viewportWidth - padding) left = Math.max(padding, viewportWidth - popoverWidth - padding)
+        let top = triggerRect.bottom + 8
+        let left = triggerRect.left + triggerRect.width / 2 - popoverWidth / 2
+
+        if (left + popoverWidth > viewportWidth - padding) {
+          left = viewportWidth - popoverWidth - padding
+        }
         if (left < padding) left = padding
-        if (top + popoverHeight > viewportHeight - padding) top = Math.max(padding, triggerRect.top - popoverHeight - 4)
+        if (top + popoverHeight > viewportHeight - padding) {
+          top = triggerRect.top - popoverHeight - 8
+        }
         if (top < padding) top = padding
-        setPosition({ top, left })
-      } else {
-        const top = Math.max(padding, (viewportHeight - popoverHeight) / 2)
-        const left = Math.max(padding, Math.min((viewportWidth - popoverWidth) / 2, viewportWidth - popoverWidth - padding))
-        setPosition({ top, left })
+
+        const triggerCenter = triggerRect.left + triggerRect.width / 2
+        const arrowLeftPx = Math.max(16, Math.min(triggerCenter - left, popoverWidth - 16))
+
+        setPosition({ top, left, arrowLeft: `${arrowLeftPx}px` })
+        return
       }
+
+      const top = Math.max(padding, (viewportHeight - popoverHeight) / 2)
+      const left = Math.max(padding, (viewportWidth - popoverWidth) / 2)
+      setPosition({ top, left, arrowLeft: '50%' })
     }
 
-    /* Calculate position after a brief delay to ensure DOM is ready, then recalculate once rendered */
     const timeoutId = setTimeout(() => {
       calculatePosition()
-      /* Recalculate after a short delay to ensure dimensions are correct */
-      requestAnimationFrame(() => {
-        calculatePosition()
-      })
+      requestAnimationFrame(calculatePosition)
     }, 0)
-    
-    /* Recalculate on scroll/resize */
+
     window.addEventListener('scroll', calculatePosition, true)
     window.addEventListener('resize', calculatePosition)
 
@@ -178,6 +179,35 @@ export function TimeEstimateModal({
     }
   }, [isOpen, triggerRef])
 
+  /* Persist estimate: Skip when unchanged; keep popover open on error */
+  const persistEstimate = useCallback(
+    async (parsedMinutes: number | null) => {
+      if (parsedMinutes === lastSavedRef.current) return
+      try {
+        await onSave(parsedMinutes)
+        lastSavedRef.current = parsedMinutes
+      } catch (error) {
+        console.error('Error saving time estimate:', error)
+      }
+    },
+    [onSave],
+  )
+
+  /* Flush pending debounced save before closing */
+  const flushAutoSave = useCallback(() => {
+    if (saveDebounceRef.current) {
+      window.clearTimeout(saveDebounceRef.current)
+      saveDebounceRef.current = null
+    }
+    void persistEstimate(parseTimeInput(inputValue))
+  }, [inputValue, persistEstimate])
+
+  /* Close handler: Flush auto-save then call parent onClose */
+  const handleClose = useCallback(() => {
+    flushAutoSave()
+    onClose()
+  }, [flushAutoSave, onClose])
+
   /* Close popover when clicking outside */
   useEffect(() => {
     if (!isOpen) return
@@ -185,36 +215,42 @@ export function TimeEstimateModal({
       if (
         popoverRef.current &&
         !popoverRef.current.contains(e.target as Node) &&
-        (!triggerRef || (triggerRef.current && !triggerRef.current.contains(e.target as Node)))
+        (!triggerRef?.current || !triggerRef.current.contains(e.target as Node))
       ) {
-        onClose()
+        handleClose()
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isOpen, onClose, triggerRef])
+  }, [isOpen, handleClose, triggerRef])
 
   /* Close modal on ESC key press and prevent space/Enter from bubbling to parent */
   useEffect(() => {
     if (!isOpen) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose()
+        handleClose()
       }
-      /* Prevent space and Enter from bubbling to parent (e.g., TaskListItem onClick) */
       if ((e.key === ' ' || e.key === 'Enter') && popoverRef.current?.contains(e.target as Node)) {
         e.stopPropagation()
-        /* Allow space to work normally in input fields */
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
           return
         }
-        /* Prevent default for space/Enter on other elements */
         e.preventDefault()
       }
     }
-    document.addEventListener('keydown', handleKeyDown, true) // Use capture phase to catch early
+    document.addEventListener('keydown', handleKeyDown, true)
     return () => document.removeEventListener('keydown', handleKeyDown, true)
-  }, [isOpen, onClose])
+  }, [isOpen, handleClose])
+
+  /* Cleanup debounce timer on unmount */
+  useEffect(() => {
+    return () => {
+      if (saveDebounceRef.current) {
+        window.clearTimeout(saveDebounceRef.current)
+      }
+    }
+  }, [])
 
   /* Calculate subtask total: Sum all subtask time estimates */
   const subtaskTotalMinutes = subtasks.reduce((sum, subtask) => {
@@ -227,146 +263,141 @@ export function TimeEstimateModal({
       ? subtaskTotalMinutes + parentTaskMinutes
       : subtaskTotalMinutes
 
-  /* Handle input change: Update input value as user types */
+  /* Display total: Prefer rollup when subtasks exist; otherwise show parsed input */
+  const parsedInputMinutes = parseTimeInput(inputValue)
+  const displayTotalMinutes =
+    subtasks.length > 0 || (parentTaskMinutes != null && parentTaskMinutes > 0)
+      ? totalWithParentMinutes
+      : parsedInputMinutes ?? minutes
+
+  /* Handle input change: Debounced auto-save as user types */
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInputValue(e.target.value)
-  }
-
-  /* Handle save: Parse input and save, then close popover */
-  const handleSave = async () => {
-    const parsedMinutes = parseTimeInput(inputValue)
-    try {
-      await onSave(parsedMinutes)
-      /* Close popover only after save completes successfully */
-      onClose()
-    } catch (error) {
-      /* Keep popover open on error so user can try again */
-      console.error('Error saving time estimate:', error)
+    const nextValue = e.target.value
+    setInputValue(nextValue)
+    if (saveDebounceRef.current) {
+      window.clearTimeout(saveDebounceRef.current)
     }
+    saveDebounceRef.current = window.setTimeout(() => {
+      void persistEstimate(parseTimeInput(nextValue))
+    }, AUTO_SAVE_DEBOUNCE_MS)
   }
 
-  /* Handle clear: Clear input */
+  /* Handle clear: Reset input and save null immediately */
   const handleClear = () => {
     setInputValue('')
+    if (saveDebounceRef.current) {
+      window.clearTimeout(saveDebounceRef.current)
+      saveDebounceRef.current = null
+    }
+    void persistEstimate(null)
+  }
+
+  /* Handle blur: Commit value when leaving the input */
+  const handleInputBlur = () => {
+    if (saveDebounceRef.current) {
+      window.clearTimeout(saveDebounceRef.current)
+      saveDebounceRef.current = null
+    }
+    void persistEstimate(parseTimeInput(inputValue))
   }
 
   if (!isOpen) return null
 
-  /* Render popover with centered modal design: Positioned below trigger or centered */
-  return (
-    <>
-      {/* Backdrop: Only show when no triggerRef (centered modal) */}
-      {!triggerRef && (
-        <div 
-          className="fixed inset-0 z-50 bg-bonsai-slate-900/30"
-          onClick={onClose}
-        />
-      )}
-      <div
-        ref={popoverRef}
-        className="fixed z-50 flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-lg border border-bonsai-slate-200 bg-white p-4 shadow-lg w-full max-w-sm"
-        style={{
-          top: `${position.top}px`,
-          left: `${position.left}px`,
-          maxWidth: `min(384px, calc(100vw - 16px))`,
-        }}
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          /* Prevent space and Enter from bubbling to parent (e.g., TaskListItem onClick) */
-          if (e.key === ' ' || e.key === 'Enter') {
-            /* Allow space/Enter to work normally in input fields */
-            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLButtonElement) {
-              return
-            }
-            /* Stop propagation for other elements */
-            e.stopPropagation()
-            e.preventDefault()
+  /* Portal above fullscreen task modal (same stacking as PriorityPickerModal) */
+  const overlay = (
+    <div className="fixed inset-0 z-[9999]" aria-hidden onClick={handleClose} />
+  )
+
+  const popover = (
+    <div
+      ref={popoverRef}
+      className="fixed z-[10000] w-[360px] max-w-[calc(100vw-16px)] rounded-xl border border-outline-variant/20 bg-surface-container-lowest shadow-xl"
+      style={{
+        top: `${position.top}px`,
+        left: `${position.left}px`,
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === ' ' || e.key === 'Enter') {
+          if (
+            e.target instanceof HTMLInputElement ||
+            e.target instanceof HTMLTextAreaElement ||
+            e.target instanceof HTMLButtonElement
+          ) {
+            return
           }
-        }}
-      >
-        <div className="space-y-4">
-          {/* Header: Title with help button */}
-          <div className="flex items-center gap-2 mb-2">
-            <h3 className="text-sm font-semibold text-bonsai-slate-700">Time Estimate</h3>
+          e.stopPropagation()
+          e.preventDefault()
+        }
+      }}
+    >
+      {/* Arrow: Points toward trigger when anchored; centered when modal is centered */}
+      <div
+        className="absolute -top-2 h-4 w-4 -translate-x-1/2 rotate-45 border-l border-t border-outline-variant/20 bg-surface-container-lowest"
+        style={{ left: position.arrowLeft }}
+      />
+
+      <div className="space-y-4 p-4">
+        {/* Top row: Label with help icon and time input with clear */}
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex items-center gap-1.5">
+            <span className="text-lg font-semibold tracking-tight text-on-surface">Time Estimate</span>
             <button
               type="button"
-              className="w-4 h-4 rounded-full bg-bonsai-slate-200 text-bonsai-slate-500 hover:bg-bonsai-slate-300 hover:text-bonsai-slate-700 flex items-center justify-center text-xs font-medium transition-colors"
-              aria-label="Help"
+              className="flex items-center"
+              aria-label="Time estimate help"
               title="Enter time in minutes (m) or hours (h). Examples: 5m, 1h, 1h 30m, 90m"
             >
-              ?
+              <MaterialIcon name="help" className="cursor-help text-[18px] text-outline" />
             </button>
           </div>
-
-          {/* Time estimate input: Simple box with flexible parsing */}
-          <div className="flex items-center gap-2">
-            <Input
+          <div className="relative flex items-center">
+            <input
               type="text"
-              placeholder="e.g. 5m, 1h, 1h 30m"
               value={inputValue}
               onChange={handleInputChange}
-              className="flex-1"
+              onBlur={handleInputBlur}
+              placeholder="e.g. 5m"
               aria-label="Time estimate"
-              size="sm"
+              className="w-32 rounded-lg border border-outline-variant/50 bg-surface-container-lowest px-3 py-1.5 pr-8 font-medium text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              autoFocus
             />
-            {inputValue && (
-              <button
-                type="button"
-                onClick={handleClear}
-                className="text-bonsai-slate-500 hover:text-bonsai-slate-700 transition-colors"
-                aria-label="Clear time estimate"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={handleClear}
+              className="absolute right-2 text-on-surface transition-colors hover:text-error"
+              aria-label="Clear time estimate"
+            >
+              <MaterialIcon name="close" className="text-[16px]" />
+            </button>
           </div>
+        </div>
 
-          {/* Subtask rollup and Save button: Inline layout */}
-          {(subtasks.length > 0 || (parentTaskMinutes != null && parentTaskMinutes > 0)) ? (
-            <div className="border-t border-bonsai-slate-200 pt-3">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-medium text-bonsai-slate-500 uppercase tracking-wide mb-1">
-                    Total with subtasks
-                  </p>
-                  <p className="text-sm font-semibold text-bonsai-slate-700">
-                    {formatMinutes(totalWithParentMinutes)}
-                  </p>
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <Button variant="secondary" size="sm" onClick={onClose}>
-                    Cancel
-                  </Button>
-                  <Button variant="primary" size="sm" onClick={handleSave}>
-                    Save
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="secondary" size="sm" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button variant="primary" size="sm" onClick={handleSave}>
-                Save
-              </Button>
-            </div>
-          )}
+        {/* Divider: Full-bleed separator */}
+        <div className="-mx-4 h-px bg-outline-variant/20" />
+
+        {/* Bottom row: Subtask rollup and auto-save hint */}
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-outline">
+              Total with subtasks
+            </span>
+            <span className="text-sm font-semibold text-on-surface-variant">
+              {formatMinutes(displayTotalMinutes) || '—'}
+            </span>
+          </div>
+          <span className="text-[11px] italic text-outline">Changes are automatically saved</span>
         </div>
       </div>
-    </>
+    </div>
+  )
+
+  return createPortal(
+    <>
+      {overlay}
+      {popover}
+    </>,
+    document.body,
   )
 }

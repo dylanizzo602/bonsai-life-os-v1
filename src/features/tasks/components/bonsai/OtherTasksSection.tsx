@@ -13,11 +13,14 @@ interface BacklogTasksSectionProps {
   title: string
   partition: BonsaiBacklogPartition
   getEnrichment: (taskId: string) => TaskRowEnrichment
+  /** Parent task titles for standalone subtask rows */
+  parentTitleById?: Map<string, string>
   hideCompletedSubtasks?: boolean
   onOpenTask: (task: Task) => void
   onContextMenu: (task: Task, e: React.MouseEvent) => void
   onToggleComplete: (task: Task) => void
   onUpdateStatus?: (taskId: string, status: import('../../types').TaskStatus) => Promise<void>
+  onUpdateTask?: (taskId: string, input: import('../../types').UpdateTaskInput) => Promise<void>
   /** Whether the section starts expanded (default true). */
   defaultOpen?: boolean
   /** Optional slot above task rows (e.g. habit reminders). */
@@ -31,11 +34,13 @@ export function BacklogTasksSection({
   title,
   partition,
   getEnrichment,
+  parentTitleById,
   hideCompletedSubtasks = false,
   onOpenTask,
   onContextMenu,
   onToggleComplete,
   onUpdateStatus,
+  onUpdateTask,
   defaultOpen = true,
   leadingContent,
 }: BacklogTasksSectionProps) {
@@ -67,6 +72,7 @@ export function BacklogTasksSection({
               onContextMenu={onContextMenu}
               onToggleComplete={onToggleComplete}
               onUpdateStatus={onUpdateStatus}
+              onUpdateTask={onUpdateTask}
             />
           )
         }
@@ -75,10 +81,14 @@ export function BacklogTasksSection({
             key={task.id}
             task={task}
             enrichment={enrichment}
+            parentTaskTitle={
+              task.parent_id ? parentTitleById?.get(task.parent_id) ?? null : null
+            }
             onOpen={() => onOpenTask(task)}
             onContextMenu={(e) => onContextMenu(task, e)}
             onToggleComplete={() => onToggleComplete(task)}
             onUpdateStatus={onUpdateStatus}
+            onUpdateTask={onUpdateTask}
           />
         )
       })}

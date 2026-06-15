@@ -1,10 +1,10 @@
-/* PriorityPickerModal: Compact popover for selecting task priority (None, Low, Normal, High, Urgent) */
+/* PriorityPickerModal: Compact popover for selecting task priority (None, Urgent, High, Medium, Low) */
 
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { FlagIcon } from '../../../components/icons'
+import { MaterialIcon } from '../../../components/MaterialIcon'
+import { PriorityFlagIcon } from '../components/PriorityFlagIcon'
 import type { TaskPriority } from '../types'
-import { getPriorityFlagClasses } from '../utils/priority'
 
 export interface PriorityPickerModalProps {
   /** Whether the popover is open */
@@ -19,31 +19,18 @@ export interface PriorityPickerModalProps {
   triggerRef: React.RefObject<HTMLElement | null>
 }
 
+/* Priority options: Order and labels match Zenith priority picker mock */
 const OPTIONS: { value: TaskPriority; label: string }[] = [
   { value: 'none', label: 'None' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Normal' },
-  { value: 'high', label: 'High' },
   { value: 'urgent', label: 'Urgent' },
+  { value: 'high', label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Low' },
 ]
-
-/**
- * Priority flag icon component: Renders the priority flag SVG with appropriate colors
- * none = black stroke/white fill, low = grey, medium = blue, high = yellow, urgent = red
- */
-function PriorityFlag({ priority, size = 16 }: { priority: TaskPriority; size?: number }) {
-  const sizeClass = size === 16 ? 'w-4 h-4' : size === 20 ? 'w-5 h-5' : 'w-4 h-4'
-  return (
-    <FlagIcon className={`${sizeClass} shrink-0 ${getPriorityFlagClasses(priority)}`} aria-hidden />
-  )
-}
 
 export function PriorityPickerModal({ isOpen, onClose, value, onSelect, triggerRef }: PriorityPickerModalProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState({ top: 0, left: 0 })
-
-  /* Position: center on mobile/tablet (< 1024px); below trigger on desktop */
-  const DESKTOP_BREAKPOINT = 1024
 
   useEffect(() => {
     if (!isOpen || !popoverRef.current) return
@@ -54,27 +41,31 @@ export function PriorityPickerModal({ isOpen, onClose, value, onSelect, triggerR
       const padding = 8
       const viewportWidth = window.innerWidth
       const viewportHeight = window.innerHeight
-      let top: number
-      let left: number
-      if (viewportWidth < DESKTOP_BREAKPOINT) {
-        top = Math.max(padding, (viewportHeight - popoverRect.height) / 2)
-        left = Math.max(padding, (viewportWidth - popoverRect.width) / 2)
-      } else {
-        if (!triggerRef.current) return
+
+      /* Anchor below the priority icon when a trigger is available (all breakpoints). */
+      if (triggerRef.current) {
         const triggerRect = triggerRef.current.getBoundingClientRect()
-        top = triggerRect.bottom + 4
-        left = triggerRect.left
+        let top = triggerRect.bottom + 4
+        let left = triggerRect.left
         if (left + popoverRect.width > viewportWidth - padding) left = viewportWidth - popoverRect.width - padding
         if (left < padding) left = padding
         if (top + popoverRect.height > viewportHeight - padding) top = triggerRect.top - popoverRect.height - 4
         if (top < padding) top = padding
+        setPosition({ top, left })
+        return
       }
+
+      /* Fallback: center in viewport when no trigger is available */
+      let top = (viewportHeight - popoverRect.height) / 2
+      let left = (viewportWidth - popoverRect.width) / 2
+      top = Math.max(padding, Math.min(top, viewportHeight - popoverRect.height - padding))
+      left = Math.max(padding, Math.min(left, viewportWidth - popoverRect.width - padding))
       setPosition({ top, left })
     }
 
     /* Calculate position after a brief delay to ensure DOM is ready */
     const timeoutId = setTimeout(calculatePosition, 0)
-    
+
     /* Recalculate on scroll/resize */
     window.addEventListener('scroll', calculatePosition, true)
     window.addEventListener('resize', calculatePosition)
@@ -123,59 +114,47 @@ export function PriorityPickerModal({ isOpen, onClose, value, onSelect, triggerR
   )
 
   const popover = (
-      <div
-        ref={popoverRef}
-        className="fixed z-[10000] flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-lg border border-bonsai-slate-200 bg-white shadow-lg"
-        style={{
-          top: `${position.top}px`,
-          left: `${position.left}px`,
-        }}
-        role="menu"
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        {/* Priority options: Compact vertical list with flag icon and label */}
-        <div className="flex flex-col p-1.5 min-w-[180px]">
-          {OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                void handleSelect(opt.value)
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-              className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                value === opt.value
-                  ? 'bg-bonsai-sage-50 text-bonsai-slate-800'
-                  : 'bg-white text-bonsai-slate-800 hover:bg-bonsai-slate-50'
-              }`}
-            >
-              {/* Priority flag icon: Shows visual representation of priority */}
-              <PriorityFlag priority={opt.value} size={16} />
-              {/* Priority label: Text label for the priority */}
-              <span className="text-xs">{opt.label}</span>
-              {/* Checkmark: Show checkmark for selected priority */}
-              {value === opt.value && (
-                <svg
-                  className="ml-auto w-4 h-4 text-bonsai-slate-800"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-              )}
-            </button>
-          ))}
-        </div>
+    <div
+      ref={popoverRef}
+      className="fixed z-[10000] w-48 rounded-lg border border-outline-variant/20 bg-surface-container-lowest py-2 shadow-[0_4px_24px_rgba(0,0,0,0.06)]"
+      style={{
+        top: `${position.top}px`,
+        left: `${position.left}px`,
+      }}
+      role="menu"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {/* Section header: Compact uppercase label */}
+      <div className="mb-1 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-outline">
+        Set Priority
       </div>
+
+      {/* Priority options: Filled flag icon, label, and checkmark for selection */}
+      {OPTIONS.map((opt) => {
+        const isSelected = value === opt.value
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              void handleSelect(opt.value)
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={`flex w-full items-center gap-3 px-4 py-2 text-sm text-on-surface transition-colors ${
+              isSelected ? 'bg-primary-container/10' : 'hover:bg-primary-container/10'
+            }`}
+          >
+            <PriorityFlagIcon priority={opt.value} />
+            <span className="font-medium">{opt.label}</span>
+            {isSelected && (
+              <MaterialIcon name="check" className="ml-auto text-xs text-primary" />
+            )}
+          </button>
+        )
+      })}
+    </div>
   )
 
   return createPortal(

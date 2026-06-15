@@ -47,8 +47,10 @@ export interface TaskDependency {
   created_at: string
 }
 
-/** Tag color id - maps to Tailwind classes (mint, blue, lavender, yellow, periwinkle, slate) */
-export type TagColorId = 'slate' | 'mint' | 'blue' | 'lavender' | 'yellow' | 'periwinkle'
+import type { TagColorId } from './utils/tagColors'
+
+/** Tag color id - earth-tone palette shared with tag pickers and pills */
+export type { TagColorId }
 
 /** Tag entity - reusable label with color, linked to tasks via task_tags */
 export interface Tag {

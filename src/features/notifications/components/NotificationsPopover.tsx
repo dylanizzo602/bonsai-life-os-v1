@@ -138,7 +138,7 @@ export function NotificationsPopover({
       reminders={visibleReminders}
       showCloseButton={isMobile}
       onClose={onClose}
-      onDismissAll={dismissAll}
+      onDismissAll={() => void dismissAll()}
       onDismissReminder={dismissReminder}
       onTargetComplete={(row) => void runHabitAction(row.rowKey, row, 'completed')}
       onMinimum={(row) => void runHabitAction(row.rowKey, row, 'minimum')}
@@ -268,7 +268,7 @@ function NotificationsPanel({
                 />
                 <button
                   type="button"
-                  onClick={() => onDismissReminder(row.rowKey)}
+                  onClick={() => void onDismissReminder(row.rowKey)}
                   className="absolute right-2 top-2 rounded-md border border-outline-variant/40 bg-surface-container-lowest px-2 py-0.5 text-xs font-semibold text-primary shadow-sm hover:bg-primary/10"
                   aria-label="Dismiss reminder"
                 >

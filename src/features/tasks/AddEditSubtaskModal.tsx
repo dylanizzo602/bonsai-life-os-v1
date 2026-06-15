@@ -7,8 +7,6 @@ import { Button } from '../../components/Button'
 import { MaterialIcon } from '../../components/MaterialIcon'
 import { TaskContextPopover } from './modals/TaskContextPopover'
 import { isDesktopContextMenuViewport } from './utils/taskContextMenu'
-import { Input } from '../../components/Input'
-import { Checkbox } from '../../components/Checkbox'
 import { RichTextEditor } from '../notes/RichTextEditor'
 import { useTaskChecklists } from './hooks/useTaskChecklists'
 import { useTags } from './hooks/useTags'
@@ -16,7 +14,8 @@ import { useGoals } from '../goals/hooks/useGoals'
 import { TaskStatusIndicator } from './TaskStatusIndicator'
 import { useSmartQuickAdd } from './hooks/useSmartQuickAdd'
 import type { SmartQuickAddResult } from './utils/smartQuickAdd'
-import { PlusIcon, ChecklistIcon, FlagIcon } from '../../components/icons'
+import { PlusIcon } from '../../components/icons'
+import { ModalChecklistSection } from './components/modal/ModalChecklistSection'
 import { DatePickerModal } from './modals/DatePickerModal'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { TagModal } from './modals/TagModal'
@@ -24,7 +23,8 @@ import { TimeEstimateModal } from './modals/TimeEstimateModal'
 import { AttachmentUploadModal } from './modals/AttachmentUploadModal'
 import { AttachmentPreviewModal } from './modals/AttachmentPreviewModal'
 import { StatusPickerModal } from './modals/StatusPickerModal'
-import { getPriorityFlagClasses, getPriorityLabel } from './utils/priority'
+import { getPriorityLabel } from './utils/priority'
+import { PriorityFlagIcon } from './components/PriorityFlagIcon'
 import {
   formatTimeEstimateMinutes,
   getLineupDateDisplay,
@@ -188,13 +188,6 @@ export function AddEditSubtaskModal({
   const datePickerButtonRef = useRef<HTMLButtonElement>(null)
   const [attachmentModalOpen, setAttachmentModalOpen] = useState(false)
   const [previewAttachment, setPreviewAttachment] = useState<TaskAttachment | null>(null)
-  const [newChecklistTitle, setNewChecklistTitle] = useState('')
-  const [newChecklistItem, setNewChecklistItem] = useState('')
-  const [newItemTitles, setNewItemTitles] = useState<Record<string, string>>({})
-  /* When user pastes multi-line text into the checklist add row */
-  const [pendingPasteLines, setPendingPasteLines] = useState<string[] | null>(null)
-  /* When user pastes multi-line text into a per-list item input */
-  const [pendingDraftPasteLines, setPendingDraftPasteLines] = useState<Record<string, string[]>>({})
   /* Dependency options for Relationships section */
   const [dependencyTasks, setDependencyTasks] = useState<Task[]>([])
   const [taskDeps, setTaskDeps] = useState<{
@@ -240,14 +233,6 @@ export function AddEditSubtaskModal({
     deleteItem,
     deleteChecklist,
   } = useTaskChecklists(subtask?.id ?? null)
-  /* Inline edit state for checklist item title (Rename) */
-  const [editingItemId, setEditingItemId] = useState<string | null>(null)
-  const [editingItemTitle, setEditingItemTitle] = useState('')
-  /* Inline edit state for checklist title (Rename/Delete) */
-  const [editingChecklistId, setEditingChecklistId] = useState<string | null>(null)
-  const [editingChecklistTitle, setEditingChecklistTitle] = useState('')
-  /* Whether to show or hide completed checklist items in each list */
-  const [showCompletedChecklistItems, setShowCompletedChecklistItems] = useState(true)
   const {
     searchTags,
     createTag,
@@ -695,7 +680,7 @@ export function AddEditSubtaskModal({
           onClick={() => setPriorityOpen(true)}
           className="flex shrink-0 items-center gap-1.5 overflow-visible whitespace-nowrap rounded-full border border-outline-variant/40 px-3 py-1.5 text-xs font-semibold text-on-surface-variant hover:bg-surface-variant/20 transition-colors"
         >
-          <FlagIcon className={`h-4 w-4 shrink-0 ${getPriorityFlagClasses(priority)}`} />
+          <PriorityFlagIcon priority={priority} className="text-base" />
           {priorityPillLabel}
         </button>
         <button
@@ -938,367 +923,23 @@ export function AddEditSubtaskModal({
             )}
           </div>
 
-          {/* Checklist */}
-          <div className="space-y-3">
-            <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
-              <MaterialIcon name="checklist" className="text-base" />
-              Checklist
-            </label>
-            {!subtask?.id ? (
-              <p className="text-sm text-bonsai-slate-500">Create the subtask first to add checklists.</p>
-            ) : (
-              <>
-                <div className="flex gap-2">
-                  <input
-                    className="flex-1 bg-surface-variant/10 border border-outline-variant/30 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none"
-                    placeholder="Create a checklist item"
-                    type="text"
-                    value={newChecklistItem}
-                    onChange={(e) => setNewChecklistItem(e.target.value)}
-                    onPaste={(e) => {
-                      const text = e.clipboardData.getData('text')
-                      const lines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
-                      if (lines.length > 1) {
-                        e.preventDefault()
-                        setPendingPasteLines(lines)
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Enter') return
-                      const next = newChecklistItem.trim()
-                      if (!next) return
-                      void addItemOrCreateChecklist(next)
-                      setNewChecklistItem('')
-                    }}
-                    disabled={checklistsLoading}
-                  />
-                  <button
-                    type="button"
-                    className="px-6 py-2 bg-surface-variant/20 rounded-lg text-xs font-bold text-on-surface-variant hover:bg-surface-variant/30 transition-colors disabled:opacity-50"
-                    onClick={() => {
-                      const next = newChecklistItem.trim()
-                      if (!next) return
-                      void addItemOrCreateChecklist(next)
-                      setNewChecklistItem('')
-                    }}
-                    disabled={!newChecklistItem.trim() || checklistsLoading}
-                  >
-                    Add
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Checklist lists (edit mode only) */}
-          <div className="mt-4">
-            {subtask?.id ? (
-              <>
-                {pendingPasteLines && pendingPasteLines.length > 1 && (
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-3 py-2 text-body mb-3">
-                    <span className="flex items-center gap-2 text-bonsai-slate-700">
-                      <ChecklistIcon className="h-4 w-4 shrink-0 text-bonsai-slate-500" />
-                      Multiple lines detected in the pasted text.
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          void addItemOrCreateChecklist(pendingPasteLines.join(' '))
-                          setNewChecklistItem('')
-                          setPendingPasteLines(null)
-                        }}
-                        disabled={checklistsLoading}
-                      >
-                        Keep 1 item
-                      </Button>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={async () => {
-                          await addItemsOrCreateChecklist(pendingPasteLines)
-                          setNewChecklistItem('')
-                          setPendingPasteLines(null)
-                        }}
-                        disabled={checklistsLoading}
-                      >
-                        Create {pendingPasteLines.length} items
-                      </Button>
-                    </div>
-                  </div>
-                )}
-                {checklistsLoading && checklists.length === 0 ? (
-                  <p className="text-sm text-bonsai-slate-500">Loading checklists...</p>
-                ) : (
-                  <ul className="space-y-3">
-                    {checklists.map((c) => (
-                      <li key={c.id} className="rounded-lg border border-bonsai-slate-200 p-2">
-                        {/* Checklist title row with completed/total tally and inline rename/delete controls */}
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <div className="flex items-center gap-2 flex-1">
-                            {editingChecklistId === c.id ? (
-                              <Input
-                                className="border-bonsai-slate-300 flex-1 text-sm font-medium"
-                                value={editingChecklistTitle}
-                                onChange={(e) => setEditingChecklistTitle(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault()
-                                    updateChecklistTitle(c.id, editingChecklistTitle)
-                                    setEditingChecklistId(null)
-                                  }
-                                  if (e.key === 'Escape') {
-                                    e.stopPropagation()
-                                    setEditingChecklistId(null)
-                                  }
-                                }}
-                                autoFocus
-                              />
-                            ) : (
-                              <p className="text-sm font-medium text-bonsai-slate-700 flex-1">
-                                {c.title}
-                              </p>
-                            )}
-                            <span className="text-xs text-bonsai-slate-500 shrink-0">
-                              {c.items.filter((item) => item.completed).length}/{c.items.length}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                if (editingChecklistId === c.id) {
-                                  updateChecklistTitle(c.id, editingChecklistTitle)
-                                  setEditingChecklistId(null)
-                                } else {
-                                  setEditingChecklistId(c.id)
-                                  setEditingChecklistTitle(c.title)
-                                }
-                              }}
-                            >
-                              {editingChecklistId === c.id ? 'Save' : 'Rename'}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                deleteChecklist(c.id)
-                                if (editingChecklistId === c.id) {
-                                  setEditingChecklistId(null)
-                                  setEditingChecklistTitle('')
-                                }
-                              }}
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        </div>
-                        <ul className="space-y-1 mb-2">
-                          {c.items
-                            .filter((item) =>
-                              showCompletedChecklistItems ? true : !item.completed,
-                            )
-                            .map((item) => (
-                            <li key={item.id} className="flex items-center gap-2">
-                              <Checkbox
-                                checked={item.completed}
-                                onChange={(e) => toggleItem(item.id, e.target.checked)}
-                              />
-                              {editingItemId === item.id ? (
-                                <Input
-                                  className="border-bonsai-slate-300 flex-1 text-sm"
-                                  value={editingItemTitle}
-                                  onChange={(e) => setEditingItemTitle(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault()
-                                      updateItemTitle(item.id, editingItemTitle)
-                                      setEditingItemId(null)
-                                    }
-                                    if (e.key === 'Escape') {
-                                      e.stopPropagation()
-                                      setEditingItemId(null)
-                                    }
-                                  }}
-                                  autoFocus
-                                />
-                              ) : (
-                                <span
-                                  className={
-                                    item.completed
-                                      ? 'text-sm text-bonsai-slate-500 line-through flex-1'
-                                      : 'text-sm text-bonsai-slate-700 flex-1'
-                                  }
-                                >
-                                  {item.title}
-                                </span>
-                              )}
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  if (editingItemId === item.id) {
-                                    updateItemTitle(item.id, editingItemTitle)
-                                    setEditingItemId(null)
-                                  } else {
-                                    setEditingItemId(item.id)
-                                    setEditingItemTitle(item.title)
-                                  }
-                                }}
-                              >
-                                {editingItemId === item.id ? 'Save' : 'Rename'}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  deleteItem(item.id)
-                                  if (editingItemId === item.id) setEditingItemId(null)
-                                }}
-                              >
-                                Delete
-                              </Button>
-                            </li>
-                          ))}
-                        </ul>
-                        {/* Show/hide closed checklist items for this list */}
-                        {c.items.some((item) => item.completed) && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setShowCompletedChecklistItems((prev) => !prev)
-                            }
-                            className="mb-1 text-xs font-medium text-bonsai-slate-600 hover:text-bonsai-slate-800"
-                          >
-                            {showCompletedChecklistItems
-                              ? 'Hide closed items'
-                              : 'Show closed items'}
-                          </button>
-                        )}
-                        <div className="flex flex-col gap-2">
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="Add item"
-                              className="border-bonsai-slate-300 flex-1 text-sm"
-                              value={newItemTitles[c.id] ?? ''}
-                              onChange={(e) =>
-                                setNewItemTitles((prev) => ({ ...prev, [c.id]: e.target.value }))
-                              }
-                              onPaste={(e) => {
-                                const text = e.clipboardData.getData('text')
-                                const lines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
-                                if (lines.length > 1) {
-                                  e.preventDefault()
-                                  setPendingDraftPasteLines((prev) => ({ ...prev, [c.id]: lines }))
-                                }
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  addItem(c.id, newItemTitles[c.id] ?? '')
-                                  setNewItemTitles((prev) => ({ ...prev, [c.id]: '' }))
-                                }
-                              }}
-                            />
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                addItem(c.id, newItemTitles[c.id] ?? '')
-                                setNewItemTitles((prev) => ({ ...prev, [c.id]: '' }))
-                              }}
-                              disabled={!((newItemTitles[c.id] ?? '').trim())}
-                            >
-                              Add
-                            </Button>
-                          </div>
-                          {/* Multi-line paste prompt: keep as one item or create one item per line */}
-                          {pendingDraftPasteLines[c.id] && pendingDraftPasteLines[c.id].length > 1 && (
-                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-bonsai-slate-200 bg-bonsai-slate-50 px-3 py-2 text-body">
-                              <span className="flex items-center gap-2 text-bonsai-slate-700">
-                                <ChecklistIcon className="h-4 w-4 shrink-0 text-bonsai-slate-500" />
-                                Multiple lines detected in the pasted text.
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={async () => {
-                                    const lines = pendingDraftPasteLines[c.id]
-                                    if (!lines) return
-                                    await addItem(c.id, lines.join(' '))
-                                    setNewItemTitles((prev) => ({ ...prev, [c.id]: '' }))
-                                    setPendingDraftPasteLines((prev) => {
-                                      const next = { ...prev }
-                                      delete next[c.id]
-                                      return next
-                                    })
-                                  }}
-                                  disabled={checklistsLoading}
-                                >
-                                  Keep 1 item
-                                </Button>
-                                <Button
-                                  variant="primary"
-                                  size="sm"
-                                  onClick={async () => {
-                                    const lines = pendingDraftPasteLines[c.id]
-                                    if (!lines) return
-                                    for (const lineTitle of lines) {
-                                      await addItem(c.id, lineTitle)
-                                    }
-                                    setNewItemTitles((prev) => ({ ...prev, [c.id]: '' }))
-                                    setPendingDraftPasteLines((prev) => {
-                                      const next = { ...prev }
-                                      delete next[c.id]
-                                      return next
-                                    })
-                                  }}
-                                  disabled={checklistsLoading}
-                                >
-                                  Create {pendingDraftPasteLines[c.id].length} items
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="flex gap-2 mt-3">
-                  <Input
-                    placeholder="Create another list"
-                    className="border-bonsai-slate-300 flex-1"
-                    value={newChecklistTitle}
-                    onChange={(e) => setNewChecklistTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        addChecklist(newChecklistTitle)
-                        setNewChecklistTitle('')
-                      }
-                    }}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      addChecklist(newChecklistTitle)
-                      setNewChecklistTitle('')
-                    }}
-                    disabled={!newChecklistTitle.trim() || checklistsLoading}
-                  >
-                    Add list
-                  </Button>
-                </div>
-              </>
-            ) : null}
-          </div>
+          {/* Checklist: header, add input, and inline item rows */}
+          <ModalChecklistSection
+            mode="persisted"
+            canEdit={Boolean(subtask?.id)}
+            disabledMessage="Create the subtask first to add checklists."
+            checklists={checklists}
+            loading={checklistsLoading}
+            onAddItemOrCreateChecklist={(title) => void addItemOrCreateChecklist(title)}
+            onAddItemsOrCreateChecklist={addItemsOrCreateChecklist}
+            onAddChecklist={(title) => void addChecklist(title)}
+            onAddItemToList={(checklistId, title) => void addItem(checklistId, title)}
+            onToggleItem={(itemId, completed) => void toggleItem(itemId, completed)}
+            onUpdateItemTitle={(itemId, title) => void updateItemTitle(itemId, title)}
+            onDeleteItem={(itemId) => void deleteItem(itemId)}
+            onUpdateChecklistTitle={(checklistId, title) => void updateChecklistTitle(checklistId, title)}
+            onDeleteChecklist={(checklistId) => void deleteChecklist(checklistId)}
+          />
 
           {/* Relationships & Links (no subtasks section) */}
           <div className="pt-8 border-t border-outline-variant/10 space-y-8">

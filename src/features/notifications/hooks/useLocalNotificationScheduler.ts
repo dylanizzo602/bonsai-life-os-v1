@@ -4,7 +4,7 @@ import { DateTime } from 'luxon'
 import { useAuth } from '../../auth/AuthContext'
 import { useUserTimeZone } from '../../settings/useUserTimeZone'
 import { getTasks } from '../../../lib/supabase/tasks'
-import { getHabits } from '../../../lib/supabase/habits'
+import { getEntriesForHabits, getHabits } from '../../../lib/supabase/habits'
 import { getHasCompletedMorningBriefingToday } from '../../../lib/supabase/reflections'
 import {
   buildEffectivePreferencesMap,
@@ -17,6 +17,7 @@ import type { Task } from '../../tasks/types'
 import type { Habit } from '../../habits/types'
 import { resolveHabitReminderInstants } from '../../habits/habitReminderEligibility'
 import { getDueStatus } from '../../tasks/utils/date'
+import { isHabitOccurrenceResolved } from '../../../lib/habitReminderOccurrences'
 
 /** Local scheduler polling cadence: frequent enough to catch 12pm and minute-level habit/timed due transitions */
 const TICK_MS = 30 * 1000
@@ -221,6 +222,14 @@ export function useLocalNotificationScheduler() {
         getHasCompletedMorningBriefingToday(notificationTimeZone).catch(() => false),
       ])
 
+      const habitIds = habits.map((h) => h.id)
+      const entriesByHabit =
+        habitIds.length > 0
+          ? await getEntriesForHabits(habitIds, zonedTodayKey, zonedTodayKey).catch(
+              () => ({} as Record<string, { entry_date: string; status: 'completed' | 'skipped' | 'minimum' }[]>),
+            )
+          : {}
+
       if (cancelled) return
 
       /* Rule: timed tasks due in 1 hour (non-habit tasks only) */
@@ -297,6 +306,9 @@ export function useLocalNotificationScheduler() {
       /* Rule: habit reminder hits its reminder time (today only, per-habit) */
       if (isEnabled('habit_reminder_due')) {
         for (const h of habits) {
+          if (!h.add_to_todos) continue
+          if (isHabitOccurrenceResolved(entriesByHabit[h.id] ?? [], zonedTodayKey)) continue
+
           /* Resolve today's reminder time in the notification timezone so day-of-week recurrence advances properly. */
           const instants = resolveHabitReminderInstants(h, zonedTodayKey)
           if (instants.length === 0) continue

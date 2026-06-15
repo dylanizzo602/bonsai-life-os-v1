@@ -4,8 +4,9 @@
 
 import { useRef, useState, type MouseEvent } from 'react'
 
-import { FlagIcon, TrophyIcon } from '../../../../components/icons'
+import { TrophyIcon } from '../../../../components/icons'
 import { MaterialIcon } from '../../../../components/MaterialIcon'
+import { PriorityFlagIcon } from '../PriorityFlagIcon'
 
 import { useUserTimeZone } from '../../../settings/useUserTimeZone'
 
@@ -21,17 +22,18 @@ import {
 
 } from '../../utils/taskRowDisplay'
 
-import { getPriorityFlagClasses } from '../../utils/priority'
-
 import { getLineupTagPillClassName } from '../../utils/tagPillStyles'
 
 import { TagModal } from '../../modals/TagModal'
 import { StatusPickerModal } from '../../modals/StatusPickerModal'
+import { PriorityPickerModal } from '../../modals/PriorityPickerModal'
 
 import { TaskRowMetadataStrip } from './TaskRowMetadataStrip'
 
 import { BonsaiTaskStatusButton } from './BonsaiTaskStatusButton'
 import { getTaskDisplayStatus, getTaskStatusFromDisplayStatus } from '../../TaskStatusIndicator'
+import { useTaskListLayout } from '../../taskListItemShared'
+import type { UpdateTaskInput } from '../../types'
 
 
 
@@ -46,6 +48,8 @@ interface LineupTaskCardProps {
   onContextMenu?: (e: MouseEvent) => void
 
   onUpdateStatus?: (taskId: string, status: import('../../types').TaskStatus) => Promise<void>
+
+  onUpdateTask?: (taskId: string, input: UpdateTaskInput) => Promise<void>
 
   onTagsUpdated?: () => void
 
@@ -84,6 +88,8 @@ export function LineupTaskCard({
 
   onUpdateStatus,
 
+  onUpdateTask,
+
   onTagsUpdated,
 
   setTagsForTask,
@@ -101,12 +107,16 @@ export function LineupTaskCard({
 }: LineupTaskCardProps) {
 
   const timeZone = useUserTimeZone()
+  const lineupLayout = useTaskListLayout()
+  const isDesktopLineupLayout = lineupLayout === 'desktop'
 
   const tagButtonRef = useRef<HTMLButtonElement>(null)
   const statusButtonRef = useRef<HTMLButtonElement>(null)
+  const priorityButtonRef = useRef<HTMLButtonElement>(null)
 
   const [tagModalOpen, setTagModalOpen] = useState(false)
   const [statusPickerOpen, setStatusPickerOpen] = useState(false)
+  const [priorityPickerOpen, setPriorityPickerOpen] = useState(false)
 
   const primaryTag = task.tags[0]
 
@@ -129,22 +139,47 @@ export function LineupTaskCard({
 
   const isCompleted = task.status === 'completed'
 
-  /* Priority indicator: SVG flag colors match task list rows; trophy when goal-linked */
-  const renderPriorityIndicator = (sizeClass: string) => {
+  /* Priority indicator: Material flag colors match priority picker; trophy when goal-linked */
+  const renderPriorityIndicator = (flagSizeClass: string, trophySizeClass: string) => {
     if (task.goal_id) {
       return (
         <TrophyIcon
-          className={`${sizeClass} shrink-0 stroke-yellow-500 fill-yellow-100 text-yellow-600`}
+          className={`${trophySizeClass} shrink-0 stroke-yellow-500 fill-yellow-100 text-yellow-600`}
           aria-hidden
         />
       )
     }
     if (!showFlag) return null
+    return <PriorityFlagIcon priority={task.priority} className={flagSizeClass} />
+  }
+
+  /* Priority control: Tappable when onUpdateTask is set (opens shared priority picker popover). */
+  const renderPriorityControl = (
+    flagSizeClass: string,
+    trophySizeClass: string,
+    attachTriggerRef: boolean,
+  ) => {
+    if (!showFlag && !task.goal_id) return null
+
+    const indicator = renderPriorityIndicator(flagSizeClass, trophySizeClass)
+    if (!indicator) return null
+
+    if (!onUpdateTask) return indicator
+
     return (
-      <FlagIcon
-        className={`${sizeClass} shrink-0 ${getPriorityFlagClasses(task.priority)}`}
-        aria-hidden
-      />
+      <button
+        ref={attachTriggerRef ? priorityButtonRef : undefined}
+        type="button"
+        data-task-interactive
+        onClick={(e) => {
+          e.stopPropagation()
+          setPriorityPickerOpen(true)
+        }}
+        className="shrink-0 rounded p-0.5 transition-colors hover:bg-surface-container-low"
+        aria-label={task.goal_id ? 'Edit priority (linked to goal)' : 'Edit priority'}
+      >
+        {indicator}
+      </button>
     )
   }
 
@@ -212,6 +247,19 @@ export function LineupTaskCard({
           onSelect={async (newDisplayStatus) => {
             const nextStatus = getTaskStatusFromDisplayStatus(newDisplayStatus)
             await onUpdateStatus(task.id, nextStatus)
+          }}
+        />
+      ) : null}
+
+      {/* Priority picker: same popover as desktop/tablet task rows */}
+      {onUpdateTask ? (
+        <PriorityPickerModal
+          isOpen={priorityPickerOpen}
+          onClose={() => setPriorityPickerOpen(false)}
+          value={task.priority}
+          triggerRef={priorityButtonRef}
+          onSelect={async (newPriority) => {
+            await onUpdateTask(task.id, { priority: newPriority })
           }}
         />
       ) : null}
@@ -285,7 +333,7 @@ export function LineupTaskCard({
                       ) : null}
                     </div>
                   ) : null}
-                  {renderPriorityIndicator('h-6 w-6')}
+                  {renderPriorityControl('text-2xl', 'h-6 w-6', !isDesktopLineupLayout)}
                 </div>
               ) : null}
 
@@ -402,7 +450,7 @@ export function LineupTaskCard({
 
           ) : null}
 
-          {renderPriorityIndicator('h-5 w-5')}
+          {renderPriorityControl('text-xl', 'h-5 w-5', isDesktopLineupLayout)}
 
         </div>
 

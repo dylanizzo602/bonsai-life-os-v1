@@ -2,8 +2,9 @@
 
 import type { MouseEvent } from 'react'
 import { useRef, useState } from 'react'
-import { FlagIcon, TrophyIcon } from '../../../../components/icons'
+import { TrophyIcon } from '../../../../components/icons'
 import { MaterialIcon } from '../../../../components/MaterialIcon'
+import { PriorityFlagIcon } from '../PriorityFlagIcon'
 import { useUserTimeZone } from '../../../settings/useUserTimeZone'
 import type { Task } from '../../types'
 import type { TaskRowEnrichment } from '../../types/taskRowEnrichment'
@@ -11,15 +12,18 @@ import {
   getBacklogDateDisplay,
   getDueDateColorClass,
 } from '../../utils/taskRowDisplay'
-import { getPriorityFlagClasses } from '../../utils/priority'
 import { getBacklogTagPillClassName } from '../../utils/tagPillStyles'
 import { BonsaiTaskStatusButton } from './BonsaiTaskStatusButton'
 import { StatusPickerModal } from '../../modals/StatusPickerModal'
+import { PriorityPickerModal } from '../../modals/PriorityPickerModal'
 import { getTaskDisplayStatus, getTaskStatusFromDisplayStatus } from '../../TaskStatusIndicator'
+import type { UpdateTaskInput } from '../../types'
 
 interface BacklogTaskRowProps {
   task: Task
   enrichment: TaskRowEnrichment
+  /** When set, row is a subtask shown separately from its parent */
+  parentTaskTitle?: string | null
   size?: 'md' | 'sm'
   showChevron?: boolean
   expanded?: boolean
@@ -28,6 +32,7 @@ interface BacklogTaskRowProps {
   onContextMenu?: (e: MouseEvent) => void
   onToggleComplete: () => void
   onUpdateStatus?: (taskId: string, status: import('../../types').TaskStatus) => Promise<void>
+  onUpdateTask?: (taskId: string, input: UpdateTaskInput) => Promise<void>
 }
 
 /**
@@ -36,6 +41,7 @@ interface BacklogTaskRowProps {
 export function BacklogTaskRow({
   task,
   enrichment,
+  parentTaskTitle = null,
   size = 'md',
   showChevron = false,
   expanded = false,
@@ -44,10 +50,13 @@ export function BacklogTaskRow({
   onContextMenu,
   onToggleComplete,
   onUpdateStatus,
+  onUpdateTask,
 }: BacklogTaskRowProps) {
   const timeZone = useUserTimeZone()
   const statusButtonRef = useRef<HTMLButtonElement>(null)
+  const priorityButtonRef = useRef<HTMLButtonElement>(null)
   const [statusPickerOpen, setStatusPickerOpen] = useState(false)
+  const [priorityPickerOpen, setPriorityPickerOpen] = useState(false)
   const primaryTag = task.tags[0]
   const dateDisplay = getBacklogDateDisplay(task, timeZone)
   const dateColorClass = getDueDateColorClass(task.due_date, timeZone)
@@ -69,6 +78,18 @@ export function BacklogTaskRow({
           onSelect={async (newDisplayStatus) => {
             const nextStatus = getTaskStatusFromDisplayStatus(newDisplayStatus)
             await onUpdateStatus(task.id, nextStatus)
+          }}
+        />
+      ) : null}
+
+      {onUpdateTask ? (
+        <PriorityPickerModal
+          isOpen={priorityPickerOpen}
+          onClose={() => setPriorityPickerOpen(false)}
+          value={task.priority}
+          triggerRef={priorityButtonRef}
+          onSelect={async (newPriority) => {
+            await onUpdateTask(task.id, { priority: newPriority })
           }}
         />
       ) : null}
@@ -124,6 +145,14 @@ export function BacklogTaskRow({
 
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
           <span className={`min-w-0 truncate ${titleClass}`}>{task.title}</span>
+          {task.parent_id && parentTaskTitle != null ? (
+            <span
+              className="text-[10px] font-medium uppercase tracking-tight text-outline"
+              title={`Subtask of ${parentTaskTitle}`}
+            >
+              Subtask
+            </span>
+          ) : null}
           {primaryTag ? (
             <span className={getBacklogTagPillClassName(primaryTag)}>{primaryTag.name}</span>
           ) : null}
@@ -137,16 +166,36 @@ export function BacklogTaskRow({
 
         <div className={`flex shrink-0 items-center gap-6 text-[11px] font-medium ${dateColorClass}`}>
           {dateDisplay ? <span className="flex items-center gap-1">{dateDisplay}</span> : null}
-          {task.goal_id ? (
-            <TrophyIcon
-              className="h-5 w-5 shrink-0 stroke-yellow-500 fill-yellow-100 text-yellow-600"
-              aria-hidden
-            />
-          ) : task.priority !== 'none' ? (
-            <FlagIcon
-              className={`h-5 w-5 shrink-0 ${getPriorityFlagClasses(task.priority)}`}
-              aria-hidden
-            />
+          {task.goal_id || task.priority !== 'none' ? (
+            onUpdateTask ? (
+              <button
+                ref={priorityButtonRef}
+                type="button"
+                data-task-interactive
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setPriorityPickerOpen(true)
+                }}
+                className="shrink-0 rounded p-0.5 transition-colors hover:bg-surface-container-low"
+                aria-label={task.goal_id ? 'Edit priority (linked to goal)' : 'Edit priority'}
+              >
+                {task.goal_id ? (
+                  <TrophyIcon
+                    className="h-5 w-5 shrink-0 stroke-yellow-500 fill-yellow-100 text-yellow-600"
+                    aria-hidden
+                  />
+                ) : (
+                  <PriorityFlagIcon priority={task.priority} className="text-xl" />
+                )}
+              </button>
+            ) : task.goal_id ? (
+              <TrophyIcon
+                className="h-5 w-5 shrink-0 stroke-yellow-500 fill-yellow-100 text-yellow-600"
+                aria-hidden
+              />
+            ) : (
+              <PriorityFlagIcon priority={task.priority} className="text-xl" />
+            )
           ) : null}
         </div>
       </div>

@@ -1,18 +1,11 @@
-/* TagModal: Popover for searching/creating tags, selecting colors, and managing task tags */
+/* TagModal: Popover for searching, adding, and managing task tags */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { MaterialIcon } from '../../../components/MaterialIcon'
 import type { Tag, TagColorId } from '../types'
-
-/* Color palette: Tag color options for new tags (matches plan) */
-const TAG_COLORS: { id: TagColorId; bgClass: string; textClass: string }[] = [
-  { id: 'slate', bgClass: 'bg-bonsai-slate-100', textClass: 'text-bonsai-slate-700' },
-  { id: 'mint', bgClass: 'bg-emerald-100', textClass: 'text-emerald-800' },
-  { id: 'blue', bgClass: 'bg-blue-100', textClass: 'text-blue-800' },
-  { id: 'lavender', bgClass: 'bg-violet-100', textClass: 'text-violet-800' },
-  { id: 'yellow', bgClass: 'bg-amber-100', textClass: 'text-amber-800' },
-  { id: 'periwinkle', bgClass: 'bg-indigo-100', textClass: 'text-indigo-800' },
-]
+import { DEFAULT_TAG_COLOR, getTagDotClass } from '../utils/tagColors'
+import { EditTagModal } from './EditTagModal'
 
 export interface TagModalProps {
   isOpen: boolean
@@ -29,12 +22,6 @@ export interface TagModalProps {
 
 /** Max tags per task */
 const MAX_TAGS_PER_TASK = 3
-
-/** Get Tailwind classes for a tag pill by color id */
-function getTagClasses(color: TagColorId): string {
-  const found = TAG_COLORS.find((c) => c.id === color)
-  return found ? `${found.bgClass} ${found.textClass}` : `${TAG_COLORS[0].bgClass} ${TAG_COLORS[0].textClass}`
-}
 
 export function TagModal({
   isOpen,
@@ -57,32 +44,22 @@ export function TagModal({
   const [searchQuery, setSearchQuery] = useState('')
   /* Filtered search results */
   const [searchResults, setSearchResults] = useState<Tag[]>([])
-  /* Selected color for new tags */
-  const [selectedColor, setSelectedColor] = useState<TagColorId>('slate')
-  /* Show delete-from-all confirmation */
-  const [deleteConfirmTag, setDeleteConfirmTag] = useState<Tag | null>(null)
-  /* Tag being edited (inline name edit) */
-  const [editingTagId, setEditingTagId] = useState<string | null>(null)
-  const [editingTagName, setEditingTagName] = useState('')
-  /* Tag whose color is being changed (swatches apply to this tag) */
-  const [editingColorTagId, setEditingColorTagId] = useState<string | null>(null)
-  /* Track previous open state: only sync from parent `value` when opening, not on every render */
+  /* Tag opened in the edit dialog */
+  const [editingTag, setEditingTag] = useState<Tag | null>(null)
+  /* Track previous open state: only sync from parent `value` when opening */
   const prevIsOpenRef = useRef(false)
 
-  /* Sync selected tags from value only when the popover opens (not when `value` reference churns) */
+  /* Sync selected tags from value only when the popover opens */
   useEffect(() => {
     if (isOpen && !prevIsOpenRef.current) {
       setSelectedTags(value)
       setSearchQuery('')
       setSearchResults([])
-      setDeleteConfirmTag(null)
-      setEditingTagId(null)
-      setEditingColorTagId(null)
+      setEditingTag(null)
       setTimeout(() => inputRef.current?.focus(), 0)
     }
     prevIsOpenRef.current = isOpen
-    /* value is intentionally read only when transitioning to open; omitting from deps avoids resetting on unstable [] from parent */
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync only on open; `value` must be current when `isOpen` flips true
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync only on open
   }, [isOpen])
 
   /* Search tags when query changes */
@@ -92,7 +69,7 @@ export function TagModal({
       const results = await searchTags(searchQuery)
       setSearchResults(results)
     }
-    run()
+    void run()
   }, [isOpen, searchQuery, searchTags])
 
   /* Position: center on mobile/tablet (< 1024px); below trigger on desktop */
@@ -134,12 +111,13 @@ export function TagModal({
       window.removeEventListener('scroll', calculatePosition, true)
       window.removeEventListener('resize', calculatePosition)
     }
-  }, [isOpen, triggerRef, selectedTags, searchResults])
+  }, [isOpen, triggerRef, searchResults, editingTag])
 
-  /* Close on click outside */
+  /* Close on click outside (skip while edit dialog is open) */
   useEffect(() => {
     if (!isOpen) return
     const handleClickOutside = (e: MouseEvent) => {
+      if (editingTag) return
       if (
         popoverRef.current &&
         !popoverRef.current.contains(e.target as Node) &&
@@ -152,7 +130,14 @@ export function TagModal({
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isOpen, onClose, onSave, selectedTags, triggerRef])
+  }, [isOpen, onClose, onSave, selectedTags, triggerRef, editingTag])
+
+  /* Replace a tag in local lists after edit */
+  const replaceTagInLists = useCallback((updated: Tag) => {
+    setSelectedTags((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
+    setSearchResults((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
+    setEditingTag((prev) => (prev?.id === updated.id ? updated : prev))
+  }, [])
 
   /* Add tag to selection (existing or new) */
   const handleAddTag = useCallback(
@@ -169,123 +154,59 @@ export function TagModal({
   )
 
   /* Create new tag or add existing tag (when name matches) */
-  const handleCreateAndAdd = useCallback(
-    async () => {
-      const name = searchQuery.trim()
-      if (!name || selectedTags.length >= MAX_TAGS_PER_TASK) return
-      if (selectedTags.some((t) => t.name.toLowerCase() === name.toLowerCase())) return
+  const handleCreateAndAdd = useCallback(async () => {
+    const name = searchQuery.trim()
+    if (!name || selectedTags.length >= MAX_TAGS_PER_TASK) return
+    if (selectedTags.some((t) => t.name.toLowerCase() === name.toLowerCase())) return
 
-      /* If exact match in search results, add existing tag */
-      const match = searchResults.find((t) => t.name.toLowerCase() === name.toLowerCase())
-      if (match) {
-        handleAddTag(match)
-        setSearchQuery('')
-        setSearchResults([])
-        return
-      }
+    const match = searchResults.find((t) => t.name.toLowerCase() === name.toLowerCase())
+    if (match) {
+      void handleAddTag(match)
+      return
+    }
 
-      try {
-        const tag = await createTag(name, selectedColor)
-        const next = [...selectedTags, tag]
-        setSelectedTags(next)
-        onSave(next)
-        setSearchQuery('')
-        setSearchResults([])
-      } catch {
-        /* Error surfaced by createTag */
-      }
-    },
-    [searchQuery, selectedColor, selectedTags, searchResults, createTag, onSave, handleAddTag],
-  )
+    try {
+      const tag = await createTag(name, DEFAULT_TAG_COLOR)
+      const next = [...selectedTags, tag]
+      setSelectedTags(next)
+      onSave(next)
+      setSearchQuery('')
+      setSearchResults([])
+    } catch {
+      /* Error surfaced by createTag */
+    }
+  }, [searchQuery, selectedTags, searchResults, createTag, onSave, handleAddTag])
 
   /* Remove tag from selection */
   const handleRemoveFromTask = useCallback(
-    (tag: Tag) => {
-      const next = selectedTags.filter((t) => t.id !== tag.id)
+    (tagId: string) => {
+      const next = selectedTags.filter((t) => t.id !== tagId)
       setSelectedTags(next)
       onSave(next)
-      setDeleteConfirmTag(null)
     },
     [selectedTags, onSave],
   )
 
-  /* Start editing a tag's name */
-  const handleStartEdit = useCallback((tag: Tag) => {
-    setEditingTagId(tag.id)
-    setEditingTagName(tag.name)
-  }, [])
-
-  /* Save edited tag name */
-  const handleSaveEdit = useCallback(
-    async () => {
-      const tagId = editingTagId
-      const name = editingTagName.trim()
-      if (!tagId || !name || !updateTag) {
-        setEditingTagId(null)
-        return
-      }
-      const tag = selectedTags.find((t) => t.id === tagId)
-      if (!tag) {
-        setEditingTagId(null)
-        return
-      }
-      if (name === tag.name) {
-        setEditingTagId(null)
-        return
-      }
-
-      try {
-        const updated = await updateTag(tagId, { name })
-        const next = selectedTags.map((t) => (t.id === tagId ? updated : t))
-        setSelectedTags(next)
-        onSave(next)
-      } catch {
-        /* Error surfaced by updateTag */
-      }
-      setEditingTagId(null)
-    },
-    [editingTagId, editingTagName, selectedTags, updateTag, onSave],
-  )
-
-  /* Cancel editing */
-  const handleCancelEdit = useCallback(() => {
-    setEditingTagId(null)
-    setEditingColorTagId(null)
-  }, [])
-
-  /* Change color of an existing tag */
-  const handleChangeTagColor = useCallback(
-    async (tagId: string, color: TagColorId) => {
+  /* Save edits from EditTagModal */
+  const handleEditSave = useCallback(
+    async (tagId: string, updates: { name: string; color: TagColorId }) => {
       if (!updateTag) return
-      const tag = selectedTags.find((t) => t.id === tagId)
-      if (!tag || tag.color === color) {
-        setEditingColorTagId(null)
-        return
-      }
-      try {
-        const updated = await updateTag(tagId, { color })
-        const next = selectedTags.map((t) => (t.id === tagId ? updated : t))
-        setSelectedTags(next)
-        onSave(next)
-      } catch {
-        /* Error surfaced by updateTag */
-      }
-      setEditingColorTagId(null)
+      const updated = await updateTag(tagId, updates)
+      replaceTagInLists(updated)
+      const next = selectedTags.map((t) => (t.id === tagId ? updated : t))
+      setSelectedTags(next)
+      onSave(next)
     },
-    [selectedTags, updateTag, onSave],
+    [updateTag, replaceTagInLists, selectedTags, onSave],
   )
 
-  /* Delete tag from all tasks (with confirmation) */
-  const handleDeleteFromAll = useCallback(
-    async (tag: Tag) => {
+  /* Delete tag from all tasks via EditTagModal */
+  const handleEditDelete = useCallback(
+    async (tagId: string) => {
       if (!deleteTagFromAllTasks) return
-      try {
-        await deleteTagFromAllTasks(tag.id)
-        handleRemoveFromTask(tag)
-      } catch {
-        /* Error surfaced */
-      }
-      setDeleteConfirmTag(null)
+      await deleteTagFromAllTasks(tagId)
+      handleRemoveFromTask(tagId)
+      setSearchResults((prev) => prev.filter((t) => t.id !== tagId))
     },
     [deleteTagFromAllTasks, handleRemoveFromTask],
   )
@@ -299,22 +220,32 @@ export function TagModal({
 
     const match = searchResults.find((t) => t.name.toLowerCase() === q.toLowerCase())
     if (match) {
-      handleAddTag(match)
+      void handleAddTag(match)
     } else {
-      handleCreateAndAdd()
+      void handleCreateAndAdd()
     }
   }
 
   const atLimit = selectedTags.length >= MAX_TAGS_PER_TASK
+  const trimmedQuery = searchQuery.trim()
+  const listTags = searchResults
+  const showCreateOption =
+    Boolean(trimmedQuery) &&
+    !atLimit &&
+    !searchResults.some((t) => t.name.toLowerCase() === trimmedQuery.toLowerCase()) &&
+    !selectedTags.some((t) => t.name.toLowerCase() === trimmedQuery.toLowerCase())
+
+  const isTagSelected = (tag: Tag) => selectedTags.some((t) => t.id === tag.id)
 
   if (!isOpen) return null
 
-  /* Portal: render above fullscreen task modal (same z-index pattern as StatusPickerModal) */
+  /* Portal: render above fullscreen task modal */
   const overlay = (
     <div
       className="fixed inset-0 z-[9999]"
       aria-hidden
       onClick={() => {
+        if (editingTag) return
         onSave(selectedTags)
         onClose()
       }}
@@ -322,272 +253,122 @@ export function TagModal({
   )
 
   const popover = (
-      <div
-        ref={popoverRef}
-        className="fixed z-[10000] flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-lg border border-bonsai-slate-200 bg-white shadow-lg min-w-[280px] max-w-[320px]"
-        style={{ top: `${position.top}px`, left: `${position.left}px` }}
-        role="dialog"
-        aria-label="Add or manage tags"
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        {/* Search/create input with explicit Create button; shrink-0 */}
-        <div className="shrink-0 space-y-2 p-3">
-          <div className="flex gap-2">
-            <input
-              ref={inputRef}
-              type="text"
-              placeholder="Search or create tag..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="flex-1 rounded-lg border border-bonsai-slate-300 px-3 py-2 text-sm text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:border-transparent"
-              aria-label="Search or create tag"
-            />
-            <button
-              type="button"
-              onClick={handleCreateAndAdd}
-              disabled={!searchQuery.trim() || atLimit}
-              className="rounded-lg bg-bonsai-sage-600 px-3 py-2 text-sm font-medium text-white hover:bg-bonsai-sage-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Create
-            </button>
-          </div>
-          {searchQuery.trim() && !atLimit && (
-            <p className="text-xs text-bonsai-slate-500">
-              {searchResults.some((t) => t.name.toLowerCase() === searchQuery.trim().toLowerCase())
-                ? 'Choose a tag below, or press Create to add the matching tag'
-                : 'Press Create or Enter to save as a new tag'}
-            </p>
-          )}
-        </div>
+    <div
+      ref={popoverRef}
+      className="fixed z-[10000] w-full max-w-xs overflow-hidden rounded-xl border border-outline-variant/10 bg-surface-container-lowest shadow-2xl"
+      style={{ top: `${position.top}px`, left: `${position.left}px` }}
+      role="dialog"
+      aria-label="Add or manage tags"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {/* Search header */}
+      <div className="flex items-center gap-3 border-b border-outline-variant/10 bg-surface-container-low p-4">
+        <MaterialIcon name="search" className="text-sm text-outline" />
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder="Search or add tags..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          className="text-body w-full border-none bg-transparent p-0 text-on-surface placeholder:text-outline/60 focus:ring-0"
+          aria-label="Search or add tags"
+        />
+      </div>
 
-        {/* Existing labels: all tags (or search matches) between search and color picker */}
-        <div className="max-h-36 shrink-0 overflow-y-auto border-t border-bonsai-slate-100 px-3 py-2">
-          <p className="mb-1.5 text-secondary text-bonsai-slate-600">Your tags</p>
-          {searchResults.filter((t) => !selectedTags.some((s) => s.id === t.id)).length > 0 ? (
-            <ul className="space-y-0.5">
-              {searchResults
-                .filter((t) => !selectedTags.some((s) => s.id === t.id))
-                .map((tag) => (
-                  <li key={tag.id}>
-                    <button
-                      type="button"
-                      onClick={() => handleAddTag(tag)}
-                      disabled={atLimit}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-bonsai-slate-50 disabled:opacity-50"
-                    >
-                      <span
-                        className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${getTagClasses(tag.color as TagColorId)}`}
-                      >
-                        {tag.name}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-            </ul>
-          ) : (
-            <p className="text-secondary text-bonsai-slate-500">
-              {searchQuery.trim() ? 'No matching tags.' : 'No tags yet — type a name and click Create.'}
-            </p>
-          )}
-          {searchQuery.trim() &&
-            !searchResults.some((t) => t.name.toLowerCase() === searchQuery.trim().toLowerCase()) &&
-            !selectedTags.some((t) => t.name.toLowerCase() === searchQuery.trim().toLowerCase()) && (
-              <button
-                type="button"
-                onClick={handleCreateAndAdd}
-                disabled={atLimit}
-                className="mt-2 w-full rounded px-2 py-1.5 text-left text-sm text-bonsai-sage-600 hover:bg-bonsai-slate-50 disabled:opacity-50"
+      {/* Existing tags list */}
+      <div className="bonsai-scrollbar max-h-56 space-y-1 overflow-y-auto p-2">
+        {listTags.length > 0 ? (
+          listTags.map((tag) => {
+            const selected = isTagSelected(tag)
+            return (
+              <div
+                key={tag.id}
+                className={`group flex items-center justify-between rounded-lg p-2 transition-all ${
+                  selected ? 'bg-primary/5' : 'cursor-pointer hover:bg-surface-container-high'
+                }`}
               >
-                Create &quot;{searchQuery.trim()}&quot;
-              </button>
-            )}
-        </div>
-
-        {/* Selected tags with remove / delete-from-all; flex-1 min-h-0 so content fits in viewport */}
-        <div className="min-h-0 flex-1 overflow-hidden border-t border-bonsai-slate-100 px-3 py-2">
-          {selectedTags.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {selectedTags.map((tag) => (
-                <div
-                  key={tag.id}
-                  className="group relative inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium"
-                >
-                  {editingTagId === tag.id ? (
-                    <span className="flex flex-col gap-1">
-                      <input
-                        type="text"
-                        value={editingTagName}
-                        onChange={(e) => setEditingTagName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveEdit()
-                          if (e.key === 'Escape') handleCancelEdit()
-                        }}
-                        onBlur={handleSaveEdit}
-                        autoFocus
-                        className="w-24 rounded border border-bonsai-slate-300 px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-bonsai-sage-500"
-                        aria-label="Edit tag name"
-                      />
-                      <span className="flex gap-1">
-                        {TAG_COLORS.map((c) => (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() => handleChangeTagColor(tag.id, c.id)}
-                            className={`h-4 w-4 rounded border ${
-                              (tag.color as TagColorId) === c.id
-                                ? 'border-bonsai-slate-600'
-                                : 'border-transparent hover:border-bonsai-slate-400'
-                            } ${c.bgClass}`}
-                            aria-label={`Set color to ${c.id}`}
-                          />
-                        ))}
-                      </span>
-                    </span>
-                  ) : deleteConfirmTag?.id === tag.id ? (
-                    <span className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFromAll(tag)}
-                        className="rounded bg-red-100 px-1.5 py-0.5 text-red-700 hover:bg-red-200"
-                      >
-                        Delete everywhere
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteConfirmTag(null)}
-                        className="rounded bg-bonsai-slate-100 px-1.5 py-0.5 text-bonsai-slate-600"
-                      >
-                        Cancel
-                      </button>
-                    </span>
-                  ) : (
-                    <>
-                      <span
-                        className={`rounded px-2 py-0.5 ${getTagClasses(tag.color as TagColorId)}`}
-                      >
-                        {tag.name}
-                      </span>
-                      {updateTag && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => setEditingColorTagId(editingColorTagId === tag.id ? null : tag.id)}
-                            className="rounded p-0.5 text-bonsai-slate-400 hover:bg-bonsai-slate-200 hover:text-bonsai-slate-700"
-                            aria-label={`Change color of ${tag.name}`}
-                            title="Change tag color"
-                          >
-                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
-                              />
-                            </svg>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleStartEdit(tag)}
-                            className="rounded p-0.5 text-bonsai-slate-400 hover:bg-bonsai-slate-200 hover:text-bonsai-slate-700"
-                            aria-label={`Edit ${tag.name}`}
-                            title="Edit tag name"
-                          >
-                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                              />
-                            </svg>
-                          </button>
-                        </>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveFromTask(tag)}
-                        className="rounded p-0.5 text-bonsai-slate-500 hover:bg-bonsai-slate-200 hover:text-bonsai-slate-700"
-                        aria-label={`Remove ${tag.name} from task`}
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                      {deleteTagFromAllTasks && taskId && (
-                        <button
-                          type="button"
-                          onClick={() => setDeleteConfirmTag(tag)}
-                          className="rounded p-0.5 text-bonsai-slate-400 opacity-0 hover:text-red-600 group-hover:opacity-100"
-                          aria-label={`Delete ${tag.name} from all tasks`}
-                          title="Delete from all tasks"
-                        >
-                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : null}
-          {atLimit && <p className="mt-1 text-xs text-bonsai-slate-500">Maximum 3 tags per task.</p>}
-        </div>
-
-        {/* Color swatches: for new tags or for tag being color-edited */}
-        <div className="border-t border-bonsai-slate-100 px-3 py-2">
-          <p className="mb-1.5 text-xs text-bonsai-slate-500">
-            {editingColorTagId
-              ? `Change color for "${selectedTags.find((t) => t.id === editingColorTagId)?.name ?? ''}"`
-              : 'Tag color (for new tags)'}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {TAG_COLORS.map((c) => {
-              const isForNewTag = !editingColorTagId
-              const isSelected = isForNewTag
-                ? selectedColor === c.id
-                : selectedTags.find((t) => t.id === editingColorTagId)?.color === c.id
-              return (
                 <button
-                  key={c.id}
                   type="button"
                   onClick={() => {
-                    if (editingColorTagId) {
-                      handleChangeTagColor(editingColorTagId, c.id)
-                    } else {
-                      setSelectedColor(c.id)
+                    if (selected) {
+                      handleRemoveFromTask(tag.id)
+                    } else if (!atLimit) {
+                      void handleAddTag(tag)
                     }
                   }}
-                  className={`h-6 w-6 rounded border-2 transition-colors ${
-                    isSelected ? 'border-bonsai-slate-600' : 'border-bonsai-slate-200 hover:border-bonsai-slate-400'
-                  } ${c.bgClass}`}
-                  aria-label={editingColorTagId ? `Set color to ${c.id}` : `Select ${c.id} for new tags`}
-                  title={c.id}
-                />
-              )
-            })}
-          </div>
-          <p className="mt-2 text-xs text-bonsai-slate-500">
-            {editingColorTagId
-              ? 'Click a color to update'
-              : 'Type a name and click Create to add a new tag'}
+                  disabled={!selected && atLimit}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <div className={`h-3 w-3 shrink-0 rounded-full ${getTagDotClass(tag.color)}`} />
+                  <span className="text-secondary truncate font-medium text-on-surface">{tag.name}</span>
+                  {selected && (
+                    <MaterialIcon name="check" className="ml-auto shrink-0 text-xs text-primary" />
+                  )}
+                </button>
+                {updateTag && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setEditingTag(tag)
+                    }}
+                    className="rounded p-1 opacity-0 transition-opacity hover:bg-surface-container-highest group-hover:opacity-100"
+                    aria-label={`Edit ${tag.name}`}
+                  >
+                    <MaterialIcon name="more_horiz" className="text-xs text-outline" />
+                  </button>
+                )}
+              </div>
+            )
+          })
+        ) : (
+          <p className="px-2 py-3 text-secondary text-outline/70">
+            {trimmedQuery ? 'No matching tags.' : 'No tags yet — type a name to create one.'}
           </p>
-        </div>
+        )}
       </div>
+
+      {/* Create new tag option */}
+      {showCreateOption && (
+        <div className="mt-1 border-t border-outline-variant/10 p-2">
+          <button
+            type="button"
+            onClick={() => void handleCreateAndAdd()}
+            className="group flex w-full items-center justify-between rounded-lg p-2 text-primary transition-all hover:bg-primary/5"
+          >
+            <div className="flex min-w-0 items-center gap-3 overflow-hidden">
+              <MaterialIcon name="add" className="text-sm" />
+              <span className="text-secondary truncate font-semibold">Create &quot;{trimmedQuery}&quot;</span>
+            </div>
+            <MaterialIcon
+              name="keyboard_return"
+              className="text-xs text-outline-variant transition-colors group-hover:text-primary"
+            />
+          </button>
+        </div>
+      )}
+
+      {atLimit && (
+        <p className="border-t border-outline-variant/10 px-4 py-2 text-secondary text-outline/70">
+          Maximum {MAX_TAGS_PER_TASK} tags per task.
+        </p>
+      )}
+    </div>
   )
 
   return createPortal(
     <>
       {overlay}
       {popover}
+      <EditTagModal
+        isOpen={editingTag != null}
+        tag={editingTag}
+        onClose={() => setEditingTag(null)}
+        onSave={handleEditSave}
+        onDelete={taskId && deleteTagFromAllTasks ? handleEditDelete : undefined}
+      />
     </>,
     document.body,
   )

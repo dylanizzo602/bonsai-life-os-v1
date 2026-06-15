@@ -1,13 +1,12 @@
 /* DashboardTaskRow: Two-line task row for the home upcoming-tasks bento card */
 
 import { MaterialIcon } from '../../../components/MaterialIcon'
-import { FlagIcon } from '../../../components/icons'
 import { TruncatedText } from '../../../components/TruncatedText'
+import { PriorityFlagIcon } from '../../tasks/components/PriorityFlagIcon'
 import {
   formatStartDueDisplay,
   getDueStatus,
 } from '../../tasks/utils/date'
-import { getPriorityFlagClasses } from '../../tasks/utils/priority'
 import {
   getLineupTagPillClassName,
   getTagPillClasses,
@@ -166,10 +165,7 @@ export function DashboardTaskRow({ task, onClick, onToggleComplete }: DashboardT
                     role="img"
                     aria-label={getPriorityAriaLabel(task.priority)}
                   >
-                    <FlagIcon
-                      className={`h-3.5 w-3.5 shrink-0 ${getPriorityFlagClasses(task.priority)}`}
-                      aria-hidden
-                    />
+                    <PriorityFlagIcon priority={task.priority} className="text-sm" />
                   </span>
                 ) : (
                   <span className={segment.emphasizeDate ? dateColorClass : 'text-on-surface-variant'}>

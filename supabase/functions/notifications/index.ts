@@ -2,6 +2,14 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { DateTime } from 'https://esm.sh/luxon@3.5.0'
+import {
+  HABIT_REMINDER_LOOKBACK_DAYS,
+  habitReminderPushDedupeKey,
+  isHabitEligibleForTodoReminder,
+  listMissedHabitOccurrences,
+  type HabitOccurrenceEntry,
+  type HabitOccurrenceSource,
+} from '../_shared/habitReminderOccurrences.ts'
 
 type NotificationType =
   | 'task_overdue'
@@ -413,6 +421,62 @@ async function recordNotification(params: {
   }
 }
 
+/** Add days to YYYY-MM-DD for lookback window math */
+function addDaysYMD(ymd: string, n: number): string {
+  const d = new Date(ymd + 'T12:00:00')
+  d.setDate(d.getDate() + n)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** Upsert a pending habit reminder instance; skip when already dismissed or resolved. */
+async function ensureHabitReminderInstance(
+  supabase: ReturnType<typeof getServiceClient>,
+  userId: string,
+  habitId: string,
+  occurrenceDate: string,
+  remindAt: string,
+): Promise<{ id: string; status: string } | null> {
+  const { data: existing, error: fetchErr } = await supabase
+    .from('habit_reminder_notifications')
+    .select('id, status')
+    .eq('user_id', userId)
+    .eq('habit_id', habitId)
+    .eq('occurrence_date', occurrenceDate)
+    .maybeSingle()
+
+  if (fetchErr) {
+    console.error('Error fetching habit reminder instance:', fetchErr)
+    return null
+  }
+
+  if (existing) {
+    if (existing.status === 'dismissed' || existing.status === 'resolved') return null
+    return existing as { id: string; status: string }
+  }
+
+  const { data: inserted, error: insertErr } = await supabase
+    .from('habit_reminder_notifications')
+    .insert({
+      user_id: userId,
+      habit_id: habitId,
+      occurrence_date: occurrenceDate,
+      remind_at: remindAt,
+      status: 'pending',
+    })
+    .select('id, status')
+    .single()
+
+  if (insertErr) {
+    console.error('Error inserting habit reminder instance:', insertErr)
+    return null
+  }
+
+  return inserted as { id: string; status: string }
+}
+
 /* Main handler: scan for due/overdue items and send notifications based on user preferences */
 serve(async (req) => {
   const supabase = getServiceClient()
@@ -439,15 +503,69 @@ serve(async (req) => {
       .select('id, user_id, title, due_date, habit_id')
       .in('status', ['active', 'in_progress'])
       .not('habit_id', 'is', null)
-      .lte('due_date', now.toISOString())
 
     if (habitTaskError) {
       console.error('Error querying habit-linked tasks for reminders:', habitTaskError)
     }
 
+    const { data: habitRows, error: habitRowsError } = await supabase
+      .from('habits')
+      .select(
+        'id, user_id, name, desired_action, minimum_action, add_to_todos, reminder_time, todo_remind_at, reminder_id, frequency, frequency_target, monthly_interval, monthly_day, created_at',
+      )
+      .eq('add_to_todos', true)
+
+    if (habitRowsError) {
+      console.error('Error querying habits for reminders:', habitRowsError)
+    }
+
+    const eligibleHabitIds = ((habitRows ?? []) as HabitOccurrenceSource[]).filter((h) =>
+      isHabitEligibleForTodoReminder(h as any)
+    ).map((h) => h.id)
+
+    const lookbackStartDefault = addDaysYMD(getLocalDayKey('UTC'), -HABIT_REMINDER_LOOKBACK_DAYS)
+    const { data: habitEntryRows, error: habitEntryError } = eligibleHabitIds.length > 0
+      ? await supabase
+        .from('habit_entries')
+        .select('habit_id, entry_date, status')
+        .in('habit_id', eligibleHabitIds)
+        .gte('entry_date', lookbackStartDefault)
+      : { data: [], error: null }
+
+    if (habitEntryError) {
+      console.error('Error querying habit entries for reminders:', habitEntryError)
+    }
+
+    const entriesByHabit: Record<string, HabitOccurrenceEntry[]> = {}
+    for (const row of (habitEntryRows ?? []) as HabitOccurrenceEntry[]) {
+      const habitId = (row as any).habit_id as string
+      if (!entriesByHabit[habitId]) entriesByHabit[habitId] = []
+      entriesByHabit[habitId].push({
+        entry_date: row.entry_date,
+        status: row.status,
+      })
+    }
+
+    const taskByHabitId: Record<string, {
+      id: string
+      user_id: string
+      title: string
+      due_date: string | null
+      habit_id: string
+    }> = {}
+    for (const row of (habitTaskRows ?? []) as {
+      id: string
+      user_id: string
+      title: string
+      due_date: string | null
+      habit_id: string
+    }[]) {
+      if (row.habit_id) taskByHabitId[row.habit_id] = row
+    }
+
     const allUserIds = new Set<string>()
     for (const t of taskCandidates ?? []) allUserIds.add((t as any).user_id)
-    for (const h of habitTaskRows ?? []) allUserIds.add((h as any).user_id)
+    for (const h of habitRows ?? []) allUserIds.add((h as any).user_id)
     /* Push subscribers: morning briefing must run even when the user has no due tasks today. */
     const pushUserIds = await loadActivePushUserIds(supabase)
     for (const id of pushUserIds) allUserIds.add(id)
@@ -705,66 +823,104 @@ serve(async (req) => {
       }
     }
 
-    for (const row of (habitTaskRows ?? []) as {
-      id: string
-      user_id: string
-      title: string
-      due_date: string | null
-      habit_id: string
-    }[]) {
-      const userId = row.user_id
-      const prefs = prefsByUser[userId] ?? {}
-      const basePayload = {
-        kind: 'habit_reminder',
-        habit_id: row.habit_id,
-        task_id: row.id,
-        name: row.title,
-        remind_at: row.due_date,
-      }
+    let dueHabitReminderCount = 0
 
-      for (const channel of ['push_mobile'] as NotificationChannel[]) {
-        if (!isEnabled(prefs, 'habit_reminder_due', channel)) continue
-        const already = await hasExistingNotification(
+    for (const habit of (habitRows ?? []) as (HabitOccurrenceSource & {
+      user_id: string
+      name: string
+      desired_action: string | null
+    })[]) {
+      if (!isHabitEligibleForTodoReminder(habit as any)) continue
+      const linkedTask = taskByHabitId[habit.id]
+      if (!linkedTask) continue
+
+      const userId = habit.user_id
+      const authUser = authUsersById[userId] ?? null
+      const tz = getUserTimeZone(authUser)
+      const todayYMD = getLocalDayKey(tz)
+      const missed = listMissedHabitOccurrences({
+        habit,
+        task: linkedTask,
+        entries: entriesByHabit[habit.id] ?? [],
+        timeZone: tz,
+        todayYMD,
+        nowMs: now.getTime(),
+      })
+
+      const prefs = prefsByUser[userId] ?? {}
+      const title = habit.desired_action?.trim() || habit.name || 'Habit reminder'
+
+      for (const occurrence of missed) {
+        dueHabitReminderCount += 1
+
+        const instance = await ensureHabitReminderInstance(
           supabase,
           userId,
-          'habit_reminder_due',
-          channel,
-          'habit',
-          row.habit_id,
+          habit.id,
+          occurrence.occurrenceDate,
+          occurrence.remindAt,
         )
-        if (already) continue
+        if (!instance) continue
 
-        try {
-          await sendPush({
-            userId,
-            title: 'Habit reminder',
-            body: row.title,
-            data: basePayload,
-            channels: [channel],
-          })
-          await recordNotification({
+        const basePayload = {
+          kind: 'habit_reminder',
+          habit_id: habit.id,
+          task_id: linkedTask.id,
+          occurrence_date: occurrence.occurrenceDate,
+          name: title,
+          remind_at: occurrence.remindAt,
+        }
+        const dedupeKey = habitReminderPushDedupeKey(habit.id, occurrence.occurrenceDate)
+
+        for (const channel of ['push_mobile'] as NotificationChannel[]) {
+          if (!isEnabled(prefs, 'habit_reminder_due', channel)) continue
+          const already = await hasExistingNotificationByDedupeKey(
             supabase,
             userId,
-            type: 'habit_reminder_due',
+            'habit_reminder_due',
             channel,
-            sourceType: 'habit',
-            sourceId: row.habit_id,
-            payload: basePayload,
-            status: 'sent',
-          })
-        } catch (err) {
-          console.error('Error sending habit reminder push:', err)
-          await recordNotification({
-            supabase,
-            userId,
-            type: 'habit_reminder_due',
-            channel,
-            sourceType: 'habit',
-            sourceId: row.habit_id,
-            payload: basePayload,
-            status: 'error',
-            errorMessage: (err as Error).message,
-          })
+            dedupeKey,
+          )
+          if (already) continue
+
+          try {
+            await sendPush({
+              userId,
+              title: 'Habit reminder',
+              body: title,
+              data: basePayload,
+              channels: [channel],
+            })
+            await recordNotification({
+              supabase,
+              userId,
+              type: 'habit_reminder_due',
+              channel,
+              sourceType: 'habit',
+              sourceId: habit.id,
+              dedupeKey,
+              payload: basePayload,
+              status: 'sent',
+            })
+            await supabase
+              .from('habit_reminder_notifications')
+              .update({ pushed_at: new Date().toISOString() })
+              .eq('id', instance.id)
+          } catch (err) {
+            console.error('Error sending habit reminder push:', err)
+            await recordNotification({
+              supabase,
+              userId,
+              type: 'habit_reminder_due',
+              channel,
+              sourceType: 'habit',
+              sourceId: habit.id,
+              dedupeKey,
+              payload: basePayload,
+              status: 'error',
+              errorMessage: (err as Error).message,
+            })
+          }
         }
       }
     }
@@ -775,7 +931,7 @@ serve(async (req) => {
           now: now.toISOString(),
           overdueTasks: overdueTaskRows.length,
           dueSoonTasks: dueSoonTaskRows.length,
-          dueHabitTodoReminders: (habitTaskRows ?? []).length,
+          dueHabitTodoReminders: dueHabitReminderCount,
         }),
         {
           headers: { 'Content-Type': 'application/json' },

@@ -12,7 +12,7 @@ import {
   getTaskDependencies,
 } from '../../../lib/supabase/tasks'
 import { createTag, getTags, setTagsForTask } from '../../../lib/supabase/tags'
-import type { TagColorId } from '../../tasks/types'
+import { DEFAULT_TAG_COLOR, type TagColorId } from '../../tasks/utils/tagColors'
 import type { CanonicalTaskRecord, TaskImportMapping, TaskImportParseError } from '../../tasks/utils/taskImportExport'
 import {
   downloadTasksCsv,
@@ -31,9 +31,6 @@ interface TaskImportSummary {
   createdTags: number
   errors: string[]
 }
-
-/* Default tag color when an imported tag doesn't specify one */
-const DEFAULT_TAG_COLOR: TagColorId = 'slate'
 
 /* Utility: flatten array of records into a parent→children map by external ids */
 function buildChildrenByExternalId(records: CanonicalTaskRecord[]): Map<string | null, CanonicalTaskRecord[]> {

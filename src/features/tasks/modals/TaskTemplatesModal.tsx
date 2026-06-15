@@ -387,176 +387,177 @@ export function TaskTemplatesModal({
     </main>
   )
 
-  /* Save Current view */
-  const SaveCurrentView = (
-    <main className="flex-1 overflow-y-auto flex flex-col">
-      <div className="p-5 md:p-8 flex flex-col lg:flex-row gap-6 md:gap-8">
-        <div className="flex-1 space-y-6">
-          <div className="space-y-2">
-            <label className="text-secondary font-bold text-outline uppercase tracking-widest">
-              Template Name
-            </label>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                className="w-12 h-12 flex items-center justify-center bg-surface-container-low border border-outline-variant rounded-xl hover:bg-surface-container-high transition-colors group shrink-0"
-                title="Select icon"
-                onClick={() => {
-                  const idx = DEFAULT_ICON_CHOICES.indexOf(templateIcon)
-                  const next = DEFAULT_ICON_CHOICES[(idx + 1) % DEFAULT_ICON_CHOICES.length]
-                  setTemplateIcon(next)
-                }}
-              >
-                <MaterialIcon name={templateIcon} className="text-on-surface-variant group-hover:text-primary" />
-              </button>
-              <input
-                type="text"
-                value={templateName}
-                onChange={(e) => setTemplateName(e.target.value)}
-                placeholder="e.g. Marketing Sprint Checklist"
-                className="flex-1 px-4 py-3 bg-surface-container-low border border-outline-variant rounded-xl focus:ring-2 focus:ring-primary/20 text-body"
-              />
-            </div>
-            {selectedTemplateId && (
-              <p className="text-secondary text-on-surface-variant">
-                Overwriting an existing template.
-              </p>
-            )}
-          </div>
+  /* Save Current footer: pinned outside scroll area via Modal footer */
+  const saveCurrentFooter = (
+    <div className="flex justify-end gap-3 w-full">
+      <button
+        type="button"
+        onClick={onClose}
+        className="px-6 py-2.5 text-body font-bold text-on-surface-variant hover:bg-surface-container-high rounded-xl"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        disabled={submitting || !templateName.trim()}
+        onClick={async () => {
+          const name = templateName.trim()
+          if (!name) return
+          setSubmitting(true)
+          try {
+            if (selectedTemplateId) {
+              if (mode === 'edit') {
+                await onOverwriteFromTask({
+                  id: selectedTemplateId,
+                  name,
+                  icon: templateIcon,
+                  included,
+                })
+              } else {
+                await onOverwriteFromDraft({
+                  id: selectedTemplateId,
+                  name,
+                  icon: templateIcon,
+                  included,
+                  title: draft.title,
+                  description: draft.description ?? null,
+                  priority: draft.priority,
+                  goal_id: draft.goal_id,
+                  time_estimate: draft.time_estimate,
+                  attachments: draft.attachments,
+                  recurrence_pattern: draft.recurrence_pattern,
+                  tags: draft.tags,
+                  draftChecklists: draft.draftChecklists,
+                  draftSubtasks: draft.draftSubtasks,
+                })
+              }
+            } else {
+              if (mode === 'edit') {
+                await onCreateFromTask({
+                  name,
+                  icon: templateIcon,
+                  included,
+                })
+              } else {
+                await onCreateFromDraft({
+                  name,
+                  icon: templateIcon,
+                  included,
+                  title: draft.title,
+                  description: draft.description ?? null,
+                  priority: draft.priority,
+                  goal_id: draft.goal_id,
+                  time_estimate: draft.time_estimate,
+                  attachments: draft.attachments,
+                  recurrence_pattern: draft.recurrence_pattern,
+                  tags: draft.tags,
+                  draftChecklists: draft.draftChecklists,
+                  draftSubtasks: draft.draftSubtasks,
+                })
+              }
+            }
+            setActiveTab('library')
+            setSelectedTemplateId('')
+          } finally {
+            setSubmitting(false)
+          }
+        }}
+        className="px-8 py-2.5 bg-primary text-on-primary rounded-xl font-bold text-body shadow-sm hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {submitting
+          ? 'Saving…'
+          : selectedTemplateId
+            ? 'Overwrite Template'
+            : 'Create Template'}
+      </button>
+    </div>
+  )
 
-          <div className="space-y-4">
-            <h3 className="text-secondary font-bold text-outline uppercase tracking-widest">
-              Included Fields
-            </h3>
-            {IncludedFieldsGrid}
+  /* Save Current view: single column; preview below fields; buttons in Modal footer */
+  const SaveCurrentView = (
+    <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+      <div className="p-5 md:p-8 space-y-6 min-w-0">
+        <div className="space-y-2">
+          <label className="text-secondary font-bold text-outline uppercase tracking-widest">
+            Template Name
+          </label>
+          <div className="flex gap-3 min-w-0">
+            <button
+              type="button"
+              className="w-12 h-12 flex items-center justify-center bg-surface-container-low border border-outline-variant rounded-xl hover:bg-surface-container-high transition-colors group shrink-0"
+              title="Select icon"
+              onClick={() => {
+                const idx = DEFAULT_ICON_CHOICES.indexOf(templateIcon)
+                const next = DEFAULT_ICON_CHOICES[(idx + 1) % DEFAULT_ICON_CHOICES.length]
+                setTemplateIcon(next)
+              }}
+            >
+              <MaterialIcon name={templateIcon} className="text-on-surface-variant group-hover:text-primary" />
+            </button>
+            <input
+              type="text"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              placeholder="e.g. Marketing Sprint Checklist"
+              className="flex-1 min-w-0 px-4 py-3 bg-surface-container-low border border-outline-variant rounded-xl focus:ring-2 focus:ring-primary/20 text-body"
+            />
           </div>
+          {selectedTemplateId && (
+            <p className="text-secondary text-on-surface-variant">
+              Overwriting an existing template.
+            </p>
+          )}
         </div>
 
-        <div className="w-full lg:w-72 shrink-0">
-          <h3 className="text-secondary font-bold text-outline uppercase tracking-widest mb-4">
+        <div className="space-y-4">
+          <h3 className="text-secondary font-bold text-outline uppercase tracking-widest">
+            Included Fields
+          </h3>
+          {IncludedFieldsGrid}
+        </div>
+
+        <section className="pt-2">
+          <h3 className="text-secondary font-bold text-outline uppercase tracking-widest mb-3">
             Template Preview
           </h3>
-          <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-5 space-y-4 shadow-sm">
-            <div className="space-y-1">
+          <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 md:p-5 space-y-4 shadow-sm min-w-0">
+            <div className="space-y-1 min-w-0">
               <span className="text-secondary font-bold text-primary/60 uppercase tracking-tighter">
                 Task Name
               </span>
-              <p className="text-body font-bold text-on-surface leading-tight">
+              <p className="text-body font-bold text-on-surface leading-tight break-words">
                 {draft.title?.trim() ? draft.title.trim() : 'Untitled task'}
               </p>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-0">
               <span className="text-secondary font-bold text-primary/60 uppercase tracking-tighter">
                 Description
               </span>
-              <p className="text-secondary text-on-surface-variant leading-relaxed line-clamp-2">
+              <p className="text-secondary text-on-surface-variant leading-relaxed line-clamp-2 break-words">
                 {draft.description?.trim() ? draft.description.trim() : 'No description'}
               </p>
             </div>
             <div className="space-y-2 pt-2 border-t border-outline-variant/30">
               {included.checklists && (
-                <div className="flex items-center gap-2">
-                  <MaterialIcon name="checklist" className="text-[14px] text-primary" />
-                  <span className="text-secondary font-bold text-on-surface">
+                <div className="flex items-center gap-2 min-w-0">
+                  <MaterialIcon name="checklist" className="text-[14px] text-primary shrink-0" />
+                  <span className="text-secondary font-bold text-on-surface truncate">
                     Checklists ({draft.draftChecklists.length})
                   </span>
                 </div>
               )}
               {included.subtasks && (
-                <div className="flex items-center gap-2">
-                  <MaterialIcon name="account_tree" className="text-[14px] text-primary" />
-                  <span className="text-secondary font-bold text-on-surface">
+                <div className="flex items-center gap-2 min-w-0">
+                  <MaterialIcon name="account_tree" className="text-[14px] text-primary shrink-0" />
+                  <span className="text-secondary font-bold text-on-surface truncate">
                     Subtasks ({draft.draftSubtasks.length})
                   </span>
                 </div>
               )}
             </div>
           </div>
-        </div>
+        </section>
       </div>
-
-      <footer className="mt-auto p-4 md:p-6 bg-surface-container-low border-t border-outline-variant flex justify-end gap-3">
-        <button
-          type="button"
-          onClick={onClose}
-          className="px-6 py-2.5 text-body font-bold text-on-surface-variant hover:bg-surface-container-high rounded-xl"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          disabled={submitting || !templateName.trim()}
-          onClick={async () => {
-            const name = templateName.trim()
-            if (!name) return
-            setSubmitting(true)
-            try {
-              if (selectedTemplateId) {
-                if (mode === 'edit') {
-                  await onOverwriteFromTask({
-                    id: selectedTemplateId,
-                    name,
-                    icon: templateIcon,
-                    included,
-                  })
-                } else {
-                  await onOverwriteFromDraft({
-                    id: selectedTemplateId,
-                    name,
-                    icon: templateIcon,
-                    included,
-                    title: draft.title,
-                    description: draft.description ?? null,
-                    priority: draft.priority,
-                    goal_id: draft.goal_id,
-                    time_estimate: draft.time_estimate,
-                    attachments: draft.attachments,
-                    recurrence_pattern: draft.recurrence_pattern,
-                    tags: draft.tags,
-                    draftChecklists: draft.draftChecklists,
-                    draftSubtasks: draft.draftSubtasks,
-                  })
-                }
-              } else {
-                if (mode === 'edit') {
-                  await onCreateFromTask({
-                    name,
-                    icon: templateIcon,
-                    included,
-                  })
-                } else {
-                  await onCreateFromDraft({
-                    name,
-                    icon: templateIcon,
-                    included,
-                    title: draft.title,
-                    description: draft.description ?? null,
-                    priority: draft.priority,
-                    goal_id: draft.goal_id,
-                    time_estimate: draft.time_estimate,
-                    attachments: draft.attachments,
-                    recurrence_pattern: draft.recurrence_pattern,
-                    tags: draft.tags,
-                    draftChecklists: draft.draftChecklists,
-                    draftSubtasks: draft.draftSubtasks,
-                  })
-                }
-              }
-              setActiveTab('library')
-              setSelectedTemplateId('')
-            } finally {
-              setSubmitting(false)
-            }
-          }}
-          className="px-8 py-2.5 bg-primary text-on-primary rounded-xl font-bold text-body shadow-sm hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {submitting
-            ? 'Saving…'
-            : selectedTemplateId
-              ? 'Overwrite Template'
-              : 'Create Template'}
-        </button>
-      </footer>
     </main>
   )
 
@@ -570,12 +571,15 @@ export function TaskTemplatesModal({
           {tabs}
         </div>
       }
+      footer={activeTab === 'saveCurrent' ? saveCurrentFooter : undefined}
+      footerClassName="bg-surface-container-low border-outline-variant"
       fullScreenOnMobile
       /* Mobile: full-screen (no padding, no rounding). md+: centered dialog with blur + rounded card */
       overlayClassName="p-0 backdrop-blur-md bg-black/15 md:p-6"
       cardClassName="bg-surface md:rounded-2xl md:border md:border-outline-variant/20"
+      bodyClassName="p-0 overflow-x-hidden flex flex-col min-h-0"
     >
-      <div className="flex flex-col h-full min-h-0">
+      <div className="flex flex-col flex-1 min-h-0">
         {activeTab === 'library' ? LibraryView : SaveCurrentView}
       </div>
     </Modal>

@@ -1,9 +1,10 @@
 /* DeletedTaskCard: Lineup-style row for deleted tasks with always-visible Restore action */
 
 import type { MouseEvent } from 'react'
-import { FlagIcon, TrophyIcon } from '../../../../components/icons'
+import { TrophyIcon } from '../../../../components/icons'
 import { MaterialIcon } from '../../../../components/MaterialIcon'
 import { Button } from '../../../../components/Button'
+import { PriorityFlagIcon } from '../PriorityFlagIcon'
 import { useUserTimeZone } from '../../../settings/useUserTimeZone'
 import type { Task } from '../../types'
 import type { TaskRowEnrichment } from '../../types/taskRowEnrichment'
@@ -11,7 +12,6 @@ import {
   getDueDateColorClass,
   getLineupDateDisplay,
 } from '../../utils/taskRowDisplay'
-import { getPriorityFlagClasses } from '../../utils/priority'
 import { getLineupTagPillClassName } from '../../utils/tagPillStyles'
 import { TaskRowMetadataStrip } from './TaskRowMetadataStrip'
 
@@ -50,22 +50,17 @@ export function DeletedTaskCard({
   const isRecurring = Boolean(task.recurrence_pattern)
   const showFlag = task.priority !== 'none'
 
-  const renderPriorityIndicator = (sizeClass: string) => {
+  const renderPriorityIndicator = (flagSizeClass: string, trophySizeClass: string) => {
     if (task.goal_id) {
       return (
         <TrophyIcon
-          className={`${sizeClass} shrink-0 stroke-yellow-500 fill-yellow-100 text-yellow-600`}
+          className={`${trophySizeClass} shrink-0 stroke-yellow-500 fill-yellow-100 text-yellow-600`}
           aria-hidden
         />
       )
     }
     if (!showFlag) return null
-    return (
-      <FlagIcon
-        className={`${sizeClass} shrink-0 ${getPriorityFlagClasses(task.priority)}`}
-        aria-hidden
-      />
-    )
+    return <PriorityFlagIcon priority={task.priority} className={flagSizeClass} />
   }
 
   const handleRestoreClick = (e: MouseEvent) => {
@@ -86,7 +81,7 @@ export function DeletedTaskCard({
     </Button>
   )
 
-  const dueAndPriority = (iconSize: string) =>
+  const dueAndPriority = (flagSize: string, trophySize: string) =>
     dateDisplay || showFlag || task.goal_id ? (
       <div className="flex shrink-0 items-center gap-2">
         {dateDisplay ? (
@@ -98,13 +93,13 @@ export function DeletedTaskCard({
             ) : null}
           </div>
         ) : null}
-        {renderPriorityIndicator(iconSize)}
+        {renderPriorityIndicator(flagSize, trophySize)}
       </div>
     ) : null
 
-  const trailingActions = (iconSize: string) => (
+  const trailingActions = (flagSize: string, trophySize: string) => (
     <div className="flex shrink-0 items-center gap-2 sm:gap-4">
-      {dueAndPriority(iconSize)}
+      {dueAndPriority(flagSize, trophySize)}
       {restoreButton}
     </div>
   )
@@ -134,7 +129,7 @@ export function DeletedTaskCard({
               <h3 className="min-w-0 flex-1 font-semibold leading-tight text-on-surface opacity-80">
                 {task.title}
               </h3>
-              {trailingActions('h-6 w-6')}
+              {trailingActions('text-2xl', 'h-6 w-6')}
             </div>
             <TaskRowMetadataStrip
               task={task}
@@ -183,7 +178,7 @@ export function DeletedTaskCard({
           />
         </div>
 
-        {trailingActions('h-5 w-5')}
+        {trailingActions('text-xl', 'h-5 w-5')}
       </div>
     </>
   )

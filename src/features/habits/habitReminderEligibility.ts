@@ -19,10 +19,26 @@ export function isHabitEligibleForTodoReminder(h: Habit): boolean {
 }
 
 /**
- * Resolve the ISO instant for today's occurrence: prefer todo_remind_at, else wall time, else default clock when action text exists.
+ * Resolve the ISO instant for today's occurrence: apply todayYMD with time from todo_remind_at.
  */
 export function resolveHabitRemindAt(habit: Habit, todayYMD: string): string | null {
-  if (habit.todo_remind_at) return habit.todo_remind_at
+  if (habit.todo_remind_at) {
+    const ref = new Date(habit.todo_remind_at)
+    if (Number.isFinite(ref.getTime())) {
+      const [y, mo, d] = todayYMD.split('-').map(Number)
+      const local = new Date(
+        y ?? 0,
+        (mo ?? 1) - 1,
+        d ?? 1,
+        ref.getHours(),
+        ref.getMinutes(),
+        ref.getSeconds(),
+        ref.getMilliseconds(),
+      )
+      return local.toISOString()
+    }
+    return habit.todo_remind_at
+  }
   if (habit.reminder_time && habit.reminder_time.trim() !== '') {
     return habitReminderInstantForLocalDay(todayYMD, habit.reminder_time)
   }

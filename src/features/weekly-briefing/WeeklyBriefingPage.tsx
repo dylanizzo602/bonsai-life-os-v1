@@ -7,6 +7,7 @@ import { saveOrUpdateWeeklyBriefingEntryForThisWeek } from '../../lib/supabase/r
 import { useTasks } from '../tasks/hooks/useTasks'
 import { useHabits } from '../habits/hooks/useHabits'
 import { useGoals } from '../goals/hooks/useGoals'
+import { Button } from '../../components/Button'
 import { BriefingProgressBar } from '../briefings/BriefingProgressBar'
 import { GoalDetailPage } from '../goals/GoalDetailPage'
 import { AddEditTaskModal } from '../tasks/AddEditTaskModal'
@@ -19,11 +20,16 @@ import type { Task } from '../tasks/types'
 /** Number of steps in the weekly briefing flow (look back, goals, tasks) */
 const TOTAL_STEPS = 3
 
+interface WeeklyBriefingPageProps {
+  /** Close the briefing flow (e.g. return to home) */
+  onClose?: () => void
+}
+
 /**
  * Weekly briefing: look back on last week, review goals progress, then clean up tasks with no date/priority.
  * Uses step state and BriefingProgressBar; goal detail and task edit open in-context.
  */
-export function WeeklyBriefingPage() {
+export function WeeklyBriefingPage({ onClose }: WeeklyBriefingPageProps) {
   /* Step state: 0 = look back, 1 = goals progress, 2 = task cleanup, 3 = complete */
   const [step, setStep] = useState(0)
   /* When set, show GoalDetailPage in-context (overlay); onBack clears */
@@ -170,13 +176,16 @@ export function WeeklyBriefingPage() {
           <p className="text-body text-bonsai-slate-700 mb-6">
             You&apos;ve looked back on last week, reviewed goals, and cleaned up tasks. Have a great week.
           </p>
-          <button
-            type="button"
-            onClick={() => setStep(0)}
-            className="rounded-lg bg-bonsai-sage-600 px-4 py-2 text-body font-medium text-white hover:bg-bonsai-sage-700 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 focus:ring-offset-2"
-          >
-            Start over
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            {onClose && (
+              <Button type="button" variant="secondary" onClick={onClose}>
+                Close
+              </Button>
+            )}
+            <Button type="button" variant="primary" onClick={() => setStep(0)}>
+              Start over
+            </Button>
+          </div>
         </div>
       </div>
     )

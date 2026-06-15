@@ -16,6 +16,8 @@ export interface DataManagementSettingsSectionProps {
   reflectionsFileInputRef: RefObject<HTMLInputElement | null>
   tasksImportLoading: boolean
   reflectionsImportLoading: boolean
+  habitsResetLoading: boolean
+  habitsResetMessage: string | null
   tasksMappingError: string | null
   tasksMappingLoaded: boolean
   tasksImportSummary: ImportSummary | null
@@ -26,6 +28,7 @@ export interface DataManagementSettingsSectionProps {
   onTasksFileChange: (file: File) => void
   onTasksMappingFileChange: (file: File) => void
   onReflectionsFileChange: (file: File) => void
+  onResetHabitsFreshStart: () => void
 }
 
 /**
@@ -37,6 +40,8 @@ export function DataManagementSettingsSection({
   reflectionsFileInputRef,
   tasksImportLoading,
   reflectionsImportLoading,
+  habitsResetLoading,
+  habitsResetMessage,
   tasksMappingError,
   tasksMappingLoaded,
   tasksImportSummary,
@@ -47,6 +52,7 @@ export function DataManagementSettingsSection({
   onTasksFileChange,
   onTasksMappingFileChange,
   onReflectionsFileChange,
+  onResetHabitsFreshStart,
 }: DataManagementSettingsSectionProps) {
   return (
     <section>
@@ -126,28 +132,51 @@ export function DataManagementSettingsSection({
 
         <div className="border-t border-outline-variant/20 pt-8">
           <h3 className="mb-6 text-xs font-bold uppercase tracking-[0.05em] text-error/70">Danger Zone</h3>
-          <div className="flex flex-col items-center justify-between gap-6 rounded-xl border border-error/10 bg-error-container/5 p-8 md:flex-row">
-            <div className="flex-1">
-              <h4 className="text-body font-semibold text-on-surface">Critical Actions</h4>
-              <p className="text-secondary text-on-surface-variant">
-                Permanently remove your data or reset your progress. These actions cannot be undone.
-              </p>
+          <div className="space-y-4">
+            <div className="flex flex-col items-center justify-between gap-6 rounded-xl border border-error/10 bg-error-container/5 p-8 md:flex-row">
+              <div className="flex-1">
+                <h4 className="text-body font-semibold text-on-surface">Reset habits</h4>
+                <p className="text-secondary text-on-surface-variant">
+                  Clear habit log history and reminder notifications, then reschedule every habit from today as if
+                  newly created. Habit names and settings are kept.
+                </p>
+                {habitsResetMessage ? (
+                  <p className="text-secondary mt-2 text-primary">{habitsResetMessage}</p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={onResetHabitsFreshStart}
+                disabled={habitsResetLoading}
+                className="rounded-lg border border-error px-6 py-2 text-sm font-semibold text-error transition-colors hover:bg-error-container/20 disabled:opacity-50"
+              >
+                {habitsResetLoading ? 'Resetting…' : 'Reset habits'}
+              </button>
             </div>
-            <div className="flex flex-wrap items-center gap-4">
-              <button
-                type="button"
-                disabled
-                className="cursor-not-allowed rounded-lg border border-error px-6 py-2 text-sm font-semibold text-error opacity-60"
-              >
-                Reset Account
-              </button>
-              <button
-                type="button"
-                disabled
-                className="cursor-not-allowed rounded-lg bg-error px-6 py-2 text-sm font-semibold text-on-error opacity-60 shadow-sm"
-              >
-                Delete Account
-              </button>
+
+            <div className="flex flex-col items-center justify-between gap-6 rounded-xl border border-error/10 bg-error-container/5 p-8 md:flex-row">
+              <div className="flex-1">
+                <h4 className="text-body font-semibold text-on-surface">Critical Actions</h4>
+                <p className="text-secondary text-on-surface-variant">
+                  Permanently remove your data or reset your progress. These actions cannot be undone.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-4">
+                <button
+                  type="button"
+                  disabled
+                  className="cursor-not-allowed rounded-lg border border-error px-6 py-2 text-sm font-semibold text-error opacity-60"
+                >
+                  Reset Account
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  className="cursor-not-allowed rounded-lg bg-error px-6 py-2 text-sm font-semibold text-on-error opacity-60 shadow-sm"
+                >
+                  Delete Account
+                </button>
+              </div>
             </div>
           </div>
         </div>
