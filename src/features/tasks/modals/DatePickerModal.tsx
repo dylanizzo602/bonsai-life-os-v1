@@ -1,7 +1,8 @@
-/* DatePickerModal: Popover for start/due date, recurring settings, and calendar; positioned at trigger */
+/* DatePickerModal: Schedule popover for start/due dates, quick picks, calendar, and repeat options */
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Button } from '../../../components/Button'
+import { createPortal } from 'react-dom'
+import { MaterialIcon } from '../../../components/MaterialIcon'
 import { RecurringSettingsSection } from './RecurringSettingsSection'
 import {
   parseRecurrencePattern,
@@ -340,7 +341,7 @@ function getCalendarCells(viewMonth: Date): CalendarCell[] {
 }
 
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
-const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const MONTH_NAMES_SHORT_HEADER = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 /** Format today's date as MM/DD/YYYY for input placeholders without changing selected value */
 function formatTodayPlaceholder(): string {
@@ -351,22 +352,24 @@ function formatTodayPlaceholder(): string {
   return `${mm}/${dd}/${yyyy}`
 }
 
-/** Calendar icon for date fields */
-function CalendarIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-    </svg>
-  )
+/** Format YYYY-MM-DD as MM/DD/YYYY for the schedule input row */
+function formatDateMMDDYYYY(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number)
+  const mm = String(m).padStart(2, '0')
+  const dd = String(d).padStart(2, '0')
+  return `${mm}/${dd}/${y}`
 }
 
-/** Clock icon for time fields */
-function ClockIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
+/** Inclusive day count between start and due (YYYY-MM-DD); null when either date is missing */
+function getSelectedRangeDays(startYmd: string, dueYmd: string): number | null {
+  if (!startYmd || !dueYmd) return null
+  const [sy, sm, sd] = startYmd.split('-').map(Number)
+  const [dy, dm, dd] = dueYmd.split('-').map(Number)
+  const startDt = new Date(sy, sm - 1, sd)
+  const dueDt = new Date(dy, dm - 1, dd)
+  const diffMs = dueDt.getTime() - startDt.getTime()
+  if (diffMs < 0) return null
+  return Math.floor(diffMs / (24 * 60 * 60 * 1000)) + 1
 }
 
 export function DatePickerModal({
@@ -384,8 +387,8 @@ export function DatePickerModal({
 
   /* Recurrence: parsed pattern for RecurringSettingsSection; synced when modal opens */
   const [recurrencePattern, setRecurrencePattern] = useState(parseRecurrencePattern(recurrencePatternProp ?? null))
-  /* Left column: show suggested dates by default; show recurring settings when user clicks "Set Recurring" */
-  const [showRecurringSection, setShowRecurringSection] = useState(false)
+  /* Repeat section: expanded when an existing recurrence pattern is present */
+  const [repeatSectionOpen, setRepeatSectionOpen] = useState(false)
 
   /* Date/time state: YYYY-MM-DD and optional HH:mm for start and due */
   const [start, setStart] = useState('')
@@ -493,22 +496,22 @@ export function DatePickerModal({
       setDue(d)
       setStartTime(st)
       setDueTime(dt)
-      setStartDateEdit(s ? formatDateDisplay(s) : '')
-      setDueDateEdit(d ? formatDateDisplay(d) : '')
+      setStartDateEdit(s ? formatDateMMDDYYYY(s) : '')
+      setDueDateEdit(d ? formatDateMMDDYYYY(d) : '')
       setStartTimeEdit(st ? formatTimeDisplay(st) : '')
       setDueTimeEdit(dt ? formatTimeDisplay(dt) : '')
       setShowStartTime(!!st)
       setShowDueTime(!!dt)
       setRecurrencePattern(parseRecurrencePattern(recurrencePatternProp ?? null))
-      setShowRecurringSection(Boolean(recurrencePatternProp))
+      setRepeatSectionOpen(Boolean(recurrencePatternProp))
       setViewMonth(startDate ? new Date(startDate) : dueDate ? new Date(dueDate) : new Date())
     }
   }, [isOpen, startDate, dueDate, recurrencePatternProp])
 
-  /* Sync edit buffers: display formatDateDisplay when valid (Today, Tomorrow, day name, etc.) */
+  /* Sync edit buffers: MM/DD/YYYY for date fields; 12h clock for time fields */
   useEffect(() => {
-    setStartDateEdit(start ? formatDateDisplay(start) : '')
-    setDueDateEdit(due ? formatDateDisplay(due) : '')
+    setStartDateEdit(start ? formatDateMMDDYYYY(start) : '')
+    setDueDateEdit(due ? formatDateMMDDYYYY(due) : '')
     setStartTimeEdit(startTime ? formatTimeDisplay(startTime) : '')
     setDueTimeEdit(dueTime ? formatTimeDisplay(dueTime) : '')
   }, [start, due, startTime, dueTime])
@@ -525,7 +528,8 @@ export function DatePickerModal({
 
   /* Build calendar grid for viewMonth */
   const calendarCells = useMemo(() => getCalendarCells(viewMonth), [viewMonth])
-  const viewMonthLabel = `${MONTH_NAMES[viewMonth.getMonth()]} ${viewMonth.getFullYear()}`
+  const viewMonthLabel = `${MONTH_NAMES_SHORT_HEADER[viewMonth.getMonth()]} ${viewMonth.getFullYear()}`
+  const selectedRangeDays = getSelectedRangeDays(start, due)
 
   /* Future recurrence occurrences for calendar shading: from first to last cell; exclude past dates */
   const futureOccurrencesSet = useMemo(() => {
@@ -618,89 +622,132 @@ export function DatePickerModal({
   }
 
   /* Resolve cell shading: today, start, due, range, or recurrence occurrence */
-  const getCellClass = (ymd: string) => {
-    const isToday = ymd === todayYMD()
+  const getCellClass = (ymd: string, isCurrentMonth: boolean) => {
+    if (!isCurrentMonth) return 'text-outline/40'
     const isStart = ymd === start
     const isDue = ymd === due
     const inRange = isBetween(ymd, start, due)
     const isRecurrenceOccurrence = futureOccurrencesSet.has(ymd)
-    if (isStart || isDue) return 'bg-bonsai-sage-600 text-white hover:bg-bonsai-sage-700'
-    if (inRange) return 'bg-bonsai-sage-100 text-bonsai-slate-800 hover:bg-bonsai-sage-200'
-    if (isRecurrenceOccurrence) return 'bg-bonsai-sage-100 text-bonsai-slate-700 hover:bg-bonsai-sage-200'
-    if (isToday) return 'bg-bonsai-slate-200 text-bonsai-slate-800 hover:bg-bonsai-slate-300'
-    return 'text-bonsai-slate-700 hover:bg-bonsai-slate-100'
+    if (isStart || isDue) {
+      return 'rounded-lg border border-sage/30 bg-sage/20 font-bold text-sage'
+    }
+    if (inRange || isRecurrenceOccurrence) {
+      return 'rounded-lg bg-sage/10 text-on-surface hover:bg-sage/15'
+    }
+    return 'rounded-lg hover:bg-surface-container-high'
   }
 
-  /* All text at secondary size to keep widget compact */
-  const fieldBase = 'rounded px-2 py-2 text-secondary leading-tight focus-within:ring-2 focus-within:ring-bonsai-sage-500 flex items-center gap-2 min-h-0'
-  /* Time input: Editable; flexible width for small screens */
-  const timeInputClass = 'min-w-[3.5rem] w-[4.5rem] max-w-[5rem] shrink rounded border-0 bg-transparent py-0 text-secondary text-bonsai-slate-700 focus:outline-none focus:ring-0 text-right placeholder:text-bonsai-slate-400'
+  /* Time input: editable; flexible width for small screens */
+  const timeInputClass =
+    'min-w-[3.5rem] w-[4.5rem] max-w-[5rem] shrink rounded border-0 bg-transparent py-0 text-sm font-medium text-on-surface focus:outline-none focus:ring-0 text-right placeholder:text-outline'
+
+  /* Date field shell: active (focused) vs inactive styling from schedule mock */
+  const dateFieldShell = (field: 'start' | 'due') => {
+    const isActive = focusedField === field
+    return isActive
+      ? 'border-[1.5px] border-sage bg-bonsai-sage-50'
+      : 'border-[1.5px] border-transparent bg-bonsai-slate-100'
+  }
 
   if (!isOpen) return null
 
-  return (
+  const overlay = (
+    <div
+      className="fixed inset-0 z-[9999] bg-on-surface/20"
+      aria-hidden
+      onClick={onClose}
+    />
+  )
+
+  const popover = (
     <div
       ref={popoverRef}
-      className="fixed z-50 flex max-h-[calc(100vh-16px)] min-h-0 flex-col overflow-hidden rounded-xl border border-bonsai-slate-200 bg-white shadow-xl p-3 sm:p-5 md:p-6 w-[calc(100vw-2rem)] max-w-xl min-w-0 sm:min-w-[18rem]"
+      className="fixed z-[10000] flex max-h-[calc(100vh-16px)] min-h-0 w-[calc(100vw-2rem)] max-w-2xl min-w-0 flex-col overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container-lowest shadow-2xl"
       style={{ top: `${position.top}px`, left: `${position.left}px` }}
       role="dialog"
-      aria-label="Start and due date"
+      aria-label="Select start and due date"
       /* Stop propagation so clicks inside popover do not open the task edit modal (row click) */
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-        {/* Start and due date row: stack on small screens, side-by-side on sm+; shrink-0 so it doesn't collapse */}
-        <div className="grid shrink-0 grid-cols-1 gap-3 pb-3 sm:grid-cols-2 sm:mb-5 min-w-0">
-          <div
-            className={`${fieldBase} min-h-[2.75rem] ${focusedField === 'start' ? 'bg-bonsai-sage-50 ring-2 ring-bonsai-sage-500' : 'bg-bonsai-slate-100'}`}
-            /* Field activation: use pointer down so touch devices update target before calendar tap */
-            onPointerDown={() => setFocusedField('start')}
-            onClick={() => setFocusedField('start')}
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden p-6 md:p-8">
+        {/* Header: title, subtitle, and close */}
+        <header className="flex shrink-0 items-start justify-between">
+          <div>
+            <h1 className="text-body font-bold text-on-surface">
+              Select<span className="text-xl">&nbsp;date(s)</span>
+            </h1>
+            <p className="mt-0.5 text-secondary text-on-surface-variant">
+              Select a start and due date for your project.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-outline transition-colors hover:text-on-surface"
+            aria-label="Close schedule picker"
           >
-            <CalendarIcon className="w-4 h-4 text-bonsai-slate-500 shrink-0" />
-            <div className="flex-1 min-w-0 flex items-center gap-2 flex-nowrap">
-              {/* Date input: Editable; accepts YYYY-MM-DD, today, tomorrow, MM/DD/YYYY; placeholder shows today's date as DD/MM/YYYY */}
-              <input
-                type="text"
-                value={startDateEdit}
-                onChange={(e) => setStartDateEdit(e.target.value)}
-                /* Focus sync: ensure calendar clicks apply to whichever input the browser focused (tablet/mobile auto-focus quirks) */
-                onFocus={() => setFocusedField('start')}
-                onBlur={() => {
-                  const p = parseDateInput(startDateEdit)
-                  if (p) {
-                    setStart(p)
-                    setStartDateEdit(formatDateDisplay(p))
-                    if (p) setFocusedField('due')
-                  } else {
-                    setStartDateEdit(start ? formatDateDisplay(start) : '')
-                  }
-                }}
-                onPointerDown={(e) => { e.stopPropagation(); setFocusedField('start') }}
-                onClick={(e) => { e.stopPropagation(); setFocusedField('start') }}
-                placeholder={formatTodayPlaceholder()}
-                className="min-w-0 flex-1 bg-transparent border-0 py-0 text-secondary text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-0"
-                aria-label="Start date"
-              />
-              {/* Time section: No time picker; typing only. Clock icon just reveals the input. */}
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
+            <MaterialIcon name="close" />
+          </button>
+        </header>
+
+        <div className="min-h-0 flex-1 space-y-6 overflow-auto">
+          {/* Start and due date inputs */}
+          <div className="flex flex-col gap-4 md:flex-row">
+            {/* Start date field */}
+            <div className="flex flex-1 flex-col gap-1.5">
+              <label
+                className={`px-1 text-[11px] font-bold uppercase tracking-wider ${
+                  focusedField === 'start' ? 'text-sage' : 'text-outline'
+                }`}
+              >
+                Start Date
+              </label>
+              <div
+                className={`relative flex items-center gap-3 rounded-lg px-4 py-3 ${dateFieldShell('start')}`}
+                onPointerDown={() => setFocusedField('start')}
+                onClick={() => setFocusedField('start')}
+              >
+                <MaterialIcon
+                  name="calendar_today"
+                  className={`text-xl ${focusedField === 'start' ? 'text-sage' : 'text-outline'}`}
+                />
+                <input
+                  type="text"
+                  value={startDateEdit}
+                  onChange={(e) => setStartDateEdit(e.target.value)}
+                  onFocus={() => setFocusedField('start')}
+                  onBlur={() => {
+                    const p = parseDateInput(startDateEdit)
+                    if (p) {
+                      setStart(p)
+                      setStartDateEdit(formatDateMMDDYYYY(p))
+                      if (p) setFocusedField('due')
+                    } else {
+                      setStartDateEdit(start ? formatDateMMDDYYYY(start) : '')
+                    }
+                  }}
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    setFocusedField('start')
+                  }}
                   onClick={(e) => {
                     e.stopPropagation()
-                    setShowStartTime(true)
+                    setFocusedField('start')
                   }}
-                  className="shrink-0 p-0.5 rounded text-bonsai-slate-500 hover:text-bonsai-slate-700 hover:bg-bonsai-slate-100"
-                  aria-label="Open time picker"
-                >
-                  <ClockIcon className="w-4 h-4" />
-                </button>
+                  placeholder={formatTodayPlaceholder()}
+                  className="min-w-0 flex-1 border-0 bg-transparent py-0 text-sm font-medium text-on-surface placeholder:text-outline focus:outline-none focus:ring-0"
+                  aria-label="Start date"
+                />
+                <MaterialIcon
+                  name="schedule"
+                  className={`ml-auto text-xl ${focusedField === 'start' ? 'text-sage' : 'text-outline'}`}
+                />
                 {showStartTime ? (
                   <input
                     type="text"
                     value={startTimeEdit}
                     onChange={(e) => setStartTimeEdit(e.target.value)}
-                    /* Focus sync: keep start active while editing time */
                     onFocus={() => setFocusedField('start')}
                     onBlur={() => {
                       const p = parseTimeInput(startTimeEdit)
@@ -725,7 +772,10 @@ export function DatePickerModal({
                         ;(e.currentTarget as HTMLInputElement).blur()
                       }
                     }}
-                    onPointerDown={(e) => { e.stopPropagation(); setFocusedField('start') }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation()
+                      setFocusedField('start')
+                    }}
                     onClick={(e) => e.stopPropagation()}
                     placeholder="12:00 PM"
                     className={timeInputClass}
@@ -738,74 +788,82 @@ export function DatePickerModal({
                       e.stopPropagation()
                       setShowStartTime(true)
                     }}
-                    className="shrink-0 text-secondary text-bonsai-sage-600 hover:text-bonsai-sage-700 whitespace-nowrap"
+                    className="shrink-0 text-sm font-medium text-on-surface"
                   >
                     Add time
                   </button>
                 )}
+                {start && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setStart('')
+                      setShowStartTime(false)
+                    }}
+                    className="absolute -right-2 -top-2 rounded-full bg-surface p-0.5 text-outline-variant shadow-sm hover:text-error"
+                    aria-label="Clear start date"
+                  >
+                    <MaterialIcon name="close" className="text-sm" />
+                  </button>
+                )}
               </div>
             </div>
-            {start && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setStart(''); setShowStartTime(false) }}
-                className="shrink-0 p-0.5 text-bonsai-slate-400 hover:text-bonsai-slate-600 rounded leading-none"
-                aria-label="Clear start date"
+
+            {/* Due date field */}
+            <div className="flex flex-1 flex-col gap-1.5">
+              <label
+                className={`px-1 text-[11px] font-bold uppercase tracking-wider ${
+                  focusedField === 'due' ? 'text-sage' : 'text-outline'
+                }`}
               >
-                <span className="text-secondary">×</span>
-              </button>
-            )}
-          </div>
-          <div
-            className={`${fieldBase} min-h-[2.75rem] ${focusedField === 'due' ? 'bg-bonsai-sage-50 ring-2 ring-bonsai-sage-500' : 'bg-bonsai-slate-100'}`}
-            /* Field activation: use pointer down so touch devices update target before calendar tap */
-            onPointerDown={() => setFocusedField('due')}
-            onClick={() => setFocusedField('due')}
-          >
-            <CalendarIcon className="w-4 h-4 text-bonsai-slate-500 shrink-0" />
-            <div className="flex-1 min-w-0 flex items-center gap-2 flex-nowrap">
-              {/* Date input: Editable; accepts YYYY-MM-DD, today, tomorrow, MM/DD/YYYY; placeholder shows today's date as DD/MM/YYYY */}
-              <input
-                type="text"
-                value={dueDateEdit}
-                onChange={(e) => setDueDateEdit(e.target.value)}
-                /* Focus sync: ensure calendar clicks apply to whichever input the browser focused (tablet/mobile auto-focus quirks) */
-                onFocus={() => setFocusedField('due')}
-                onBlur={() => {
-                  const p = parseDateInput(dueDateEdit)
-                  if (p) {
-                    setDue(p)
-                    setDueDateEdit(formatDateDisplay(p))
-                    if (p) setFocusedField('start')
-                  } else {
-                    setDueDateEdit(due ? formatDateDisplay(due) : '')
-                  }
-                }}
-                onPointerDown={(e) => { e.stopPropagation(); setFocusedField('due') }}
-                onClick={(e) => { e.stopPropagation(); setFocusedField('due') }}
-                placeholder={formatTodayPlaceholder()}
-                className="min-w-0 flex-1 bg-transparent border-0 py-0 text-secondary text-bonsai-slate-700 placeholder:text-bonsai-slate-400 focus:outline-none focus:ring-0"
-                aria-label="Due date"
-              />
-              {/* Time section: No time picker; typing only. Clock icon just reveals the input. */}
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
+                Due Date
+              </label>
+              <div
+                className={`relative flex items-center gap-3 rounded-lg px-4 py-3 ${dateFieldShell('due')}`}
+                onPointerDown={() => setFocusedField('due')}
+                onClick={() => setFocusedField('due')}
+              >
+                <MaterialIcon
+                  name="calendar_today"
+                  className={`text-xl ${focusedField === 'due' ? 'text-sage' : 'text-outline'}`}
+                />
+                <input
+                  type="text"
+                  value={dueDateEdit}
+                  onChange={(e) => setDueDateEdit(e.target.value)}
+                  onFocus={() => setFocusedField('due')}
+                  onBlur={() => {
+                    const p = parseDateInput(dueDateEdit)
+                    if (p) {
+                      setDue(p)
+                      setDueDateEdit(formatDateMMDDYYYY(p))
+                      if (p) setFocusedField('start')
+                    } else {
+                      setDueDateEdit(due ? formatDateMMDDYYYY(due) : '')
+                    }
+                  }}
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    setFocusedField('due')
+                  }}
                   onClick={(e) => {
                     e.stopPropagation()
-                    setShowDueTime(true)
+                    setFocusedField('due')
                   }}
-                  className="shrink-0 p-0.5 rounded text-bonsai-slate-500 hover:text-bonsai-slate-700 hover:bg-bonsai-slate-100"
-                  aria-label="Open time picker"
-                >
-                  <ClockIcon className="w-4 h-4" />
-                </button>
+                  placeholder={formatTodayPlaceholder()}
+                  className="min-w-0 flex-1 border-0 bg-transparent py-0 text-sm font-medium text-on-surface placeholder:text-outline focus:outline-none focus:ring-0"
+                  aria-label="Due date"
+                />
+                <MaterialIcon
+                  name="schedule"
+                  className={`ml-auto text-xl ${focusedField === 'due' ? 'text-sage' : 'text-outline'}`}
+                />
                 {showDueTime ? (
                   <input
                     type="text"
                     value={dueTimeEdit}
                     onChange={(e) => setDueTimeEdit(e.target.value)}
-                    /* Focus sync: keep due active while editing time */
                     onFocus={() => setFocusedField('due')}
                     onBlur={() => {
                       const p = parseTimeInput(dueTimeEdit)
@@ -830,7 +888,10 @@ export function DatePickerModal({
                         ;(e.currentTarget as HTMLInputElement).blur()
                       }
                     }}
-                    onPointerDown={(e) => { e.stopPropagation(); setFocusedField('due') }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation()
+                      setFocusedField('due')
+                    }}
                     onClick={(e) => e.stopPropagation()}
                     placeholder="12:00 PM"
                     className={timeInputClass}
@@ -843,131 +904,166 @@ export function DatePickerModal({
                       e.stopPropagation()
                       setShowDueTime(true)
                     }}
-                    className="shrink-0 text-secondary text-bonsai-sage-600 hover:text-bonsai-sage-700 whitespace-nowrap"
+                    className="shrink-0 text-sm font-medium text-on-surface"
                   >
                     Add time
                   </button>
                 )}
+                {due && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setDue('')
+                      setShowDueTime(false)
+                    }}
+                    className="absolute -right-2 -top-2 rounded-full bg-surface p-0.5 text-outline-variant shadow-sm hover:text-error"
+                    aria-label="Clear due date"
+                  >
+                    <MaterialIcon name="close" className="text-sm" />
+                  </button>
+                )}
               </div>
             </div>
-            {due && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setDue(''); setShowDueTime(false) }}
-                className="shrink-0 p-0.5 text-bonsai-slate-400 hover:text-bonsai-slate-600 rounded leading-none"
-                aria-label="Clear due date"
-              >
-                <span className="text-secondary">×</span>
-              </button>
-            )}
           </div>
-        </div>
 
-        {/* Suggested dates (left) or recurring settings; calendar (right); flex-1 min-h-0 so content fits viewport; overflow-auto so date box in recurring section is not cut off */}
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-auto md:grid-cols-[14rem_1fr] md:gap-8">
-          <div className="flex min-h-0 min-w-0 flex-col overflow-visible">
-            {showRecurringSection ? (
+          {/* Quick picks and calendar */}
+          <div className="grid grid-cols-1 gap-8 rounded-lg bg-surface-container-low/50 p-6 md:grid-cols-[1fr_1.2fr]">
+            {/* Quick select shortcuts */}
+            <div className="space-y-1">
+              {QUICK_OPTIONS.map((opt) => {
+                const date = opt.getDate()
+                const suffix = getQuickOptionSuffix(date, opt.isLater)
+                return (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onClick={() => applyDate(date, opt.isLater)}
+                    className="flex w-full cursor-pointer items-center justify-between rounded px-1 py-2 text-sm transition-colors hover:bg-surface"
+                  >
+                    <span className="text-on-surface-variant">{opt.label}</span>
+                    <span className="text-outline">{suffix}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Month grid */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-on-surface">{viewMonthLabel}</h3>
+                <div className="flex items-center gap-4">
+                  <button
+                    type="button"
+                    onClick={goToToday}
+                    className="text-sm font-bold text-on-surface hover:text-sage"
+                  >
+                    Today
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => goToMonth(-1)}
+                      className="text-outline transition-colors hover:text-on-surface"
+                      aria-label="Previous month"
+                    >
+                      <MaterialIcon name="chevron_left" className="text-xl" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => goToMonth(1)}
+                      className="text-outline transition-colors hover:text-on-surface"
+                      aria-label="Next month"
+                    >
+                      <MaterialIcon name="chevron_right" className="text-xl" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-7 gap-y-2 text-center">
+                {WEEKDAYS.map((wd) => (
+                  <div
+                    key={wd}
+                    className="mb-2 text-[10px] font-bold uppercase text-outline"
+                  >
+                    {wd}
+                  </div>
+                ))}
+                {calendarCells.map((cell) => (
+                  <button
+                    key={cell.ymd}
+                    type="button"
+                    onClick={() => applyDate(cell.ymd)}
+                    className={`p-2 text-sm ${getCellClass(cell.ymd, cell.isCurrentMonth)}`}
+                  >
+                    {cell.date.getDate()}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Collapsible repeat options */}
+          <details
+            className="group overflow-hidden rounded-lg bg-surface-container-low"
+            open={repeatSectionOpen}
+            onToggle={(e) => setRepeatSectionOpen((e.currentTarget as HTMLDetailsElement).open)}
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between p-4 transition-colors hover:bg-surface-container-high">
+              <div className="flex items-center gap-3">
+                <MaterialIcon name="repeat" className="text-on-surface-variant" />
+                <span className="text-sm font-bold uppercase tracking-widest text-on-surface-variant">
+                  Repeat Options
+                </span>
+              </div>
+              <MaterialIcon
+                name="expand_more"
+                className="text-outline transition-transform group-open:rotate-180"
+              />
+            </summary>
+            <div className="space-y-6 border-t border-outline-variant/10 p-6 pt-2">
               <RecurringSettingsSection
                 value={recurrencePattern}
                 onChange={setRecurrencePattern}
                 hasChecklists={hasChecklists}
                 anchorDueDate={due || undefined}
               />
-            ) : (
-              <>
-                {QUICK_OPTIONS.map((opt) => {
-                  const date = opt.getDate()
-                  const suffix = getQuickOptionSuffix(date, opt.isLater)
-                  return (
-                    <button
-                      key={opt.label}
-                      type="button"
-                      onClick={() => applyDate(date, opt.isLater)}
-                      className="flex items-center justify-between gap-3 rounded px-2 py-2 text-left text-secondary text-bonsai-slate-700 hover:bg-bonsai-slate-100 w-full"
-                    >
-                      <span>{opt.label}</span>
-                      <span className="text-secondary text-bonsai-slate-500 shrink-0 min-w-[3.25rem] text-right">{suffix}</span>
-                    </button>
-                  )
-                })}
-                <button
-                  type="button"
-                  onClick={() => setShowRecurringSection(true)}
-                  className="mt-2 flex items-center justify-between gap-2 rounded px-2 py-2 text-secondary text-bonsai-slate-600 hover:bg-bonsai-slate-100 w-full border-0 bg-transparent"
-                  aria-label="Set recurring"
-                >
-                  <span>Set Recurring</span>
-                  <svg className="w-4 h-4 text-bonsai-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                </button>
-              </>
-            )}
-          </div>
-
-          <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-            {/* Calendar header: Month and year with Today and nav buttons */}
-            <div className="mb-2 flex shrink-0 items-center justify-between gap-2 md:mb-3">
-              <span className="text-secondary font-medium text-bonsai-slate-800">{viewMonthLabel}</span>
-              <div className="flex items-center gap-1">
-                <Button variant="ghost" size="sm" onClick={goToToday} className="text-secondary px-2 py-1">
-                  Today
-                </Button>
-                <button
-                  type="button"
-                  onClick={() => goToMonth(-1)}
-                  className="p-1.5 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100"
-                  aria-label="Previous month"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => goToMonth(1)}
-                  className="p-1.5 rounded text-bonsai-slate-600 hover:bg-bonsai-slate-100"
-                  aria-label="Next month"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              </div>
             </div>
-            <div className="grid min-h-0 flex-1 grid-cols-7 gap-0.5 text-center sm:gap-1">
-              {WEEKDAYS.map((wd) => (
-                <div key={wd} className="py-0.5 text-xs font-medium text-bonsai-slate-500 sm:py-1 sm:text-secondary">
-                  {wd}
-                </div>
-              ))}
-              {calendarCells.map((cell) => (
-                <button
-                  key={cell.ymd}
-                  type="button"
-                  onClick={() => applyDate(cell.ymd)}
-                  className={`rounded py-1 text-xs min-w-[1.75rem] sm:min-w-[2rem] sm:py-2 sm:text-secondary ${getCellClass(cell.ymd)} ${!cell.isCurrentMonth ? 'opacity-50' : ''}`}
-                >
-                  {cell.date.getDate()}
-                </button>
-              ))}
-            </div>
-          </div>
+          </details>
         </div>
 
-      {/* Save and Cancel: when in Recurring view, Cancel goes back to date picker; otherwise closes modal */}
-      <div className="mt-3 flex shrink-0 justify-end gap-3 border-t border-bonsai-slate-200 pt-3 md:mt-6 md:pt-4">
-        <Button
-          variant="secondary"
-          onClick={showRecurringSection ? () => setShowRecurringSection(false) : onClose}
-        >
-          Cancel
-        </Button>
-        <Button variant="primary" onClick={handleSave}>
-          Save
-        </Button>
+        {/* Footer: range summary, cancel, and apply */}
+        <footer className="flex shrink-0 flex-col items-center justify-end gap-4 border-t border-outline-variant/30 pt-4 sm:flex-row">
+          {selectedRangeDays != null && (
+            <div className="mr-auto flex items-center gap-2 text-xs text-on-surface-variant">
+              <MaterialIcon name="info" className="text-[18px]" />
+              <span>Selected range: {selectedRangeDays} days</span>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full rounded-lg px-6 py-2.5 font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high sm:w-auto"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            className="w-full rounded-lg bg-sage px-10 py-3 font-bold text-white shadow-lg shadow-sage/20 transition-all active:scale-[0.98] hover:bg-primary-container sm:w-auto"
+          >
+            Apply Schedule
+          </button>
+        </footer>
       </div>
-
     </div>
+  )
+
+  return createPortal(
+    <>
+      {overlay}
+      {popover}
+    </>,
+    document.body,
   )
 }

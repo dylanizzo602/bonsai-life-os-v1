@@ -14,7 +14,8 @@ export interface UpcomingTasksWidgetProps {
 }
 
 /**
- * Upcoming tasks bento widget (7-column span): up to 5 tasks due within 7 days.
+ * Upcoming tasks bento widget (7-column span): up to 5 unblocked tasks due within 7 days
+ * whose start date is today or earlier (or unset), sorted by due date.
  */
 export function UpcomingTasksWidget({
   onAddTask,

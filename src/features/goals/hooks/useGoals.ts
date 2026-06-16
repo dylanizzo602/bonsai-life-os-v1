@@ -24,6 +24,12 @@ import type {
   UpdateMilestoneInput,
 } from '../types'
 
+/** Optional milestones and habits to attach when creating a goal */
+export interface CreateGoalSetupOptions {
+  milestoneTitles?: string[]
+  habitIds?: string[]
+}
+
 /**
  * Custom hook for managing goals, milestones, habit links, and history.
  * Provides state management, loading states, and CRUD operations.
@@ -61,6 +67,41 @@ export function useGoals() {
         const newGoal = await createGoal(input)
         setGoals((prev) => [newGoal, ...prev])
         return newGoal
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : 'Failed to create goal'
+        setError(errorMessage)
+        throw err
+      }
+    },
+    [],
+  )
+
+  /* Create goal plus draft milestones and habit links in one flow */
+  const handleCreateGoalWithSetup = useCallback(
+    async (input: CreateGoalInput, setup: CreateGoalSetupOptions = {}) => {
+      try {
+        setError(null)
+        const newGoal = await createGoal(input)
+        const titles = (setup.milestoneTitles ?? []).map((t) => t.trim()).filter(Boolean)
+        for (let i = 0; i < titles.length; i++) {
+          await createMilestone({
+            goal_id: newGoal.id,
+            type: 'boolean',
+            title: titles[i]!,
+            sort_order: i,
+          })
+        }
+        for (const habitId of setup.habitIds ?? []) {
+          await linkHabitToGoal(newGoal.id, habitId)
+        }
+        if (titles.length > 0) {
+          await calculateGoalProgress(newGoal.id)
+        }
+        const data = await getGoals()
+        setGoals(data)
+        const created = data.find((g) => g.id === newGoal.id) ?? newGoal
+        return created
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : 'Failed to create goal'
@@ -112,6 +153,7 @@ export function useGoals() {
     error,
     refetch: fetchGoals,
     createGoal: handleCreateGoal,
+    createGoalWithSetup: handleCreateGoalWithSetup,
     updateGoal: handleUpdateGoal,
     deleteGoal: handleDeleteGoal,
   }

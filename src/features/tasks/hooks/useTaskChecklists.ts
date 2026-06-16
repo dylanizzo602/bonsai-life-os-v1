@@ -109,6 +109,19 @@ export function useTaskChecklists(taskId: string | null) {
     [taskId, checklists, fetchChecklists],
   )
 
+  /** Add multiple items to an existing checklist in one refresh */
+  const addItemsToList = useCallback(
+    async (checklistId: string, titles: string[]) => {
+      const toAdd = titles.map((t) => t.trim()).filter(Boolean)
+      if (!toAdd.length) return
+      for (const title of toAdd) {
+        await createChecklistItem({ checklist_id: checklistId, title })
+      }
+      await fetchChecklists()
+    },
+    [fetchChecklists],
+  )
+
   /** Rename a checklist by id */
   const updateChecklistTitle = useCallback(
     async (checklistId: string, title: string) => {
@@ -170,6 +183,7 @@ export function useTaskChecklists(taskId: string | null) {
     addItem,
     addItemOrCreateChecklist,
     addItemsOrCreateChecklist,
+    addItemsToList,
     updateChecklistTitle,
     toggleItem,
     updateItemTitle,

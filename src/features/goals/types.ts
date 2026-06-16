@@ -1,5 +1,9 @@
 /* Goal types: TypeScript definitions for goals, milestones, history, and related interfaces */
 import type { Task } from '../tasks/types'
+import type { IdentityCategory } from '../../lib/supabase/identities'
+
+/** Life-area category for goals (aligned with identity categories) */
+export type GoalCategory = IdentityCategory
 
 /** Milestone type: task (linked to task), number (start/target/current with unit), or boolean (true/false) */
 export type GoalMilestoneType = 'task' | 'number' | 'boolean'
@@ -42,6 +46,8 @@ export interface Goal {
   target_date: string | null
   progress: number
   is_active: boolean
+  icon_name: string
+  category: GoalCategory | null
   created_at: string
   updated_at: string
 }
@@ -80,6 +86,8 @@ export interface CreateGoalInput {
   target_date?: string | null
   progress?: number
   is_active?: boolean
+  icon_name?: string | null
+  category?: GoalCategory | null
 }
 
 /** Input for updating an existing goal (including toggling active/inactive) */
@@ -90,6 +98,8 @@ export interface UpdateGoalInput {
   target_date?: string | null
   progress?: number
   is_active?: boolean
+  icon_name?: string | null
+  category?: GoalCategory | null
 }
 
 /** Input for creating a milestone */

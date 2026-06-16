@@ -13,6 +13,9 @@ import { newDraftChecklistId } from './modalChecklistTypes'
 export type { DraftChecklist, DraftChecklistItem } from './modalChecklistTypes'
 export { newDraftChecklistId } from './modalChecklistTypes'
 
+/** Input key for the add row when no checklist exists yet */
+const NEW_LIST_INPUT_KEY = '__new__'
+
 /* Shared props for both draft and persisted modes */
 interface ModalChecklistSectionBaseProps {
   /** When false, show disabled message instead of add controls (e.g. subtask not saved yet) */
@@ -39,6 +42,7 @@ export interface ModalChecklistSectionPersistedProps extends ModalChecklistSecti
   onAddItemsOrCreateChecklist: (titles: string[]) => Promise<void>
   onAddChecklist: (title: string) => void
   onAddItemToList: (checklistId: string, title: string) => void
+  onAddItemsToList: (checklistId: string, titles: string[]) => Promise<void>
   onToggleItem: (itemId: string, completed: boolean) => void
   onUpdateItemTitle: (itemId: string, title: string) => void
   onDeleteItem: (itemId: string) => void
@@ -59,9 +63,12 @@ export function ModalChecklistSection(props: ModalChecklistSectionProps) {
   const disabledMessage =
     props.disabledMessage ?? 'Save the task first to add checklists.'
 
-  /* Add-item input and multi-line paste state */
-  const [newChecklistItem, setNewChecklistItem] = useState('')
-  const [pendingPasteLines, setPendingPasteLines] = useState<string[] | null>(null)
+  /* Per-list add-item input and multi-line paste state */
+  const [newChecklistItems, setNewChecklistItems] = useState<Record<string, string>>({})
+  const [pendingPaste, setPendingPaste] = useState<{
+    listId: string | null
+    lines: string[]
+  } | null>(null)
 
   /* Shared field + button classes for the add-item row */
   const addFieldClassName =
@@ -74,9 +81,32 @@ export function ModalChecklistSection(props: ModalChecklistSectionProps) {
   const [editingItemTitle, setEditingItemTitle] = useState('')
   const [editingChecklistId, setEditingChecklistId] = useState<string | null>(null)
   const [editingChecklistTitle, setEditingChecklistTitle] = useState('')
-  const [showCompletedChecklistItems, setShowCompletedChecklistItems] = useState(true)
+  /* Per-list visibility for completed checklist items (default: show) */
+  const [showCompletedByList, setShowCompletedByList] = useState<Record<string, boolean>>({})
 
   const loading = props.mode === 'persisted' ? props.loading : false
+
+  /* Resolve input key for a checklist add row (null = no lists yet) */
+  const listInputKey = (listId: string | null) => listId ?? NEW_LIST_INPUT_KEY
+
+  /* Read/write add-item text for a specific checklist */
+  const getNewItemText = (listId: string | null) =>
+    newChecklistItems[listInputKey(listId)] ?? ''
+
+  const setNewItemText = (listId: string | null, text: string) => {
+    const key = listInputKey(listId)
+    setNewChecklistItems((prev) => ({ ...prev, [key]: text }))
+  }
+
+  /* Whether completed items are visible for a given checklist */
+  const isShowingCompleted = (listId: string) => showCompletedByList[listId] !== false
+
+  const toggleShowCompleted = (listId: string) => {
+    setShowCompletedByList((prev) => ({
+      ...prev,
+      [listId]: !isShowingCompleted(listId),
+    }))
+  }
 
   /* Resolve checklist lists for rendering */
   const lists: Array<{ id: string; title: string; items: DraftChecklistItem[] }> =
@@ -94,7 +124,6 @@ export function ModalChecklistSection(props: ModalChecklistSectionProps) {
 
   const showListHeaders = lists.length > 1
   const singleList = lists.length === 1 ? lists[0] : null
-  const hasAnyCompletedItems = lists.some((cl) => cl.items.some((i) => i.completed))
 
   /* Default title for a newly created checklist list */
   const nextDefaultListTitle = () => {
@@ -106,13 +135,13 @@ export function ModalChecklistSection(props: ModalChecklistSectionProps) {
     return `${base} ${n}`
   }
 
-  /* Add a checklist item in draft mode */
-  const handleDraftAddItem = (rawTitle: string) => {
+  /* Add a checklist item in draft mode (null listId creates the first checklist) */
+  const handleDraftAddItem = (listId: string | null, rawTitle: string) => {
     if (props.mode !== 'draft') return
     const trimmed = rawTitle.trim()
     if (!trimmed) return
     props.onDraftChecklistsChange((prev) => {
-      if (prev.length === 0) {
+      if (prev.length === 0 || listId === null) {
         return [
           {
             id: newDraftChecklistId('draft-cl'),
@@ -123,8 +152,8 @@ export function ModalChecklistSection(props: ModalChecklistSectionProps) {
           },
         ]
       }
-      return prev.map((cl, index) =>
-        index === 0
+      return prev.map((cl) =>
+        cl.id === listId
           ? {
               ...cl,
               items: [
@@ -137,16 +166,18 @@ export function ModalChecklistSection(props: ModalChecklistSectionProps) {
     })
   }
 
-  /* Top add row: create item in draft or persisted mode */
-  const handleAddTopItem = () => {
-    const next = newChecklistItem.trim()
+  /* Per-list add row: create item in draft or persisted mode */
+  const handleAddItem = (listId: string | null) => {
+    const next = getNewItemText(listId).trim()
     if (!next) return
     if (props.mode === 'draft') {
-      handleDraftAddItem(next)
+      handleDraftAddItem(listId, next)
+    } else if (listId) {
+      props.onAddItemToList(listId, next)
     } else {
       props.onAddItemOrCreateChecklist(next)
     }
-    setNewChecklistItem('')
+    setNewItemText(listId, '')
   }
 
   /* Create a new empty checklist list (header button) */
@@ -248,9 +279,12 @@ export function ModalChecklistSection(props: ModalChecklistSectionProps) {
     }
   }
 
-  /* Multi-line paste prompt for top add input */
-  const renderTopPastePrompt = () => {
-    if (!pendingPasteLines || pendingPasteLines.length <= 1) return null
+  /* Multi-line paste prompt for a checklist's add input */
+  const renderPastePrompt = (listId: string | null) => {
+    if (!pendingPaste || pendingPaste.listId !== listId || pendingPaste.lines.length <= 1) {
+      return null
+    }
+    const { lines } = pendingPaste
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-outline-variant/30 bg-surface-variant/10 px-3 py-2 text-body">
         <span className="flex items-center gap-2 text-on-surface">
@@ -263,12 +297,14 @@ export function ModalChecklistSection(props: ModalChecklistSectionProps) {
             size="sm"
             onClick={() => {
               if (props.mode === 'draft') {
-                handleDraftAddItem(pendingPasteLines.join(' '))
+                handleDraftAddItem(listId, lines.join(' '))
+              } else if (listId) {
+                props.onAddItemToList(listId, lines.join(' '))
               } else {
-                props.onAddItemOrCreateChecklist(pendingPasteLines.join(' '))
+                props.onAddItemOrCreateChecklist(lines.join(' '))
               }
-              setNewChecklistItem('')
-              setPendingPasteLines(null)
+              setNewItemText(listId, '')
+              setPendingPaste(null)
             }}
             disabled={loading}
           >
@@ -279,21 +315,75 @@ export function ModalChecklistSection(props: ModalChecklistSectionProps) {
             size="sm"
             onClick={async () => {
               if (props.mode === 'draft') {
-                for (const line of pendingPasteLines) {
-                  handleDraftAddItem(line)
+                for (const line of lines) {
+                  handleDraftAddItem(listId, line)
                 }
+              } else if (listId) {
+                await props.onAddItemsToList(listId, lines)
               } else {
-                await props.onAddItemsOrCreateChecklist(pendingPasteLines)
+                await props.onAddItemsOrCreateChecklist(lines)
               }
-              setNewChecklistItem('')
-              setPendingPasteLines(null)
+              setNewItemText(listId, '')
+              setPendingPaste(null)
             }}
             disabled={loading}
           >
-            Create {pendingPasteLines.length} items
+            Create {lines.length} items
           </Button>
         </div>
       </div>
+    )
+  }
+
+  /* Per-checklist add-item row */
+  const renderAddItemRow = (listId: string | null) => {
+    const value = getNewItemText(listId)
+    return (
+      <div className="flex gap-2">
+        <input
+          className={addFieldClassName}
+          placeholder="Create a checklist item"
+          type="text"
+          value={value}
+          onChange={(e) => setNewItemText(listId, e.target.value)}
+          onPaste={(e) => {
+            const text = e.clipboardData.getData('text')
+            const pastedLines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+            if (pastedLines.length > 1) {
+              e.preventDefault()
+              setPendingPaste({ listId, lines: pastedLines })
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return
+            e.preventDefault()
+            handleAddItem(listId)
+          }}
+          disabled={props.mode === 'persisted' ? loading : false}
+        />
+        <button
+          type="button"
+          className={addButtonClassName}
+          onClick={() => handleAddItem(listId)}
+          disabled={!value.trim() || (props.mode === 'persisted' ? loading : false)}
+        >
+          Add
+        </button>
+      </div>
+    )
+  }
+
+  /* Per-checklist show/hide completed items toggle */
+  const renderHideClosedToggle = (listId: string, items: DraftChecklistItem[]) => {
+    if (!items.some((item) => item.completed)) return null
+    return (
+      <button
+        type="button"
+        onClick={() => toggleShowCompleted(listId)}
+        className="text-secondary font-medium text-on-surface-variant hover:text-on-surface"
+      >
+        {isShowingCompleted(listId) ? 'Hide closed items' : 'Show closed items'}
+      </button>
     )
   }
 
@@ -406,9 +496,9 @@ export function ModalChecklistSection(props: ModalChecklistSectionProps) {
                 : 'No checklist items yet.'}
             </p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-6">
               {lists.map((cl) => (
-                <div key={cl.id} className="space-y-1">
+                <div key={cl.id} className="space-y-2">
                   {/* List header: only when multiple lists */}
                   {showListHeaders ? (
                     <div className="flex items-center justify-between gap-2">
@@ -421,7 +511,7 @@ export function ModalChecklistSection(props: ModalChecklistSectionProps) {
                     <ul className="space-y-0.5">
                       {cl.items
                         .filter((item) =>
-                          showCompletedChecklistItems ? true : !item.completed,
+                          isShowingCompleted(cl.id) ? true : !item.completed,
                         )
                         .map((item) => (
                           <ChecklistItemRow
@@ -445,57 +535,21 @@ export function ModalChecklistSection(props: ModalChecklistSectionProps) {
                         ))}
                     </ul>
                   ) : null}
+
+                  {renderPastePrompt(cl.id)}
+                  {renderAddItemRow(cl.id)}
+                  {renderHideClosedToggle(cl.id, cl.items)}
                 </div>
               ))}
             </div>
           )}
 
-          {renderTopPastePrompt()}
-
-          {/* Add checklist item row */}
-          <div className="flex gap-2">
-            <input
-              className={addFieldClassName}
-              placeholder="Create a checklist item"
-              type="text"
-              value={newChecklistItem}
-              onChange={(e) => setNewChecklistItem(e.target.value)}
-              onPaste={(e) => {
-                const text = e.clipboardData.getData('text')
-                const lines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
-                if (lines.length > 1) {
-                  e.preventDefault()
-                  setPendingPasteLines(lines)
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key !== 'Enter') return
-                e.preventDefault()
-                handleAddTopItem()
-              }}
-              disabled={props.mode === 'persisted' ? loading : false}
-            />
-            <button
-              type="button"
-              className={addButtonClassName}
-              onClick={handleAddTopItem}
-              disabled={
-                !newChecklistItem.trim() || (props.mode === 'persisted' ? loading : false)
-              }
-            >
-              Add
-            </button>
-          </div>
-
-          {/* Show/hide completed items: below add row */}
-          {hasAnyCompletedItems ? (
-            <button
-              type="button"
-              onClick={() => setShowCompletedChecklistItems((prev) => !prev)}
-              className="text-secondary font-medium text-on-surface-variant hover:text-on-surface"
-            >
-              {showCompletedChecklistItems ? 'Hide closed items' : 'Show closed items'}
-            </button>
+          {/* Add row when no checklist exists yet */}
+          {lists.length === 0 ? (
+            <>
+              {renderPastePrompt(null)}
+              {renderAddItemRow(null)}
+            </>
           ) : null}
         </>
       )}

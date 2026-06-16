@@ -6,12 +6,8 @@ import { HabitReminderItem } from '../habits/HabitReminderItem'
 import type { HabitWithStreaks } from '../habits/types'
 import { TaskContextPopover } from './modals/TaskContextPopover'
 import { handleDesktopTaskContextMenu } from './utils/taskContextMenu'
-import {
-  getChecklistSummaryForTask,
-  getTaskChecklists,
-  getTaskChecklistItems,
-  toggleChecklistItemComplete,
-} from '../../lib/supabase/tasks'
+import { getChecklistSummaryForTask } from '../../lib/supabase/tasks'
+import { completeTaskAndResolveAll } from './utils/completeTaskAndResolveAll'
 import type { Task, TaskFilters, SortByEntry } from './types'
 import { getDependencyEnrichmentFlags } from './utils/dependencies'
 
@@ -495,18 +491,11 @@ export function TaskList({
                     }}
                     onCompleteTaskAndResolveAll={async (taskId) => {
                       try {
-                        const subtasks = await fetchSubtasks(taskId)
-                        for (const st of subtasks) {
-                          if (st.status !== 'completed') await toggleComplete(st.id, true)
-                        }
-                        const checklists = await getTaskChecklists(taskId)
-                        for (const c of checklists) {
-                          const items = await getTaskChecklistItems(c.id)
-                          for (const checklistItem of items) {
-                            if (!checklistItem.completed) await toggleChecklistItemComplete(checklistItem.id, true)
-                          }
-                        }
-                        await toggleComplete(taskId, true)
+                        await completeTaskAndResolveAll({
+                          taskId,
+                          fetchSubtasks,
+                          toggleComplete,
+                        })
                         refetch?.()
                         await loadEnrichment()
                       } catch (error) {

@@ -9,7 +9,7 @@ import { useHabits } from '../habits/hooks/useHabits'
 import { useGoals } from '../goals/hooks/useGoals'
 import { Button } from '../../components/Button'
 import { BriefingProgressBar } from '../briefings/BriefingProgressBar'
-import { GoalDetailPage } from '../goals/GoalDetailPage'
+import { GoalDrawer } from '../goals/GoalDrawer'
 import { AddEditTaskModal } from '../tasks/AddEditTaskModal'
 import { LookBackScreen } from './LookBackScreen'
 import { GoalsProgressScreen } from './GoalsProgressScreen'
@@ -32,7 +32,7 @@ interface WeeklyBriefingPageProps {
 export function WeeklyBriefingPage({ onClose }: WeeklyBriefingPageProps) {
   /* Step state: 0 = look back, 1 = goals progress, 2 = task cleanup, 3 = complete */
   const [step, setStep] = useState(0)
-  /* When set, show GoalDetailPage in-context (overlay); onBack clears */
+  /* When set, show GoalDrawer overlay; onClose clears */
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null)
   /* When set, show AddEditTaskModal for task cleanup step */
   const [editTask, setEditTask] = useState<Task | null>(null)
@@ -148,22 +148,6 @@ export function WeeklyBriefingPage({ onClose }: WeeklyBriefingPageProps) {
     setStep(3)
   }, [])
 
-  /* When showing goal detail in-context, render GoalDetailPage overlay */
-  if (selectedGoalId) {
-    return (
-      <div className="min-h-full">
-        <h1 className="text-page-title font-bold text-bonsai-brown-700 mb-6">Weekly Briefing</h1>
-        <GoalDetailPage
-          goalId={selectedGoalId}
-          onBack={() => {
-            setSelectedGoalId(null)
-            refetchGoals()
-          }}
-        />
-      </div>
-    )
-  }
-
   /* Completion view: step 3 */
   if (step === 3) {
     return (
@@ -248,6 +232,19 @@ export function WeeklyBriefingPage({ onClose }: WeeklyBriefingPageProps) {
         onAddDependency={onAddDependency}
         onRemoveDependency={onRemoveDependency}
       />
+
+      {/* Goal detail drawer overlay */}
+      {selectedGoalId && (
+        <GoalDrawer
+          key={selectedGoalId}
+          goalId={selectedGoalId}
+          onClose={() => {
+            setSelectedGoalId(null)
+            void refetchGoals()
+          }}
+          onDeleted={refetchGoals}
+        />
+      )}
     </div>
   )
 }

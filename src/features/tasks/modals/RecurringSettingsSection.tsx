@@ -1,9 +1,8 @@
-/* RecurringSettingsSection: Inline recurring settings for date picker (replaces suggested dates) */
+/* RecurringSettingsSection: Collapsible repeat options for the schedule date picker */
 
-import { useEffect, useCallback } from 'react'
-import { Checkbox } from '../../../components/Checkbox'
+import { useCallback } from 'react'
+import { MaterialIcon } from '../../../components/MaterialIcon'
 import type { RecurrencePattern, RecurrenceFreq } from '../../../lib/recurrence'
-import { formatRecurrenceForTooltip } from '../../../lib/recurrence'
 
 const DAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -15,6 +14,21 @@ const SET_POS_OPTIONS = [
   { value: 4, label: 'Fourth' },
   { value: 5, label: 'Fifth' },
 ]
+
+const FREQ_OPTIONS: { value: RecurrenceFreq | 'none'; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'day', label: 'Daily' },
+  { value: 'week', label: 'Weekly' },
+  { value: 'month', label: 'Monthly' },
+  { value: 'year', label: 'Yearly' },
+]
+
+const FREQ_UNIT_LABEL: Record<RecurrenceFreq, string> = {
+  day: 'days',
+  week: 'weeks',
+  month: 'months',
+  year: 'years',
+}
 
 export interface RecurringSettingsSectionProps {
   /** Current recurrence pattern (parsed) or null */
@@ -51,6 +65,13 @@ function defaultPatternForFreq(
     }
   }
   return base
+}
+
+/** Format YYYY-MM-DD as "Mon d, yyyy" for the ends-on display row */
+function formatEndsOnDisplay(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number)
+  const month = MONTH_NAMES_SHORT[(m ?? 1) - 1]
+  return `${month} ${d}, ${y}`
 }
 
 export function RecurringSettingsSection({
@@ -98,21 +119,13 @@ export function RecurringSettingsSection({
     [value, onChange, anchorDueDate]
   )
 
-  /* Sync from value when it changes externally (e.g. opening modal with existing recurrence) */
-  useEffect(() => {
-    if (value && value.freq !== freqValue) {
-      /* Value changed externally; component will re-render with new value */
-    }
-  }, [value, freqValue])
-
-  /* Frequency dropdown change */
-  const handleFreqChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const v = e.target.value
-    if (v === 'none') {
+  /* Frequency pill selection */
+  const handleFreqSelect = (freq: RecurrenceFreq | 'none') => {
+    if (freq === 'none') {
       onChange(null)
       return
     }
-    emitPattern({ freq: v as RecurrenceFreq })
+    emitPattern({ freq })
   }
 
   /* Interval change */
@@ -179,15 +192,6 @@ export function RecurringSettingsSection({
     }
   }
 
-  const handleEndsOnChange = (checked: boolean) => {
-    if (checked) {
-      const d = anchorDueDate?.slice(0, 10) || new Date().toISOString().slice(0, 10)
-      emitPattern({ until: d })
-    } else {
-      emitPattern({ until: null })
-    }
-  }
-
   const handleEndsOnDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const d = e.target.value || null
     emitPattern({ until: d })
@@ -197,53 +201,54 @@ export function RecurringSettingsSection({
     emitPattern({ reopenChecklist: e.target.checked })
   }
 
-  /* Root: min-w-0 and overflow-visible so date inputs and dropdowns are not clipped in narrow date picker column */
-  return (
-    <div className="flex flex-col gap-3 min-w-0 overflow-visible">
-      {/* Heading and current summary: show human-readable description of the recurrence when set */}
-      <h3 className="text-body font-bold text-bonsai-brown-700 shrink-0">Reoccurring</h3>
-      {value && (
-        <p className="text-secondary text-bonsai-slate-700">
-          {formatRecurrenceForTooltip(value) || 'Custom recurrence pattern'}
-        </p>
-      )}
+  const endsOnDisplay =
+    endsOnDate || anchorDueDate?.slice(0, 10) || new Date().toISOString().slice(0, 10)
 
-      {/* Frequency: Every N + unit dropdown (one row, no wrap) */}
-      <div className="flex items-center gap-2 shrink-0">
-        {freqValue !== 'none' && (
-          <>
-            <span className="text-secondary text-bonsai-slate-700 whitespace-nowrap">Every</span>
+  /* Root: frequency pills and conditional fields */
+  return (
+    <div className="flex flex-col gap-6 min-w-0 overflow-visible">
+      {/* Frequency toggle pills */}
+      <div className="flex flex-wrap gap-2">
+        {FREQ_OPTIONS.map((opt) => {
+          const isSelected = freqValue === opt.value
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => handleFreqSelect(opt.value)}
+              className={`px-4 py-1.5 rounded-full border text-sm transition-colors ${
+                isSelected
+                  ? 'border-sage bg-sage font-bold text-white'
+                  : 'border-outline-variant hover:border-sage'
+              }`}
+            >
+              {opt.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Frequency-specific UI (hidden when none) */}
+      {freqValue !== 'none' && (
+        <div className="flex flex-col gap-6 min-w-0">
+          {/* Interval row */}
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-on-surface">Every</span>
             <input
               type="number"
               min={1}
               max={99}
               value={interval}
               onChange={handleIntervalChange}
-              className="w-11 rounded border border-bonsai-slate-300 px-1.5 py-1 text-secondary text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 shrink-0"
+              className="w-16 rounded border border-outline-variant bg-surface p-1.5 text-center text-sm focus:border-sage focus:ring-sage"
               aria-label="Recurrence interval"
             />
-          </>
-        )}
-        <select
-          value={freqValue}
-          onChange={handleFreqChange}
-          className="rounded border border-bonsai-slate-300 px-2 py-1 text-secondary text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 bg-white min-w-0 flex-1 max-w-[6rem]"
-          aria-label="Recurrence frequency"
-        >
-          <option value="none">none</option>
-          <option value="day">day</option>
-          <option value="week">week</option>
-          <option value="month">month</option>
-          <option value="year">year</option>
-        </select>
-      </div>
+            <span className="text-sm font-medium text-on-surface">{FREQ_UNIT_LABEL[freqValue]}</span>
+          </div>
 
-      {/* Frequency-specific UI (hidden when none) */}
-      {freqValue !== 'none' && (
-        <div className="flex flex-col gap-3 min-w-0">
-          {/* Weekly: day buttons in a single wrapped row */}
+          {/* Weekly: day-of-week circles */}
           {freqValue === 'week' && (
-            <div className="flex flex-wrap gap-1">
+            <div className="flex gap-2 flex-wrap">
               {DAY_CODES.map((code, i) => {
                 const isSelected = Array.isArray(byDay) ? byDay.includes(code) : byDay === code
                 return (
@@ -251,10 +256,10 @@ export function RecurringSettingsSection({
                     key={code}
                     type="button"
                     onClick={() => toggleDay(code)}
-                    className={`w-7 h-7 rounded text-secondary text-xs font-medium shrink-0 transition-colors ${
+                    className={`flex h-9 w-9 items-center justify-center rounded-full border text-xs transition-colors ${
                       isSelected
-                        ? 'bg-bonsai-sage-600 text-white hover:bg-bonsai-sage-700'
-                        : 'bg-bonsai-slate-100 text-bonsai-slate-700 hover:bg-bonsai-slate-200'
+                        ? 'border-sage bg-sage font-bold text-white'
+                        : 'border-outline-variant hover:bg-sage/10'
                     }`}
                     aria-label={`${DAY_LABELS[i]} ${isSelected ? 'selected' : 'not selected'}`}
                   >
@@ -265,36 +270,36 @@ export function RecurringSettingsSection({
             </div>
           )}
 
-          {/* Monthly: on date vs by week - stacked rows */}
+          {/* Monthly: on date vs by week */}
           {freqValue === 'month' && (
-            <div className="flex flex-col gap-2 min-w-0">
+            <div className="flex flex-col gap-3 min-w-0">
               <div className="flex gap-3 flex-wrap">
-                <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                <label className="flex cursor-pointer items-center gap-1.5 shrink-0">
                   <input
                     type="radio"
                     name="monthly-variant"
                     checked={monthlyVariant === 'on_date'}
                     onChange={() => handleMonthlyVariantChange('on_date')}
-                    className="text-bonsai-sage-600 focus:ring-bonsai-sage-500"
+                    className="text-sage focus:ring-sage"
                   />
-                  <span className="text-secondary text-bonsai-slate-700">on date</span>
+                  <span className="text-sm text-on-surface-variant">on date</span>
                 </label>
-                <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                <label className="flex cursor-pointer items-center gap-1.5 shrink-0">
                   <input
                     type="radio"
                     name="monthly-variant"
                     checked={monthlyVariant === 'by_week'}
                     onChange={() => handleMonthlyVariantChange('by_week')}
-                    className="text-bonsai-sage-600 focus:ring-bonsai-sage-500"
+                    className="text-sage focus:ring-sage"
                   />
-                  <span className="text-secondary text-bonsai-slate-700">by week</span>
+                  <span className="text-sm text-on-surface-variant">by week</span>
                 </label>
               </div>
               {monthlyVariant === 'on_date' && (
                 <select
                   value={byMonthDay === -1 ? 'last' : String(byMonthDay ?? 1)}
                   onChange={handleMonthDayChange}
-                  className="rounded border border-bonsai-slate-300 px-2 py-1 text-secondary text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 bg-white w-full max-w-[8rem]"
+                  className="w-full max-w-[8rem] rounded border border-outline-variant bg-surface px-2 py-1 text-sm text-on-surface focus:border-sage focus:ring-sage"
                   aria-label="Day of month"
                 >
                   {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
@@ -310,7 +315,7 @@ export function RecurringSettingsSection({
                   <select
                     value={bySetPos ?? 1}
                     onChange={handleSetPosChange}
-                    className="rounded border border-bonsai-slate-300 px-2 py-1 text-secondary text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 bg-white w-full max-w-[6rem]"
+                    className="w-full max-w-[6rem] rounded border border-outline-variant bg-surface px-2 py-1 text-sm text-on-surface focus:border-sage focus:ring-sage"
                     aria-label="Week of month"
                   >
                     {SET_POS_OPTIONS.map((o) => (
@@ -319,7 +324,7 @@ export function RecurringSettingsSection({
                       </option>
                     ))}
                   </select>
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-2">
                     {DAY_CODES.map((code, i) => {
                       const isSelected = byDay === code || (Array.isArray(byDay) && byDay[0] === code)
                       return (
@@ -327,12 +332,12 @@ export function RecurringSettingsSection({
                           key={code}
                           type="button"
                           onClick={() => emitPattern({ byDay: code, interval })}
-                          className={`w-7 h-7 rounded text-secondary text-xs font-medium shrink-0 transition-colors ${
+                          className={`flex h-9 w-9 items-center justify-center rounded-full border text-xs transition-colors ${
                             isSelected
-                              ? 'bg-bonsai-sage-600 text-white hover:bg-bonsai-sage-700'
-                              : 'bg-bonsai-slate-100 text-bonsai-slate-700 hover:bg-bonsai-slate-200'
+                              ? 'border-sage bg-sage font-bold text-white'
+                              : 'border-outline-variant hover:bg-sage/10'
                           }`}
-                          aria-label={`${DAY_LABELS[i]}`}
+                          aria-label={DAY_LABELS[i]}
                         >
                           {DAY_LABELS[i]}
                         </button>
@@ -344,13 +349,13 @@ export function RecurringSettingsSection({
             </div>
           )}
 
-          {/* Yearly: month + day - compact row */}
+          {/* Yearly: month + day */}
           {freqValue === 'year' && (
             <div className="flex items-center gap-2 min-w-0 flex-wrap">
               <select
                 value={byMonth ?? 1}
                 onChange={handleMonthChange}
-                className="rounded border border-bonsai-slate-300 px-2 py-1 text-secondary text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 bg-white min-w-0 flex-1 max-w-[5rem]"
+                className="min-w-0 max-w-[5rem] flex-1 rounded border border-outline-variant bg-surface px-2 py-1 text-sm text-on-surface focus:border-sage focus:ring-sage"
                 aria-label="Month"
               >
                 {MONTH_NAMES_SHORT.map((m, i) => (
@@ -365,51 +370,68 @@ export function RecurringSettingsSection({
                 max={31}
                 value={byMonthDay ?? 1}
                 onChange={handleYearDayChange}
-                className="w-14 rounded border border-bonsai-slate-300 px-1.5 py-1 text-secondary text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 shrink-0"
+                className="w-14 shrink-0 rounded border border-outline-variant bg-surface px-1.5 py-1 text-sm text-on-surface focus:border-sage focus:ring-sage"
                 aria-label="Day of month"
               />
             </div>
           )}
 
-          {/* Duration: Reoccur forever or Ends on - stacked */}
-          <div className="flex flex-col gap-2 min-w-0">
-            <label className="flex items-center gap-2 cursor-pointer shrink-0">
-              <Checkbox
-                checked={reoccurForever}
-                onChange={(e) => handleReoccurForeverChange(e.target.checked)}
-                aria-label="Reoccur forever"
-              />
-              <span className="text-secondary text-bonsai-slate-700">Reoccur forever</span>
-            </label>
-            <div className="flex flex-col gap-1.5 min-w-0">
-              <label className="flex items-center gap-2 cursor-pointer shrink-0">
-                <Checkbox
-                  checked={!reoccurForever}
-                  onChange={(e) => handleEndsOnChange(e.target.checked)}
-                  aria-label="Ends on date"
+          {/* Duration: reoccur forever and optional end date */}
+          <div className="space-y-4 border-t border-outline-variant/30 pt-4">
+            <label className="group flex cursor-pointer items-center gap-3">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={reoccurForever}
+                  onChange={(e) => handleReoccurForeverChange(e.target.checked)}
+                  className="peer sr-only"
+                  aria-label="Reoccur forever"
                 />
-                <span className="text-secondary text-bonsai-slate-700">Ends on</span>
+                <div className="h-5 w-5 rounded border-2 border-outline-variant transition-all group-hover:border-sage peer-checked:border-sage peer-checked:bg-sage" />
+                <MaterialIcon
+                  name="check"
+                  className="absolute inset-0 flex items-center justify-center text-sm text-white opacity-0 peer-checked:opacity-100"
+                />
+              </div>
+              <span className="text-sm font-medium text-on-surface">Reoccur forever</span>
+            </label>
+            <div className={`flex items-center gap-4 ${reoccurForever ? 'opacity-50' : ''}`}>
+              <span className="text-sm font-medium text-on-surface">Ends on</span>
+              <label className="relative flex cursor-pointer items-center gap-2 rounded border border-outline-variant bg-surface px-3 py-2">
+                <span className="text-sm text-on-surface-variant">
+                  {formatEndsOnDisplay(endsOnDisplay)}
+                </span>
+                <MaterialIcon name="calendar_today" className="text-[18px] text-outline" />
+                <input
+                  type="date"
+                  value={endsOnDate}
+                  onChange={handleEndsOnDateChange}
+                  disabled={reoccurForever}
+                  className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                  aria-label="End date"
+                />
               </label>
-              <input
-                type="date"
-                value={endsOnDate}
-                onChange={handleEndsOnDateChange}
-                disabled={reoccurForever}
-                className="rounded border border-bonsai-slate-300 px-2 py-1 text-secondary text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500 disabled:opacity-50 disabled:cursor-not-allowed w-full min-w-[8rem] max-w-full"
-                aria-label="End date"
-              />
             </div>
           </div>
 
           {/* Reopen checklist items (only when task has checklists) */}
           {hasChecklists && (
-            <label className="flex items-center gap-2 cursor-pointer shrink-0">
-              <Checkbox
-                checked={reopenChecklist}
-                onChange={handleReopenChecklistChange}
-                aria-label="Reopen checklist items when task reoccurs"
-              />
-              <span className="text-secondary text-bonsai-slate-700">Reopen checklist items</span>
+            <label className="group flex cursor-pointer items-center gap-3">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={reopenChecklist}
+                  onChange={handleReopenChecklistChange}
+                  className="peer sr-only"
+                  aria-label="Reopen checklist items when task reoccurs"
+                />
+                <div className="h-5 w-5 rounded border-2 border-outline-variant transition-all group-hover:border-sage peer-checked:border-sage peer-checked:bg-sage" />
+                <MaterialIcon
+                  name="check"
+                  className="absolute inset-0 flex items-center justify-center text-sm text-white opacity-0 peer-checked:opacity-100"
+                />
+              </div>
+              <span className="text-sm font-medium text-on-surface">Reopen checklist items</span>
             </label>
           )}
         </div>

@@ -37,7 +37,7 @@ export function IdentitySlotPickerModal({
   void identityId
 
   const { habitsWithStreaks } = useHabits()
-  const { goals, createGoal } = useGoals()
+  const { goals, createGoalWithSetup } = useGoals()
 
   const initialMode: PickerMode = currentSlot?.item_type === 'habit' ? 'habit' : 'goal'
   const [mode, setMode] = useState<PickerMode>(initialMode)
@@ -176,19 +176,17 @@ export function IdentitySlotPickerModal({
       <AddEditGoalModal
         isOpen={createGoalOpen}
         onClose={() => setCreateGoalOpen(false)}
-        onCreateGoal={async (input) => {
-          const created = await createGoal({
-            ...input,
-            is_active: identityIsActive,
-          })
-          // Create + assign to this slot.
+        onCreateGoalWithSetup={async (input, setup) => {
+          const created = await createGoalWithSetup(
+            { ...input, is_active: identityIsActive },
+            setup,
+          )
           await onAssignGoal(created.id)
           setCreateGoalOpen(false)
           onClose()
           return created
         }}
         forceIsActive={identityIsActive}
-        hideIsActiveToggle
       />
     </Modal>
   )

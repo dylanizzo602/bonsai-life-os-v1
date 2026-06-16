@@ -31,6 +31,8 @@ import { formatDateShort } from './utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
 import { useSmartQuickAdd } from './hooks/useSmartQuickAdd'
 import type { SmartQuickAddResult } from './utils/smartQuickAdd'
+import { completeTaskAndResolveAll } from './utils/completeTaskAndResolveAll'
+import { hasUnresolvedTaskItems } from './utils/unresolvedTaskItems'
 import { TaskContextPopover } from './modals/TaskContextPopover'
 import {
   isDesktopContextMenuViewport,
@@ -42,7 +44,9 @@ import { TagModal } from './modals/TagModal'
 import { TimeEstimateModal } from './modals/TimeEstimateModal'
 import { AttachmentUploadModal } from './modals/AttachmentUploadModal'
 import { AttachmentPreviewModal } from './modals/AttachmentPreviewModal'
+import { AttachmentListItem } from './components/modal/AttachmentListItem'
 import { StatusPickerModal } from './modals/StatusPickerModal'
+import { UnresolvedItemsConfirmModal } from './modals/UnresolvedItemsConfirmModal'
 import { TaskStatusIndicator, getTaskStatusAriaLabel } from './TaskStatusIndicator'
 import { TaskTemplatesModal } from './modals/TaskTemplatesModal'
 import { RichTextEditor } from '../notes/RichTextEditor'
@@ -319,6 +323,12 @@ export function AddEditTaskModal({
   const [tagOpen, setTagOpen] = useState(false)
   const [timeEstimateOpen, setTimeEstimateOpen] = useState(false)
   const [statusPickerOpen, setStatusPickerOpen] = useState(false)
+  /* Unresolved subtasks/checklist prompt when completing from the edit modal */
+  const [isUnresolvedModalOpen, setIsUnresolvedModalOpen] = useState(false)
+  const [unresolvedCounts, setUnresolvedCounts] = useState({
+    unresolvedSubtaskCount: 0,
+    unresolvedChecklistItemCount: 0,
+  })
   /* Status button ref: Used to position the status popover */
   const statusButtonRef = useRef<HTMLButtonElement>(null)
   /* Priority button ref: Used to position the priority popover */
@@ -328,7 +338,19 @@ export function AddEditTaskModal({
   /* Date picker button ref: Used to position the date picker popover */
   const datePickerButtonRef = useRef<HTMLButtonElement>(null)
   const [attachmentModalOpen, setAttachmentModalOpen] = useState(false)
-  const [previewAttachment, setPreviewAttachment] = useState<TaskAttachment | null>(null)
+  const [previewAttachmentIndex, setPreviewAttachmentIndex] = useState<number | null>(null)
+
+  /** Remove an attachment from the task and persist the updated list */
+  const handleRemoveAttachment = useCallback(
+    (url: string) => {
+      const next = attachments.filter((item) => item.url !== url)
+      setAttachments(next)
+      if (task?.id && onUpdateTask) {
+        void onUpdateTask(task.id, { attachments: next })
+      }
+    },
+    [attachments, onUpdateTask, task?.id],
+  )
   /* Template state: applied template snapshot for add mode and inline template name prompt in edit mode */
   const [appliedTemplate, setAppliedTemplate] = useState<TaskTemplateData | null>(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | ''>('')
@@ -389,6 +411,7 @@ export function AddEditTaskModal({
     addItem,
     addItemOrCreateChecklist,
     addItemsOrCreateChecklist,
+    addItemsToList,
     updateChecklistTitle,
     toggleItem,
     updateItemTitle,
@@ -396,6 +419,32 @@ export function AddEditTaskModal({
     deleteChecklist,
     refetch: refetchChecklists,
   } = useTaskChecklists(task?.id ?? null)
+
+  /** Count open checklist items and subtasks before allowing task completion */
+  const getUnresolvedCountsForTask = useCallback(async () => {
+    const unresolvedChecklistItemCount = checklists.reduce(
+      (sum, checklist) => sum + checklist.items.filter((item) => !item.completed).length,
+      0,
+    )
+    let unresolvedSubtaskCount = 0
+    if (fetchSubtasks && task?.id) {
+      const subtasks = await fetchSubtasks(task.id)
+      unresolvedSubtaskCount = subtasks.filter((subtask) => subtask.status !== 'completed').length
+    }
+    return { unresolvedSubtaskCount, unresolvedChecklistItemCount }
+  }, [checklists, fetchSubtasks, task?.id])
+
+  /** Persist task completion from the edit modal status picker */
+  const completeTaskFromModal = useCallback(async () => {
+    if (!task) return
+    if (toggleComplete) {
+      await toggleComplete(task.id, true)
+    } else if (onUpdateTask) {
+      await onUpdateTask(task.id, { status: 'completed' })
+    }
+    setStatus('complete')
+  }, [onUpdateTask, task, toggleComplete])
+
   const {
     searchTags,
     createTag,
@@ -1086,25 +1135,57 @@ export function AddEditTaskModal({
         value={status}
         triggerRef={statusButtonRef}
         onSelect={async (newStatus) => {
-          setStatus(newStatus)
-
-          // In edit mode, immediately persist status changes using the shared task handlers
           if (isEditMode && task && onUpdateTask) {
             const nextTaskStatus = getTaskStatus(newStatus)
             try {
               if (nextTaskStatus === 'completed') {
-                // Use shared completion handler for consistent recurring behavior when available
-                if (toggleComplete) {
-                  await toggleComplete(task.id, true)
-                } else {
-                  await onUpdateTask(task.id, { status: 'completed' })
+                const counts = await getUnresolvedCountsForTask()
+                if (hasUnresolvedTaskItems(counts)) {
+                  setStatusPickerOpen(false)
+                  setUnresolvedCounts(counts)
+                  setIsUnresolvedModalOpen(true)
+                  return
                 }
-              } else {
-                await onUpdateTask(task.id, { status: nextTaskStatus })
+                await completeTaskFromModal()
+                return
               }
+              setStatus(newStatus)
+              await onUpdateTask(task.id, { status: nextTaskStatus })
             } catch (error) {
               console.error('Failed to update task status from modal:', error)
             }
+            return
+          }
+
+          setStatus(newStatus)
+        }}
+      />
+      <UnresolvedItemsConfirmModal
+        isOpen={isUnresolvedModalOpen}
+        onClose={() => setIsUnresolvedModalOpen(false)}
+        unresolvedSubtaskCount={unresolvedCounts.unresolvedSubtaskCount}
+        unresolvedChecklistItemCount={unresolvedCounts.unresolvedChecklistItemCount}
+        onCompleteWithoutResolving={async () => {
+          try {
+            await completeTaskFromModal()
+            setIsUnresolvedModalOpen(false)
+          } catch (error) {
+            console.error('Failed to complete task from edit modal:', error)
+          }
+        }}
+        onCompleteAndResolveAll={async () => {
+          if (!task?.id || !fetchSubtasks || !toggleComplete) return
+          try {
+            await completeTaskAndResolveAll({
+              taskId: task.id,
+              fetchSubtasks,
+              toggleComplete,
+            })
+            await refetchChecklists()
+            setStatus('complete')
+            setIsUnresolvedModalOpen(false)
+          } catch (error) {
+            console.error('Failed to complete task and resolve items from edit modal:', error)
           }
         }}
       />
@@ -1181,9 +1262,10 @@ export function AddEditTaskModal({
             }}
           />
           <AttachmentPreviewModal
-            isOpen={previewAttachment !== null}
-            onClose={() => setPreviewAttachment(null)}
-            attachment={previewAttachment}
+            isOpen={previewAttachmentIndex !== null}
+            onClose={() => setPreviewAttachmentIndex(null)}
+            attachments={attachments}
+            initialIndex={previewAttachmentIndex ?? 0}
           />
         </>
       )}
@@ -1250,34 +1332,14 @@ export function AddEditTaskModal({
                 {/* Existing attachments: displayed as clickable items */}
                 {attachments.length > 0 && (
                   <div className="flex items-center gap-2 flex-wrap">
-                    {attachments.map((a) => {
-                      const isImage = a.type?.startsWith('image/') ?? false
-                      const fileName = a.name ?? 'Attachment'
-                      return (
-                        <button
-                          key={a.url}
-                          type="button"
-                          onClick={() => setPreviewAttachment(a)}
-                          className="flex items-center gap-2 rounded-lg border border-bonsai-slate-200 px-3 py-2 text-sm hover:bg-bonsai-slate-50 hover:border-bonsai-slate-300 transition-colors group"
-                          title={`Click to preview: ${fileName}`}
-                        >
-                          {isImage ? (
-                            <img
-                              src={a.url}
-                              alt={fileName}
-                              className="w-8 h-8 object-cover rounded"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded bg-bonsai-slate-100 flex items-center justify-center text-bonsai-slate-500 text-xs font-medium">
-                              {fileName.split('.').pop()?.slice(0, 3).toUpperCase() ?? 'FILE'}
-                            </div>
-                          )}
-                          <span className="text-bonsai-slate-700 group-hover:text-bonsai-sage-600 truncate max-w-[120px]">
-                            {fileName}
-                          </span>
-                        </button>
-                      )
-                    })}
+                    {attachments.map((a, index) => (
+                      <AttachmentListItem
+                        key={a.url}
+                        attachment={a}
+                        onPreview={() => setPreviewAttachmentIndex(index)}
+                        onDelete={() => handleRemoveAttachment(a.url)}
+                      />
+                    ))}
                   </div>
                 )}
                 {/* Add attachment button */}
@@ -1303,6 +1365,7 @@ export function AddEditTaskModal({
               onAddItemsOrCreateChecklist={addItemsOrCreateChecklist}
               onAddChecklist={(title) => void addChecklist(title)}
               onAddItemToList={(checklistId, title) => void addItem(checklistId, title)}
+              onAddItemsToList={addItemsToList}
               onToggleItem={(itemId, completed) => void toggleItem(itemId, completed)}
               onUpdateItemTitle={(itemId, title) => void updateItemTitle(itemId, title)}
               onDeleteItem={(itemId) => void deleteItem(itemId)}

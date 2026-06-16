@@ -6,10 +6,15 @@ import { getDependenciesForTaskIds } from '../../../lib/supabase/tasks'
 import type { Task } from '../../tasks/types'
 import { computeBlockedTaskIds } from '../../tasks/utils/dependencies'
 import { useUserTimeZone } from '../../settings/useUserTimeZone'
-import { isDueWithinNextDays, taskDateToComparableMs } from '../../tasks/utils/date'
+import {
+  isDueWithinNextDays,
+  isStartAvailableNow,
+  taskDateToComparableMs,
+} from '../../tasks/utils/date'
 
 /**
- * Returns the next 5 incomplete tasks due within the next 7 days, sorted by nearest due date first.
+ * Returns up to 5 incomplete tasks due within the next 7 days, sorted by nearest due date first.
+ * Tasks must be unblocked and startable now (no start date, or start date today or earlier).
  * Excludes habit-linked reminder tasks so the home widget shows only "real" tasks.
  */
 export function useUpcomingTasks(): Task[] {
@@ -43,10 +48,12 @@ export function useUpcomingTasks(): Task[] {
       return parent?.status !== 'deleted' && parent?.status !== 'archived'
     })
 
-    /* Base pool: hide completed/archived/deleted; require due date within the next 7 days */
+    /* Base pool: incomplete only; due within 7 days; startable now; not blocked */
     const dueOnly = withoutArchivedOrDeletedParents.filter((t) => {
       if (t.status === 'completed' || t.status === 'archived' || t.status === 'deleted') return false
       if (t.habit_id) return false
+      if (blockedTaskIds.has(t.id)) return false
+      if (!isStartAvailableNow(t.start_date, timeZone)) return false
       return isDueWithinNextDays(t.due_date, timeZone)
     })
 

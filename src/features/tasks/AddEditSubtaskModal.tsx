@@ -22,6 +22,7 @@ import { TagModal } from './modals/TagModal'
 import { TimeEstimateModal } from './modals/TimeEstimateModal'
 import { AttachmentUploadModal } from './modals/AttachmentUploadModal'
 import { AttachmentPreviewModal } from './modals/AttachmentPreviewModal'
+import { AttachmentListItem } from './components/modal/AttachmentListItem'
 import { StatusPickerModal } from './modals/StatusPickerModal'
 import { getPriorityLabel } from './utils/priority'
 import { PriorityFlagIcon } from './components/PriorityFlagIcon'
@@ -187,7 +188,19 @@ export function AddEditSubtaskModal({
   /* Date picker button ref: Used to position the date picker popover */
   const datePickerButtonRef = useRef<HTMLButtonElement>(null)
   const [attachmentModalOpen, setAttachmentModalOpen] = useState(false)
-  const [previewAttachment, setPreviewAttachment] = useState<TaskAttachment | null>(null)
+  const [previewAttachmentIndex, setPreviewAttachmentIndex] = useState<number | null>(null)
+
+  /** Remove an attachment from the subtask and persist the updated list */
+  const handleRemoveAttachment = useCallback(
+    (url: string) => {
+      const next = attachments.filter((item) => item.url !== url)
+      setAttachments(next)
+      if (subtask?.id && onUpdateTask) {
+        void onUpdateTask(subtask.id, { attachments: next })
+      }
+    },
+    [attachments, onUpdateTask, subtask?.id],
+  )
   /* Dependency options for Relationships section */
   const [dependencyTasks, setDependencyTasks] = useState<Task[]>([])
   const [taskDeps, setTaskDeps] = useState<{
@@ -227,6 +240,7 @@ export function AddEditSubtaskModal({
     addItem,
     addItemOrCreateChecklist,
     addItemsOrCreateChecklist,
+    addItemsToList,
     toggleItem,
     updateChecklistTitle,
     updateItemTitle,
@@ -815,9 +829,10 @@ export function AddEditSubtaskModal({
             }}
           />
           <AttachmentPreviewModal
-            isOpen={previewAttachment !== null}
-            onClose={() => setPreviewAttachment(null)}
-            attachment={previewAttachment}
+            isOpen={previewAttachmentIndex !== null}
+            onClose={() => setPreviewAttachmentIndex(null)}
+            attachments={attachments}
+            initialIndex={previewAttachmentIndex ?? 0}
           />
         </>
       )}
@@ -881,34 +896,14 @@ export function AddEditSubtaskModal({
               <div className="space-y-2 mt-2">
                 {attachments.length > 0 && (
                   <div className="flex items-center gap-2 flex-wrap">
-                    {attachments.map((a) => {
-                      const isImage = a.type?.startsWith('image/') ?? false
-                      const fileName = a.name ?? 'Attachment'
-                      return (
-                        <button
-                          key={a.url}
-                          type="button"
-                          onClick={() => setPreviewAttachment(a)}
-                          className="flex items-center gap-2 rounded-lg border border-bonsai-slate-200 px-3 py-2 text-sm hover:bg-bonsai-slate-50 hover:border-bonsai-slate-300 transition-colors group"
-                          title={`Click to preview: ${fileName}`}
-                        >
-                          {isImage ? (
-                            <img
-                              src={a.url}
-                              alt={fileName}
-                              className="w-8 h-8 object-cover rounded"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded bg-bonsai-slate-100 flex items-center justify-center text-bonsai-slate-500 text-xs font-medium">
-                              {fileName.split('.').pop()?.slice(0, 3).toUpperCase() ?? 'FILE'}
-                            </div>
-                          )}
-                          <span className="text-bonsai-slate-700 group-hover:text-bonsai-sage-600 truncate max-w-[120px]">
-                            {fileName}
-                          </span>
-                        </button>
-                      )
-                    })}
+                    {attachments.map((a, index) => (
+                      <AttachmentListItem
+                        key={a.url}
+                        attachment={a}
+                        onPreview={() => setPreviewAttachmentIndex(index)}
+                        onDelete={() => handleRemoveAttachment(a.url)}
+                      />
+                    ))}
                   </div>
                 )}
                 <button
@@ -934,6 +929,7 @@ export function AddEditSubtaskModal({
             onAddItemsOrCreateChecklist={addItemsOrCreateChecklist}
             onAddChecklist={(title) => void addChecklist(title)}
             onAddItemToList={(checklistId, title) => void addItem(checklistId, title)}
+            onAddItemsToList={addItemsToList}
             onToggleItem={(itemId, completed) => void toggleItem(itemId, completed)}
             onUpdateItemTitle={(itemId, title) => void updateItemTitle(itemId, title)}
             onDeleteItem={(itemId) => void deleteItem(itemId)}

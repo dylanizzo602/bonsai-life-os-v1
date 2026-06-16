@@ -310,6 +310,8 @@ export async function createGoal(input: CreateGoalInput): Promise<Goal> {
     target_date: input.target_date ?? null,
     progress: input.progress ?? 0,
     is_active: input.is_active ?? true,
+    icon_name: input.icon_name ?? 'potted_plant',
+    category: input.category ?? null,
   }
 
   const { data, error } = await supabase
@@ -358,6 +360,8 @@ export async function updateGoal(id: string, input: UpdateGoalInput): Promise<Go
   if (input.progress !== undefined) updateData.progress = input.progress
    /* Allow toggling active/inactive state */
   if (input.is_active !== undefined) updateData.is_active = input.is_active
+  if (input.icon_name !== undefined) updateData.icon_name = input.icon_name ?? 'potted_plant'
+  if (input.category !== undefined) updateData.category = input.category ?? null
 
   const { data, error } = await supabase
     .from('goals')

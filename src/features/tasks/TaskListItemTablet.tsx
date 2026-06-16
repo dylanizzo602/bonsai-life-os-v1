@@ -19,6 +19,8 @@ import { InlineTitleInput } from '../../components/InlineTitleInput'
 import { Tooltip } from '../../components/Tooltip'
 import { TimeEstimateTooltip } from './modals/TimeEstimateTooltip'
 import { StatusPickerModal } from './modals/StatusPickerModal'
+import { UnresolvedItemsConfirmModal } from './modals/UnresolvedItemsConfirmModal'
+import { getUnresolvedCountsFromEnrichment } from './utils/unresolvedTaskItems'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { TagModal } from './modals/TagModal'
 import { useTags } from './hooks/useTags'
@@ -139,6 +141,7 @@ export function TaskListItemTabletLayout({
   onDependencyClick,
   formatDueDate: _formatDueDate,
   onUpdateStatus,
+  onCompleteTaskAndResolveAll,
   onTagsUpdated,
   expanded = false,
   onToggleExpand,
@@ -171,6 +174,8 @@ export function TaskListItemTabletLayout({
 
   /* Modal state: Track whether status picker modal is open on tablet */
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
+  /* Modal state: Unresolved-items confirm when completing with open subtasks or checklist items */
+  const [isUnresolvedModalOpen, setIsUnresolvedModalOpen] = useState(false)
   /* Modal state: Priority picker (same as desktop FullTaskItem) */
   const [isPriorityModalOpen, setIsPriorityModalOpen] = useState(false)
   /* Status button ref: Used to position the status popover on tablet */
@@ -465,6 +470,19 @@ export function TaskListItemTabletLayout({
           onSelect={async (newDisplayStatus) => {
             try {
               const nextTaskStatus = getTaskStatus(newDisplayStatus)
+              /* When completing: show unresolved-items modal if there are open subtasks or checklist items */
+              if (newDisplayStatus === 'complete') {
+                const { unresolvedSubtaskCount, unresolvedChecklistItemCount } =
+                  getUnresolvedCountsFromEnrichment({
+                    checklistSummary,
+                    incompleteSubtaskCount,
+                  })
+                if (unresolvedSubtaskCount + unresolvedChecklistItemCount > 0) {
+                  setIsStatusModalOpen(false)
+                  setIsUnresolvedModalOpen(true)
+                  return
+                }
+              }
               await onUpdateStatus(task.id, nextTaskStatus)
             } catch (error) {
               console.error('Failed to update task status (tablet picker):', error)
@@ -472,6 +490,31 @@ export function TaskListItemTabletLayout({
           }}
         />
       )}
+      {/* Unresolved items confirm: same flow as desktop when completing with open subtasks/checklist */}
+      <UnresolvedItemsConfirmModal
+        isOpen={isUnresolvedModalOpen}
+        onClose={() => setIsUnresolvedModalOpen(false)}
+        unresolvedSubtaskCount={incompleteSubtaskCount}
+        unresolvedChecklistItemCount={
+          (checklistSummary?.total ?? 0) - (checklistSummary?.completed ?? 0)
+        }
+        onCompleteWithoutResolving={async () => {
+          try {
+            await onUpdateStatus?.(task.id, 'completed')
+            setIsUnresolvedModalOpen(false)
+          } catch (error) {
+            console.error('Failed to complete task (tablet):', error)
+          }
+        }}
+        onCompleteAndResolveAll={async () => {
+          try {
+            await onCompleteTaskAndResolveAll?.(task.id)
+            setIsUnresolvedModalOpen(false)
+          } catch (error) {
+            console.error('Failed to complete task and resolve items (tablet):', error)
+          }
+        }}
+      />
       {/* Priority picker popover: same modal and update path as desktop row */}
       {onUpdateTask && (
         <PriorityPickerModal

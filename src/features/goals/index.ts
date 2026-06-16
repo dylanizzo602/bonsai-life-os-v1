@@ -1,5 +1,6 @@
 /* Goals feature exports */
 export { GoalsPage } from './GoalsPage'
+export { GoalDrawer } from './GoalDrawer'
 export { GoalDetailPage } from './GoalDetailPage'
 export { GoalGaugeCard } from './GoalGaugeCard'
 export { GoalGauge } from './GoalGauge'

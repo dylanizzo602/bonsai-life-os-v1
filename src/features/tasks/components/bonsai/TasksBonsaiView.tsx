@@ -4,7 +4,13 @@ import { useCallback, useMemo, useState, type MouseEvent } from 'react'
 import { useGoals } from '../../../goals/hooks/useGoals'
 import { MaterialIcon } from '../../../../components/MaterialIcon'
 import { TaskContextPopover } from '../../modals/TaskContextPopover'
+import { UnresolvedItemsConfirmModal } from '../../modals/UnresolvedItemsConfirmModal'
 import { handleDesktopTaskContextMenu } from '../../utils/taskContextMenu'
+import { completeTaskAndResolveAll } from '../../utils/completeTaskAndResolveAll'
+import {
+  getUnresolvedCountsFromEnrichment,
+  hasUnresolvedTaskItems,
+} from '../../utils/unresolvedTaskItems'
 import { useTaskRowEnrichment } from '../../hooks/useTaskRowEnrichment'
 import type { CreateTaskInput, Task, Tag, TagColorId, UpdateTaskInput } from '../../types'
 import { EMPTY_TASK_ENRICHMENT } from '../../types/taskRowEnrichment'
@@ -123,6 +129,12 @@ export function TasksBonsaiView({
   )
   const [contextTask, setContextTask] = useState<Task | null>(null)
   const [contextPosition, setContextPosition] = useState({ x: 0, y: 0 })
+  /* Unresolved-items prompt when completing a task with open subtasks or checklist items */
+  const [unresolvedPrompt, setUnresolvedPrompt] = useState<{
+    taskId: string
+    unresolvedSubtaskCount: number
+    unresolvedChecklistItemCount: number
+  } | null>(null)
 
   const lineupIds = useMemo(
     () => new Set(lineupTasks.map((t) => t.id)),
@@ -201,20 +213,48 @@ export function TasksBonsaiView({
     })
   }
 
+  /** Complete task immediately or show unresolved-items modal first */
+  const requestTaskCompletion = useCallback(
+    (taskId: string) => {
+      const counts = getUnresolvedCountsFromEnrichment(getEnrichment(taskId))
+      if (hasUnresolvedTaskItems(counts)) {
+        setUnresolvedPrompt({ taskId, ...counts })
+        return
+      }
+      void toggleComplete(taskId, true).then(() => refetch?.())
+    },
+    [getEnrichment, toggleComplete, refetch],
+  )
+
   const handleToggleComplete = async (task: Task) => {
-    await toggleComplete(task.id, task.status !== 'completed')
+    if (task.status === 'completed') {
+      await toggleComplete(task.id, false)
+      refetch?.()
+      return
+    }
+    requestTaskCompletion(task.id)
+  }
+
+  /* Status updates: intercept completion to match desktop/tablet unresolved-items flow */
+  const handleUpdateStatus = async (taskId: string, status: import('../../types').TaskStatus) => {
+    if (status === 'completed') {
+      requestTaskCompletion(taskId)
+      return
+    }
+    await updateTask(taskId, { status })
     refetch?.()
   }
 
-  /* Status updates: Match desktop/tablet behavior (complete uses toggleComplete; others use updateTask). */
-  const handleUpdateStatus = async (taskId: string, status: import('../../types').TaskStatus) => {
-    if (status === 'completed') {
-      await toggleComplete(taskId, true)
-    } else {
-      await updateTask(taskId, { status })
-    }
-    refetch?.()
-  }
+  /** Complete task and mark all subtasks/checklist items done (unresolved modal action) */
+  const handleCompleteTaskAndResolveAll = useCallback(
+    async (taskId: string) => {
+      if (!fetchSubtasks) return
+      await completeTaskAndResolveAll({ taskId, fetchSubtasks, toggleComplete })
+      setUnresolvedPrompt(null)
+      refetch?.()
+    },
+    [fetchSubtasks, toggleComplete, refetch],
+  )
 
   /* Priority and other field updates: shared handler for bonsai row controls */
   const handleUpdateTask = async (taskId: string, input: UpdateTaskInput) => {
@@ -374,6 +414,31 @@ export function TasksBonsaiView({
       </footer>
 
       <TasksMobileAddFab onAddTask={onAddTask} />
+
+      {unresolvedPrompt ? (
+        <UnresolvedItemsConfirmModal
+          isOpen
+          onClose={() => setUnresolvedPrompt(null)}
+          unresolvedSubtaskCount={unresolvedPrompt.unresolvedSubtaskCount}
+          unresolvedChecklistItemCount={unresolvedPrompt.unresolvedChecklistItemCount}
+          onCompleteWithoutResolving={async () => {
+            try {
+              await toggleComplete(unresolvedPrompt.taskId, true)
+              setUnresolvedPrompt(null)
+              refetch?.()
+            } catch (error) {
+              console.error('Failed to complete task (bonsai):', error)
+            }
+          }}
+          onCompleteAndResolveAll={async () => {
+            try {
+              await handleCompleteTaskAndResolveAll(unresolvedPrompt.taskId)
+            } catch (error) {
+              console.error('Failed to complete task and resolve items (bonsai):', error)
+            }
+          }}
+        />
+      ) : null}
 
       {contextTask ? (
         <TaskContextPopover

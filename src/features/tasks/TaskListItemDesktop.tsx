@@ -23,6 +23,7 @@ import { DescriptionTooltip, hasVisibleDescription } from '../../components/Desc
 import { DependencyTooltip } from '../../components/DependencyTooltip'
 import { StatusPickerModal } from './modals/StatusPickerModal'
 import { UnresolvedItemsConfirmModal } from './modals/UnresolvedItemsConfirmModal'
+import { getUnresolvedCountsFromEnrichment } from './utils/unresolvedTaskItems'
 import { TimeEstimateModal } from './modals/TimeEstimateModal'
 import { TimeEstimateTooltip } from './modals/TimeEstimateTooltip'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
@@ -637,9 +638,12 @@ export function TaskListItemDesktopLayout({
               const newTaskStatus = getTaskStatus(newDisplayStatus)
               /* When completing: show unresolved-items modal if there are open subtasks or checklist items */
               if (newDisplayStatus === 'complete') {
-                const unresolvedChecklist = (checklistSummary?.total ?? 0) - (checklistSummary?.completed ?? 0)
-                const unresolvedSubtasks = incompleteSubtaskCount
-                if (unresolvedChecklist + unresolvedSubtasks > 0) {
+                const { unresolvedSubtaskCount, unresolvedChecklistItemCount } =
+                  getUnresolvedCountsFromEnrichment({
+                    checklistSummary,
+                    incompleteSubtaskCount,
+                  })
+                if (unresolvedSubtaskCount + unresolvedChecklistItemCount > 0) {
                   setIsStatusModalOpen(false)
                   setIsUnresolvedModalOpen(true)
                   return

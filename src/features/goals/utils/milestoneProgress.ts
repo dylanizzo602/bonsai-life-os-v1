@@ -19,17 +19,18 @@ export function getBooleanMilestoneProgressPercent(m: GoalMilestone): number {
 
 /**
  * Number milestone: linear progress from start to target using current (or start when current unset).
+ * When start is unset, defaults to 0 so current/target goals (e.g. revenue) compute correctly.
  * Decreasing targets (target below start): progress rises as current falls toward target.
- * If start or target is missing, falls back to 100% only when fully met, else 0%.
+ * If target is missing, falls back to 100% only when fully met, else 0%.
  */
 export function getNumberMilestoneProgressPercent(m: GoalMilestone): number {
   if (m.type !== 'number') return 0
-  if (m.start_value == null || m.target_value == null) {
+  if (m.target_value == null) {
     return isNumberMilestoneMet(m) ? 100 : 0
   }
-  const start = m.start_value
+  const start = m.start_value ?? 0
   const target = m.target_value
-  const current = m.current_value ?? m.start_value
+  const current = m.current_value ?? start
   const range = Math.abs(target - start)
   if (range < 1e-9) {
     return Math.abs(current - target) < 1e-9 ? 100 : 0
