@@ -22,7 +22,7 @@ import { resolveGoalProgressPercent } from './utils/goalDisplay'
  */
 export function GoalsPage() {
   /* Data + modal state: list goals, optional detail view, create/edit modal */
-  const { goals, loading, error, createGoal, createGoalWithSetup, updateGoal, refetch } = useGoals()
+  const { goals, loading, error, createGoal, createGoalWithSetup, updateGoal, refetch, patchGoal } = useGoals()
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null)
   const [milestonesByGoal, setMilestonesByGoal] = useState<Record<string, GoalMilestone[]>>({})
   const [taskTreesByMilestoneId, setTaskTreesByMilestoneId] = useState<Record<string, Task[]>>({})
@@ -256,6 +256,7 @@ export function GoalsPage() {
           goalId={selectedGoalId}
           onClose={handleCloseDrawer}
           onDeleted={refetch}
+          onGoalUpdated={patchGoal}
         />
       )}
     </div>

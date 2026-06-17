@@ -23,7 +23,7 @@ export interface GoalMilestone {
   goal_id: string
   type: GoalMilestoneType
   title: string
-  task_id: string | null
+  description: string | null
   start_value: number | null
   target_value: number | null
   unit: string | null
@@ -32,8 +32,8 @@ export interface GoalMilestone {
   sort_order: number
   created_at: string
   updated_at: string
-  /** Populated when fetching goal details: the linked task for type 'task' */
-  task?: Task | null
+  /** Populated when fetching goal details: linked tasks for type 'task' */
+  linked_tasks?: Task[]
 }
 
 /** Goal entity: main goal with name, optional dates, progress, and active flag */
@@ -107,7 +107,8 @@ export interface CreateMilestoneInput {
   goal_id: string
   type: GoalMilestoneType
   title: string
-  task_id?: string | null
+  description?: string | null
+  task_ids?: string[]
   start_value?: number | null
   target_value?: number | null
   unit?: string | null
@@ -119,7 +120,8 @@ export interface CreateMilestoneInput {
 /** Input for updating a milestone */
 export interface UpdateMilestoneInput {
   title?: string
-  task_id?: string | null
+  description?: string | null
+  task_ids?: string[]
   start_value?: number | null
   target_value?: number | null
   unit?: string | null

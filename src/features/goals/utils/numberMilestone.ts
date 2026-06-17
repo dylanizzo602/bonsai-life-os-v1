@@ -27,3 +27,19 @@ export function isNumberMilestoneMet(m: GoalMilestone): boolean {
   }
   return m.current_value >= m.target_value
 }
+
+/**
+ * Units remaining until a number milestone reaches its target.
+ */
+export function getNumberMilestoneRemaining(
+  startValue: number | null,
+  targetValue: number | null,
+  currentValue: number | null,
+): number {
+  if (targetValue == null) return 0
+  const current = currentValue ?? startValue ?? 0
+  const decreasing =
+    startValue != null && targetValue != null && targetValue < startValue
+  if (decreasing) return Math.max(0, current - targetValue)
+  return Math.max(0, targetValue - current)
+}

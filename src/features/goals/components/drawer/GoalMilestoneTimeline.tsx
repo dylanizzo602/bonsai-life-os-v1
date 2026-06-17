@@ -52,7 +52,7 @@ export function GoalMilestoneTimeline({
   onCreateMilestone,
   onUpdateMilestone,
   getTasks,
-  onOpenEditTaskModal,
+  onOpenEditTaskModal: _onOpenEditTaskModal,
 }: GoalMilestoneTimelineProps) {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingMilestone, setEditingMilestone] = useState<GoalMilestone | null>(null)
@@ -63,10 +63,6 @@ export function GoalMilestoneTimeline({
   }
 
   const openEdit = (m: GoalMilestone) => {
-    if (m.type === 'task' && m.task && onOpenEditTaskModal) {
-      onOpenEditTaskModal(m.task)
-      return
-    }
     setEditingMilestone(m)
     setModalOpen(true)
   }
@@ -161,6 +157,8 @@ export function GoalMilestoneTimeline({
         onUpdateMilestone={onUpdateMilestone}
         milestone={editingMilestone}
         getTasks={getTasks}
+        taskTreesByMilestoneId={taskTreesByMilestoneId}
+        onOpenEditTaskModal={_onOpenEditTaskModal}
       />
     </section>
   )

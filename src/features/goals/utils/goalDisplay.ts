@@ -51,9 +51,13 @@ export function getGoalAccent(index: number): GoalAccent {
 }
 
 /**
- * Material icon name for a goal based on name keywords and index fallback.
+ * Material icon name for a goal: uses stored icon_name when set, else name-keyword heuristics.
  */
-export function getGoalMaterialIcon(goal: Pick<Goal, 'name'>, index: number): string {
+export function getGoalMaterialIcon(goal: Pick<Goal, 'name' | 'icon_name'>, index: number): string {
+  if (goal.icon_name) {
+    return goal.icon_name
+  }
+
   const n = goal.name.toLowerCase()
   if (n.includes('book') || n.includes('poetry') || n.includes('write') || n.includes('read')) {
     return 'menu_book'

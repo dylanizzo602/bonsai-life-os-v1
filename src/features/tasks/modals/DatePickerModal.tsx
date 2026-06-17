@@ -639,7 +639,7 @@ export function DatePickerModal({
 
   /* Time input: editable; flexible width for small screens */
   const timeInputClass =
-    'min-w-[3.5rem] w-[4.5rem] max-w-[5rem] shrink rounded border-0 bg-transparent py-0 text-sm font-medium text-on-surface focus:outline-none focus:ring-0 text-right placeholder:text-outline'
+    'min-w-0 w-[4rem] max-w-[4.5rem] shrink rounded border-0 bg-transparent py-0 text-sm font-medium text-on-surface focus:outline-none focus:ring-0 text-right placeholder:text-outline'
 
   /* Date field shell: active (focused) vs inactive styling from schedule mock */
   const dateFieldShell = (field: 'start' | 'due') => {
@@ -670,12 +670,12 @@ export function DatePickerModal({
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden p-6 md:p-8">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden p-4 md:p-6">
         {/* Header: title, subtitle, and close */}
-        <header className="flex shrink-0 items-start justify-between">
-          <div>
+        <header className="flex shrink-0 items-start justify-between gap-3">
+          <div className="min-w-0">
             <h1 className="text-body font-bold text-on-surface">
-              Select<span className="text-xl">&nbsp;date(s)</span>
+              Select<span className="text-body">&nbsp;date(s)</span>
             </h1>
             <p className="mt-0.5 text-secondary text-on-surface-variant">
               Select a start and due date for your project.
@@ -691,11 +691,11 @@ export function DatePickerModal({
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-6 overflow-auto">
+        <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto">
           {/* Start and due date inputs */}
-          <div className="flex flex-col gap-4 md:flex-row">
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:gap-4">
             {/* Start date field */}
-            <div className="flex flex-1 flex-col gap-1.5">
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
               <label
                 className={`px-1 text-[11px] font-bold uppercase tracking-wider ${
                   focusedField === 'start' ? 'text-sage' : 'text-outline'
@@ -704,13 +704,13 @@ export function DatePickerModal({
                 Start Date
               </label>
               <div
-                className={`relative flex items-center gap-3 rounded-lg px-4 py-3 ${dateFieldShell('start')}`}
+                className={`relative flex min-w-0 items-center gap-1.5 rounded-lg px-2.5 py-2 sm:gap-2 sm:px-3 sm:py-2.5 ${dateFieldShell('start')}`}
                 onPointerDown={() => setFocusedField('start')}
                 onClick={() => setFocusedField('start')}
               >
                 <MaterialIcon
                   name="calendar_today"
-                  className={`text-xl ${focusedField === 'start' ? 'text-sage' : 'text-outline'}`}
+                  className={`shrink-0 text-lg ${focusedField === 'start' ? 'text-sage' : 'text-outline'}`}
                 />
                 <input
                   type="text"
@@ -741,7 +741,7 @@ export function DatePickerModal({
                 />
                 <MaterialIcon
                   name="schedule"
-                  className={`ml-auto text-xl ${focusedField === 'start' ? 'text-sage' : 'text-outline'}`}
+                  className={`shrink-0 text-lg ${focusedField === 'start' ? 'text-sage' : 'text-outline'}`}
                 />
                 {showStartTime ? (
                   <input
@@ -788,7 +788,7 @@ export function DatePickerModal({
                       e.stopPropagation()
                       setShowStartTime(true)
                     }}
-                    className="shrink-0 text-sm font-medium text-on-surface"
+                    className="shrink-0 text-xs font-medium text-on-surface sm:text-sm"
                   >
                     Add time
                   </button>
@@ -801,7 +801,7 @@ export function DatePickerModal({
                       setStart('')
                       setShowStartTime(false)
                     }}
-                    className="absolute -right-2 -top-2 rounded-full bg-surface p-0.5 text-outline-variant shadow-sm hover:text-error"
+                    className="absolute -right-1.5 -top-1.5 rounded-full bg-surface p-0.5 text-outline-variant shadow-sm hover:text-error"
                     aria-label="Clear start date"
                   >
                     <MaterialIcon name="close" className="text-sm" />
@@ -811,7 +811,7 @@ export function DatePickerModal({
             </div>
 
             {/* Due date field */}
-            <div className="flex flex-1 flex-col gap-1.5">
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
               <label
                 className={`px-1 text-[11px] font-bold uppercase tracking-wider ${
                   focusedField === 'due' ? 'text-sage' : 'text-outline'
@@ -820,13 +820,13 @@ export function DatePickerModal({
                 Due Date
               </label>
               <div
-                className={`relative flex items-center gap-3 rounded-lg px-4 py-3 ${dateFieldShell('due')}`}
+                className={`relative flex min-w-0 items-center gap-1.5 rounded-lg px-2.5 py-2 sm:gap-2 sm:px-3 sm:py-2.5 ${dateFieldShell('due')}`}
                 onPointerDown={() => setFocusedField('due')}
                 onClick={() => setFocusedField('due')}
               >
                 <MaterialIcon
                   name="calendar_today"
-                  className={`text-xl ${focusedField === 'due' ? 'text-sage' : 'text-outline'}`}
+                  className={`shrink-0 text-lg ${focusedField === 'due' ? 'text-sage' : 'text-outline'}`}
                 />
                 <input
                   type="text"
@@ -857,7 +857,7 @@ export function DatePickerModal({
                 />
                 <MaterialIcon
                   name="schedule"
-                  className={`ml-auto text-xl ${focusedField === 'due' ? 'text-sage' : 'text-outline'}`}
+                  className={`shrink-0 text-lg ${focusedField === 'due' ? 'text-sage' : 'text-outline'}`}
                 />
                 {showDueTime ? (
                   <input
@@ -904,7 +904,7 @@ export function DatePickerModal({
                       e.stopPropagation()
                       setShowDueTime(true)
                     }}
-                    className="shrink-0 text-sm font-medium text-on-surface"
+                    className="shrink-0 text-xs font-medium text-on-surface sm:text-sm"
                   >
                     Add time
                   </button>
@@ -917,7 +917,7 @@ export function DatePickerModal({
                       setDue('')
                       setShowDueTime(false)
                     }}
-                    className="absolute -right-2 -top-2 rounded-full bg-surface p-0.5 text-outline-variant shadow-sm hover:text-error"
+                    className="absolute -right-1.5 -top-1.5 rounded-full bg-surface p-0.5 text-outline-variant shadow-sm hover:text-error"
                     aria-label="Clear due date"
                   >
                     <MaterialIcon name="close" className="text-sm" />
@@ -928,7 +928,7 @@ export function DatePickerModal({
           </div>
 
           {/* Quick picks and calendar */}
-          <div className="grid grid-cols-1 gap-8 rounded-lg bg-surface-container-low/50 p-6 md:grid-cols-[1fr_1.2fr]">
+          <div className="grid min-w-0 grid-cols-1 gap-4 rounded-lg bg-surface-container-low/50 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:gap-6 lg:p-5">
             {/* Quick select shortcuts */}
             <div className="space-y-1">
               {QUICK_OPTIONS.map((opt) => {
@@ -949,10 +949,10 @@ export function DatePickerModal({
             </div>
 
             {/* Month grid */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="min-w-0 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-bold text-on-surface">{viewMonthLabel}</h3>
-                <div className="flex items-center gap-4">
+                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
                   <button
                     type="button"
                     onClick={goToToday}
@@ -960,7 +960,7 @@ export function DatePickerModal({
                   >
                     Today
                   </button>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => goToMonth(-1)}
@@ -980,11 +980,11 @@ export function DatePickerModal({
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-7 gap-y-2 text-center">
+              <div className="grid min-w-0 grid-cols-7 gap-y-1 text-center">
                 {WEEKDAYS.map((wd) => (
                   <div
                     key={wd}
-                    className="mb-2 text-[10px] font-bold uppercase text-outline"
+                    className="mb-1 text-[10px] font-bold uppercase text-outline"
                   >
                     {wd}
                   </div>
@@ -994,7 +994,7 @@ export function DatePickerModal({
                     key={cell.ymd}
                     type="button"
                     onClick={() => applyDate(cell.ymd)}
-                    className={`p-2 text-sm ${getCellClass(cell.ymd, cell.isCurrentMonth)}`}
+                    className={`min-w-0 px-0.5 py-1 text-sm sm:py-1.5 ${getCellClass(cell.ymd, cell.isCurrentMonth)}`}
                   >
                     {cell.date.getDate()}
                   </button>
@@ -1021,7 +1021,7 @@ export function DatePickerModal({
                 className="text-outline transition-transform group-open:rotate-180"
               />
             </summary>
-            <div className="space-y-6 border-t border-outline-variant/10 p-6 pt-2">
+            <div className="space-y-4 border-t border-outline-variant/10 p-4 pt-2 sm:space-y-6 sm:p-5">
               <RecurringSettingsSection
                 value={recurrencePattern}
                 onChange={setRecurrencePattern}
@@ -1033,9 +1033,9 @@ export function DatePickerModal({
         </div>
 
         {/* Footer: range summary, cancel, and apply */}
-        <footer className="flex shrink-0 flex-col items-center justify-end gap-4 border-t border-outline-variant/30 pt-4 sm:flex-row">
+        <footer className="flex w-full min-w-0 shrink-0 flex-col items-stretch justify-end gap-3 border-t border-outline-variant/30 pt-3 sm:flex-row sm:items-center sm:gap-4 sm:pt-4">
           {selectedRangeDays != null && (
-            <div className="mr-auto flex items-center gap-2 text-xs text-on-surface-variant">
+            <div className="flex min-w-0 items-center gap-2 text-xs text-on-surface-variant sm:mr-auto">
               <MaterialIcon name="info" className="text-[18px]" />
               <span>Selected range: {selectedRangeDays} days</span>
             </div>
@@ -1050,7 +1050,7 @@ export function DatePickerModal({
           <button
             type="button"
             onClick={() => void handleSave()}
-            className="w-full rounded-lg bg-sage px-10 py-3 font-bold text-white shadow-lg shadow-sage/20 transition-all active:scale-[0.98] hover:bg-primary-container sm:w-auto"
+            className="w-full rounded-lg bg-sage px-6 py-2.5 font-bold text-white shadow-lg shadow-sage/20 transition-all active:scale-[0.98] hover:bg-primary-container sm:w-auto sm:px-8 sm:py-3"
           >
             Apply Schedule
           </button>

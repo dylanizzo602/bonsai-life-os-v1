@@ -6,12 +6,14 @@ import { DEFAULT_GOAL_ICON, GOAL_ICON_OPTIONS } from '../utils/goalCategories'
 interface GoalIconPickerProps {
   value: string
   onChange: (iconName: string) => void
+  /** Compact tile for drawer header (matches progress bar row height) */
+  size?: 'md' | 'sm'
 }
 
 /**
  * Icon tile button that opens a popover grid of selectable Material icons.
  */
-export function GoalIconPicker({ value, onChange }: GoalIconPickerProps) {
+export function GoalIconPicker({ value, onChange, size = 'md' }: GoalIconPickerProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -28,21 +30,28 @@ export function GoalIconPicker({ value, onChange }: GoalIconPickerProps) {
   }, [open])
 
   const displayIcon = value || DEFAULT_GOAL_ICON
+  const isSm = size === 'sm'
 
   return (
     <div ref={rootRef} className="relative shrink-0">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-14 w-14 items-center justify-center rounded-xl border border-outline-variant/30 bg-surface-container-high text-on-surface-variant transition-all hover:bg-surface-variant active:scale-95 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
+        className={`flex items-center justify-center rounded-lg border border-outline-variant/30 bg-surface-container-high text-on-surface-variant transition-all hover:bg-surface-variant active:scale-95 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 ${
+          isSm ? 'h-8 w-8' : 'h-14 w-14 rounded-xl'
+        }`}
         aria-label="Choose goal icon"
         aria-expanded={open}
       >
-        <MaterialIcon name={displayIcon} className="text-[30px]" />
+        <MaterialIcon name={displayIcon} className={isSm ? 'text-[18px]' : 'text-[30px]'} />
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-2 grid w-56 grid-cols-4 gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3 shadow-xl">
+        <div
+          className={`absolute top-full z-20 mt-2 grid w-56 grid-cols-4 gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3 shadow-xl ${
+            isSm ? 'right-0' : 'left-0'
+          }`}
+        >
           {GOAL_ICON_OPTIONS.map((icon) => (
             <button
               key={icon}

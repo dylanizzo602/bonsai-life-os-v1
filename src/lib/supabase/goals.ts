@@ -37,15 +37,106 @@ function milestoneNumericEqual(
   return Number(a) === Number(b)
 }
 
+/* Compare linked task id sets (order-independent) */
+function linkedTaskIdsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  const sortedA = [...a].sort()
+  const sortedB = [...b].sort()
+  return sortedA.every((id, i) => id === sortedB[i])
+}
+
+/** Junction row shape from goal_milestone_tasks */
+interface MilestoneTaskLinkRow {
+  milestone_id: string
+  task_id: string
+  sort_order: number
+}
+
+/** Fetch linked task ids per milestone from junction table */
+async function getMilestoneTaskIdsByMilestoneId(
+  milestoneIds: string[],
+): Promise<Record<string, string[]>> {
+  if (milestoneIds.length === 0) return {}
+
+  const { data, error } = await supabase
+    .from('goal_milestone_tasks')
+    .select('milestone_id, task_id, sort_order')
+    .in('milestone_id', milestoneIds)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('Error fetching milestone task links:', error)
+    throw error
+  }
+
+  const map: Record<string, string[]> = {}
+  for (const row of (data ?? []) as MilestoneTaskLinkRow[]) {
+    if (!map[row.milestone_id]) map[row.milestone_id] = []
+    map[row.milestone_id].push(row.task_id)
+  }
+  return map
+}
+
+/** Replace junction rows for a milestone with the given task ids */
+async function syncMilestoneTaskLinks(milestoneId: string, taskIds: string[]): Promise<void> {
+  const { error: deleteError } = await supabase
+    .from('goal_milestone_tasks')
+    .delete()
+    .eq('milestone_id', milestoneId)
+
+  if (deleteError) {
+    console.error('Error clearing milestone task links:', deleteError)
+    throw deleteError
+  }
+
+  if (taskIds.length === 0) return
+
+  const rows = taskIds.map((task_id, index) => ({
+    milestone_id: milestoneId,
+    task_id,
+    sort_order: index,
+  }))
+
+  const { error: insertError } = await supabase.from('goal_milestone_tasks').insert(rows)
+
+  if (insertError) {
+    console.error('Error inserting milestone task links:', insertError)
+    throw insertError
+  }
+}
+
+/** Attach linked_tasks to milestone rows using a pre-fetched task map */
+function attachLinkedTasks(
+  milestones: GoalMilestone[],
+  taskIdsByMilestoneId: Record<string, string[]>,
+  taskMap: Map<string, Task>,
+): GoalMilestone[] {
+  return milestones.map((m) => {
+    if (m.type !== 'task') return { ...m, linked_tasks: [] }
+    const ids = taskIdsByMilestoneId[m.id] ?? []
+    const linked_tasks = ids
+      .map((id) => taskMap.get(id))
+      .filter((t): t is Task => t != null)
+    return { ...m, linked_tasks }
+  })
+}
+
 /**
  * True when the milestone row changed only by completing (incomplete → complete).
  * In that case we log a single `milestone_completed` entry with detail, not a generic update.
  */
-function isOnlyCompletionTransition(prev: GoalMilestone, next: GoalMilestone): boolean {
+function isOnlyCompletionTransition(
+  prev: GoalMilestone,
+  next: GoalMilestone,
+  prevTaskIds: string[],
+  nextTaskIds: string[],
+): boolean {
   if (prev.completed || !next.completed) return false
   return (
     prev.title === next.title &&
-    prev.task_id === next.task_id &&
+    (prev.description ?? '') === (next.description ?? '') &&
+    linkedTaskIdsEqual(prevTaskIds, nextTaskIds) &&
     prev.type === next.type &&
     milestoneNumericEqual(prev.start_value, next.start_value) &&
     milestoneNumericEqual(prev.target_value, next.target_value) &&
@@ -72,6 +163,8 @@ function describeMilestoneCompletedAlone(m: GoalMilestone): string {
 async function describeMilestoneChanges(
   prev: GoalMilestone,
   next: GoalMilestone,
+  prevTaskIds: string[],
+  nextTaskIds: string[],
 ): Promise<{ description: string; metadata: Record<string, unknown> }> {
   const parts: string[] = []
   const metadata: Record<string, unknown> = {
@@ -87,16 +180,23 @@ async function describeMilestoneChanges(
     metadata.next_title = next.title
   }
 
-  /* Linked task change (task milestones) */
-  if (prev.task_id !== next.task_id) {
-    const ids = [prev.task_id, next.task_id].filter(Boolean) as string[]
-    const tasks = ids.length > 0 ? await getTasksByIds(ids) : []
+  /* Description change */
+  if ((prev.description ?? '') !== (next.description ?? '')) {
+    parts.push('description updated')
+    metadata.previous_description = prev.description
+    metadata.next_description = next.description
+  }
+
+  /* Linked tasks change (task milestones) */
+  if (!linkedTaskIdsEqual(prevTaskIds, nextTaskIds)) {
+    const allIds = [...new Set([...prevTaskIds, ...nextTaskIds])]
+    const tasks = allIds.length > 0 ? await getTasksByIds(allIds) : []
     const titles = new Map(tasks.map((t) => [t.id, t.title]))
-    const prevLabel = prev.task_id ? titles.get(prev.task_id) ?? 'Task' : 'None'
-    const nextLabel = next.task_id ? titles.get(next.task_id) ?? 'Task' : 'None'
-    parts.push(`linked task "${prevLabel}" → "${nextLabel}"`)
-    metadata.previous_task_id = prev.task_id
-    metadata.next_task_id = next.task_id
+    const prevLabels = prevTaskIds.map((id) => titles.get(id) ?? 'Task').join(', ') || 'None'
+    const nextLabels = nextTaskIds.map((id) => titles.get(id) ?? 'Task').join(', ') || 'None'
+    parts.push(`linked tasks "${prevLabels}" → "${nextLabels}"`)
+    metadata.previous_task_ids = prevTaskIds
+    metadata.next_task_ids = nextTaskIds
   }
 
   /* Number milestone: current value and deltas */
@@ -216,16 +316,13 @@ export async function getGoal(id: string): Promise<GoalWithDetails> {
 
   const milestones = (milestonesData ?? []) as GoalMilestone[]
 
-  /* Fetch linked tasks for task-type milestones */
-  const taskIds = [...new Set(
-    milestones.filter((m) => m.type === 'task' && m.task_id).map((m) => m.task_id!)
-  )]
-  const tasks = taskIds.length > 0 ? await getTasksByIds(taskIds) : []
+  /* Fetch linked tasks for task-type milestones via junction table */
+  const taskMilestoneIds = milestones.filter((m) => m.type === 'task').map((m) => m.id)
+  const taskIdsByMilestoneId = await getMilestoneTaskIdsByMilestoneId(taskMilestoneIds)
+  const allTaskIds = [...new Set(Object.values(taskIdsByMilestoneId).flat())]
+  const tasks = allTaskIds.length > 0 ? await getTasksByIds(allTaskIds) : []
   const taskMap = new Map<string, Task>(tasks.map((t) => [t.id, t]))
-  const milestonesWithTasks = milestones.map((m) => ({
-    ...m,
-    task: m.task_id ? (taskMap.get(m.task_id) ?? null) : null,
-  }))
+  const milestonesWithTasks = attachLinkedTasks(milestones, taskIdsByMilestoneId, taskMap)
 
   /* Fetch linked habits */
   const { data: habitsData, error: habitsError } = await supabase
@@ -262,11 +359,30 @@ export async function getGoal(id: string): Promise<GoalWithDetails> {
 export async function getTaskTreesByMilestoneId(
   milestones: GoalMilestone[],
 ): Promise<Record<string, Task[]>> {
-  const taskMilestones = milestones.filter((m) => m.type === 'task' && m.task_id)
+  const taskMilestones = milestones.filter((m) => m.type === 'task')
+  const taskIdsByMilestoneId = await getMilestoneTaskIdsByMilestoneId(
+    taskMilestones.map((m) => m.id),
+  )
+
   const entries = await Promise.all(
     taskMilestones.map(async (m) => {
-      const tree = await getTaskTreeForProgress(m.task_id!)
-      return [m.id, tree] as const
+      const rootIds =
+        m.linked_tasks && m.linked_tasks.length > 0
+          ? m.linked_tasks.map((t) => t.id)
+          : (taskIdsByMilestoneId[m.id] ?? [])
+
+      const trees = await Promise.all(rootIds.map((id) => getTaskTreeForProgress(id)))
+      const seen = new Set<string>()
+      const merged: Task[] = []
+      for (const tree of trees) {
+        for (const t of tree) {
+          if (!seen.has(t.id)) {
+            seen.add(t.id)
+            merged.push(t)
+          }
+        }
+      }
+      return [m.id, merged] as const
     }),
   )
   return Object.fromEntries(entries)
@@ -289,7 +405,7 @@ async function calculateProgressFromMilestones(milestones: GoalMilestone[]): Pro
       return getNumberMilestoneProgressPercent(m)
     }
     if (m.type === 'task') {
-      const tree = m.task_id ? taskTreesByMilestoneId[m.id] ?? [] : []
+      const tree = taskTreesByMilestoneId[m.id] ?? []
       return getTaskMilestoneProgressPercentFromTree(tree)
     }
     return 0
@@ -423,11 +539,15 @@ export async function getMilestonesForGoal(goalId: string): Promise<GoalMileston
  * Create a milestone and add history entry.
  */
 export async function createMilestone(input: CreateMilestoneInput): Promise<GoalMilestone> {
+  if (input.type === 'task' && (!input.task_ids || input.task_ids.length === 0)) {
+    throw new Error('Task milestones require at least one linked task')
+  }
+
   const insertData: Record<string, unknown> = {
     goal_id: input.goal_id,
     type: input.type,
     title: input.title,
-    task_id: input.task_id ?? null,
+    description: input.description ?? null,
     start_value: input.start_value ?? null,
     target_value: input.target_value ?? null,
     unit: input.unit ?? null,
@@ -449,6 +569,11 @@ export async function createMilestone(input: CreateMilestoneInput): Promise<Goal
 
   const milestone = data as GoalMilestone
 
+  /* Link tasks for task-type milestones */
+  if (input.type === 'task' && input.task_ids && input.task_ids.length > 0) {
+    await syncMilestoneTaskLinks(milestone.id, input.task_ids)
+  }
+
   /* Add history entry */
   /* History: record milestone type and starting numbers when relevant */
   const createdMeta: Record<string, unknown> = {
@@ -461,6 +586,12 @@ export async function createMilestone(input: CreateMilestoneInput): Promise<Goal
     createdMeta.target_value = input.target_value ?? null
     createdMeta.current_value = input.current_value ?? null
     createdMeta.unit = input.unit ?? null
+  }
+  if (input.type === 'task' && input.task_ids) {
+    createdMeta.task_ids = input.task_ids
+  }
+  if (input.description) {
+    createdMeta.description = input.description
   }
   await addHistoryEntry(
     input.goal_id,
@@ -498,9 +629,12 @@ export async function updateMilestone(
   const wasCompleted = prev.completed
   const isNowCompleted = input.completed ?? wasCompleted
 
+  const prevTaskIdsMap = await getMilestoneTaskIdsByMilestoneId([id])
+  const prevTaskIds = prevTaskIdsMap[id] ?? []
+
   const updateData: Record<string, unknown> = {}
   if (input.title !== undefined) updateData.title = input.title
-  if (input.task_id !== undefined) updateData.task_id = input.task_id
+  if (input.description !== undefined) updateData.description = input.description
   if (input.start_value !== undefined) updateData.start_value = input.start_value
   if (input.target_value !== undefined) updateData.target_value = input.target_value
   if (input.unit !== undefined) updateData.unit = input.unit
@@ -508,27 +642,44 @@ export async function updateMilestone(
   if (input.completed !== undefined) updateData.completed = input.completed
   if (input.sort_order !== undefined) updateData.sort_order = input.sort_order
 
+  const willSyncTasks = input.task_ids !== undefined
+  const hasMilestoneFieldUpdates = Object.keys(updateData).length > 0
+
   /* No-op updates: skip DB write and history */
-  if (Object.keys(updateData).length === 0) {
-    return prev
+  if (!hasMilestoneFieldUpdates && !willSyncTasks) {
+    return { ...prev, linked_tasks: [] }
   }
 
-  const { data, error } = await supabase
-    .from('goal_milestones')
-    .update(updateData)
-    .eq('id', id)
-    .select()
-    .single()
+  let next = prev
 
-  if (error) {
-    console.error('Error updating milestone:', error)
-    throw error
+  if (hasMilestoneFieldUpdates) {
+    const { data, error } = await supabase
+      .from('goal_milestones')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error updating milestone:', error)
+      throw error
+    }
+
+    next = data as GoalMilestone
   }
 
-  const next = data as GoalMilestone
+  if (willSyncTasks) {
+    if (prev.type === 'task' && input.task_ids && input.task_ids.length === 0) {
+      throw new Error('Task milestones require at least one linked task')
+    }
+    await syncMilestoneTaskLinks(id, input.task_ids ?? [])
+  }
+
+  const nextTaskIdsMap = await getMilestoneTaskIdsByMilestoneId([id])
+  const nextTaskIds = nextTaskIdsMap[id] ?? []
 
   /* History: completion-only edits get one rich line; otherwise log field-level updates */
-  const onlyCompleted = isOnlyCompletionTransition(prev, next)
+  const onlyCompleted = isOnlyCompletionTransition(prev, next, prevTaskIds, nextTaskIds)
 
   if (onlyCompleted) {
     await addHistoryEntry(
@@ -543,7 +694,12 @@ export async function updateMilestone(
       },
     )
   } else {
-    const { description, metadata } = await describeMilestoneChanges(prev, next)
+    const { description, metadata } = await describeMilestoneChanges(
+      prev,
+      next,
+      prevTaskIds,
+      nextTaskIds,
+    )
     await addHistoryEntry(next.goal_id, 'milestone_updated', description, metadata)
 
     /* Separate completion line when other fields also changed */

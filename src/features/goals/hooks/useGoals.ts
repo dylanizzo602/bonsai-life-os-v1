@@ -147,6 +147,11 @@ export function useGoals() {
     [],
   )
 
+  /* Patch a goal in local list state without a network call (e.g. after drawer edits) */
+  const patchGoal = useCallback((updated: Goal) => {
+    setGoals((prev) => prev.map((g) => (g.id === updated.id ? { ...g, ...updated } : g)))
+  }, [])
+
   return {
     goals,
     loading,
@@ -156,6 +161,7 @@ export function useGoals() {
     createGoalWithSetup: handleCreateGoalWithSetup,
     updateGoal: handleUpdateGoal,
     deleteGoal: handleDeleteGoal,
+    patchGoal,
   }
 }
 

@@ -1,13 +1,11 @@
-/* AddEditMilestoneModal: Create/Edit milestone with type-specific fields */
-import { useState, useEffect } from 'react'
+/* AddEditMilestoneModal: Material-styled create/edit milestone modal */
+import { useState } from 'react'
 import { Modal } from '../../components/Modal'
-import { Button } from '../../components/Button'
-import { Input } from '../../components/Input'
-import { Select } from '../../components/Select'
-import { TaskSearchSelect } from '../../components/TaskSearchSelect'
+import { MaterialIcon } from '../../components/MaterialIcon'
+import { MilestoneModalForm } from './components/MilestoneModalForm'
+import type { Task } from '../tasks/types'
 import type {
   GoalMilestone,
-  GoalMilestoneType,
   CreateMilestoneInput,
   UpdateMilestoneInput,
 } from './types'
@@ -21,17 +19,15 @@ export interface AddEditMilestoneModalProps {
   milestone?: GoalMilestone | null
   /** Function to fetch tasks for task picker */
   getTasks?: () => Promise<Array<{ id: string; title: string }>>
+  /** Task trees for edit-mode linked task checklist */
+  taskTreesByMilestoneId?: Record<string, Task[]>
+  onOpenEditTaskModal?: (task: Task) => void
 }
 
-const MILESTONE_TYPE_OPTIONS: { value: GoalMilestoneType; label: string }[] = [
-  { value: 'task', label: 'Task' },
-  { value: 'number', label: 'Number/Unit' },
-  { value: 'boolean', label: 'True/False' },
-]
-
 /**
- * Add/Edit milestone modal.
- * Supports three milestone types: task (linked to task), number (start/target/current with unit), boolean (true/false).
+ * Add/Edit milestone modal with Material layout.
+ * Create: multi-type form with tracking selector.
+ * Edit: type-specific update UI (quantity stepper, task checklist, checkmark toggle).
  */
 export function AddEditMilestoneModal({
   isOpen,
@@ -41,213 +37,91 @@ export function AddEditMilestoneModal({
   onUpdateMilestone,
   milestone = null,
   getTasks,
+  taskTreesByMilestoneId,
+  onOpenEditTaskModal,
 }: AddEditMilestoneModalProps) {
-  const [type, setType] = useState<GoalMilestoneType>('boolean')
-  const [title, setTitle] = useState('')
-  const [taskId, setTaskId] = useState<string | null>(null)
-  const [startValue, setStartValue] = useState('')
-  const [targetValue, setTargetValue] = useState('')
-  const [currentValue, setCurrentValue] = useState('')
-  const [unit, setUnit] = useState('')
-  const [completed, setCompleted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-
   const isEditMode = !!milestone
+  const isCheckmarkEdit = isEditMode && milestone?.type === 'boolean'
 
-  /* Sync form state when modal opens or milestone (edit) changes */
-  useEffect(() => {
-    if (isOpen) {
-      if (milestone) {
-        setType(milestone.type)
-        setTitle(milestone.title)
-        setTaskId(milestone.task_id)
-        setStartValue(milestone.start_value?.toString() ?? '')
-        setTargetValue(milestone.target_value?.toString() ?? '')
-        setCurrentValue(milestone.current_value?.toString() ?? '')
-        setUnit(milestone.unit ?? '')
-        setCompleted(milestone.completed)
-      } else {
-        setType('boolean')
-        setTitle('')
-        setTaskId(null)
-        setStartValue('')
-        setTargetValue('')
-        setCurrentValue('')
-        setUnit('')
-        setCompleted(false)
-      }
-    }
-  }, [isOpen, milestone])
-
-  /* Handle form submission */
-  const handleSubmit = async () => {
-    if (!title.trim()) return
-
-    try {
-      setSubmitting(true)
-
-      if (isEditMode) {
-        const input: UpdateMilestoneInput = {
-          title: title.trim(),
-        }
-
-        if (type === 'task') {
-          input.task_id = taskId
-        } else if (type === 'number') {
-          input.start_value = startValue ? parseFloat(startValue) : null
-          input.target_value = targetValue ? parseFloat(targetValue) : null
-          input.current_value = currentValue ? parseFloat(currentValue) : null
-          input.unit = unit.trim() || null
-        } else {
-          input.completed = completed
-        }
-
-        await onUpdateMilestone(milestone.id, input)
-      } else {
-        const input: CreateMilestoneInput = {
-          goal_id: goalId,
-          type,
-          title: title.trim(),
-        }
-
-        if (type === 'task') {
-          input.task_id = taskId
-        } else if (type === 'number') {
-          input.start_value = startValue ? parseFloat(startValue) : null
-          input.target_value = targetValue ? parseFloat(targetValue) : null
-          input.current_value = currentValue ? parseFloat(currentValue) : null
-          input.unit = unit.trim() || null
-        } else {
-          input.completed = completed
-        }
-
-        await onCreateMilestone(input)
-      }
-
-      onClose()
-    } catch {
-      /* Error handled by parent */
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const isValid = title.trim() && (type !== 'task' || taskId)
+  /* Header: edit mode includes subtitle; checkmark uses bordered compact header */
+  const header = isEditMode ? (
+    isCheckmarkEdit ? (
+      <header className="flex items-center justify-between border-b border-outline-variant/10 px-8 py-6">
+        <h2 className="text-body font-semibold tracking-tight text-on-surface">Update Milestone</h2>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container"
+          aria-label="Close"
+        >
+          <MaterialIcon name="close" />
+        </button>
+      </header>
+    ) : (
+      <header className="flex items-start justify-between px-8 pb-6 pt-8">
+        <div>
+          <h1 className="text-body font-semibold leading-none tracking-tight text-on-surface">
+            Update Milestone
+          </h1>
+          <p className="mt-2 text-secondary text-on-surface-variant">
+            Log your progress and stay mindful of your growth.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-on-surface-variant transition-colors hover:text-primary"
+          aria-label="Close"
+        >
+          <MaterialIcon name="close" />
+        </button>
+      </header>
+    )
+  ) : (
+    <header className="flex items-center justify-between px-8 pb-4 pt-8">
+      <h2 className="text-body font-semibold tracking-tight text-on-surface">Add Milestone</h2>
+      <button
+        type="button"
+        onClick={onClose}
+        className="rounded-full p-2 transition-all hover:bg-surface-container-high"
+        aria-label="Close"
+      >
+        <MaterialIcon name="close" className="text-on-surface-variant" />
+      </button>
+    </header>
+  )
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={isEditMode ? 'Edit Milestone' : 'Add Milestone'}
-      footer={
-        <div className="flex items-center justify-end gap-2 w-full">
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            onClick={handleSubmit}
-            disabled={submitting || !isValid}
-          >
-            {isEditMode ? 'Save Changes' : 'Create Milestone'}
-          </Button>
-        </div>
+      header={header}
+      overlayClassName={
+        isCheckmarkEdit
+          ? 'bg-on-surface/40 p-4 backdrop-blur-sm'
+          : 'bg-surface/70 p-4 backdrop-blur-sm md:p-6'
       }
+      cardClassName={`flex max-h-[90vh] w-full flex-col overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container-lowest ${
+        isEditMode
+          ? 'max-w-[560px] shadow-[0_20px_50px_rgba(81,96,81,0.12)]'
+          : 'max-w-xl shadow-[0_20px_50px_rgba(91,107,135,0.12)]'
+      }`}
+      bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden p-0"
+      disableBodyScroll
     >
-      <div className="space-y-5">
-        {/* Milestone type selector (only when creating) */}
-        {!isEditMode && (
-          <Select
-            label="Milestone Type"
-            options={MILESTONE_TYPE_OPTIONS}
-            value={type}
-            onChange={(e) => setType(e.target.value as GoalMilestoneType)}
-          />
-        )}
-
-        {/* Title */}
-        <Input
-          label="Milestone Title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g., Complete first draft, Run 5km, Finish course"
-        />
-
-        {/* Type-specific fields */}
-        {type === 'task' && getTasks && (
-          <div>
-            <label className="block text-secondary font-medium text-bonsai-slate-700 mb-1">
-              Link Task
-            </label>
-            <TaskSearchSelect
-              getTasks={getTasks}
-              onSelectTask={(task) => setTaskId(task.id)}
-              placeholder="Search for a task..."
-              label="Select a task to link"
-            />
-            {taskId && (
-              <p className="mt-2 text-secondary text-bonsai-slate-600">
-                Task selected (ID: {taskId})
-              </p>
-            )}
-          </div>
-        )}
-
-        {type === 'number' && (
-          <div className="space-y-4">
-            {/* Hint: decreasing targets (e.g. weight loss) are detected when target is below start */}
-            <p className="text-secondary text-bonsai-slate-600">
-              For goals like weight loss, set start above target (e.g. start 200, target 180). Progress
-              completes when current reaches or passes the target in that direction.
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Start Value"
-                type="number"
-                value={startValue}
-                onChange={(e) => setStartValue(e.target.value)}
-                placeholder="0"
-              />
-              <Input
-                label="Target Value"
-                type="number"
-                value={targetValue}
-                onChange={(e) => setTargetValue(e.target.value)}
-                placeholder="100"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Current Value"
-                type="number"
-                value={currentValue}
-                onChange={(e) => setCurrentValue(e.target.value)}
-                placeholder="0"
-              />
-              <Input
-                label="Unit (optional)"
-                value={unit}
-                onChange={(e) => setUnit(e.target.value)}
-                placeholder="e.g., kg, miles, pages"
-              />
-            </div>
-          </div>
-        )}
-
-        {type === 'boolean' && (
-          <div>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={completed}
-                onChange={(e) => setCompleted(e.target.checked)}
-                className="w-4 h-4 text-bonsai-sage-600 border-bonsai-slate-300 rounded focus:ring-2 focus:ring-bonsai-sage-500"
-              />
-              <span className="text-secondary text-bonsai-slate-700">Completed</span>
-            </label>
-          </div>
-        )}
-      </div>
+      <MilestoneModalForm
+        goalId={goalId}
+        milestone={milestone}
+        onCreateMilestone={onCreateMilestone}
+        onUpdateMilestone={onUpdateMilestone}
+        onClose={onClose}
+        submitting={submitting}
+        setSubmitting={setSubmitting}
+        getTasks={getTasks}
+        taskTreesByMilestoneId={taskTreesByMilestoneId}
+        onOpenEditTaskModal={onOpenEditTaskModal}
+      />
     </Modal>
   )
 }

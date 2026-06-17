@@ -206,9 +206,9 @@ export function RecurringSettingsSection({
 
   /* Root: frequency pills and conditional fields */
   return (
-    <div className="flex flex-col gap-6 min-w-0 overflow-visible">
+    <div className="flex min-w-0 flex-col gap-4 overflow-hidden sm:gap-6">
       {/* Frequency toggle pills */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex min-w-0 flex-wrap gap-1.5 sm:gap-2">
         {FREQ_OPTIONS.map((opt) => {
           const isSelected = freqValue === opt.value
           return (
@@ -216,7 +216,7 @@ export function RecurringSettingsSection({
               key={opt.value}
               type="button"
               onClick={() => handleFreqSelect(opt.value)}
-              className={`px-4 py-1.5 rounded-full border text-sm transition-colors ${
+              className={`rounded-full border px-3 py-1.5 text-sm transition-colors sm:px-4 ${
                 isSelected
                   ? 'border-sage bg-sage font-bold text-white'
                   : 'border-outline-variant hover:border-sage'
@@ -395,9 +395,9 @@ export function RecurringSettingsSection({
               </div>
               <span className="text-sm font-medium text-on-surface">Reoccur forever</span>
             </label>
-            <div className={`flex items-center gap-4 ${reoccurForever ? 'opacity-50' : ''}`}>
-              <span className="text-sm font-medium text-on-surface">Ends on</span>
-              <label className="relative flex cursor-pointer items-center gap-2 rounded border border-outline-variant bg-surface px-3 py-2">
+            <div className={`flex min-w-0 flex-wrap items-center gap-2 sm:gap-4 ${reoccurForever ? 'opacity-50' : ''}`}>
+              <span className="shrink-0 text-sm font-medium text-on-surface">Ends on</span>
+              <label className="relative flex min-w-0 cursor-pointer items-center gap-2 rounded border border-outline-variant bg-surface px-2.5 py-1.5 sm:px-3 sm:py-2">
                 <span className="text-sm text-on-surface-variant">
                   {formatEndsOnDisplay(endsOnDisplay)}
                 </span>

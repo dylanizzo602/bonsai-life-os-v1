@@ -53,7 +53,7 @@ export function MilestoneItem({
     return `${current}${unit} / ${target}${unit}`
   }
 
-  const linkedTask = milestone.type === 'task' ? milestone.task : null
+  const linkedTasks = milestone.type === 'task' ? (milestone.linked_tasks ?? []) : []
 
   return (
     <div
@@ -86,7 +86,9 @@ export function MilestoneItem({
               {/* Task milestone: show linked task name when we have task data */}
               {milestone.type === 'task' && (
                 <p className="text-secondary text-bonsai-slate-600 mt-1">
-                  {linkedTask ? `Linked: ${linkedTask.title}` : 'Linked to task'}
+                  {linkedTasks.length > 0
+                    ? `Linked: ${linkedTasks.map((t) => t.title).join(', ')}`
+                    : 'No linked tasks'}
                 </p>
               )}
               {milestone.type === 'number' && (
@@ -124,19 +126,22 @@ export function MilestoneItem({
         </div>
       </div>
 
-      {/* Task milestone: show compact task view when task is loaded; same interactions as task view */}
-      {milestone.type === 'task' && linkedTask && (
-        <div className="ml-8 mt-1">
-          <CompactTaskItem
-            task={linkedTask}
-            formatDueDate={(iso) => (iso ? formatStartDueDisplay(undefined, iso, timeZone) : null)}
-            onClick={() => onOpenEditTaskModal?.(linkedTask)}
-            onContextMenu={(e) => {
-              handleDesktopTaskContextMenu(e, ({ x, y }) => {
-                onOpenTaskContextMenu?.(linkedTask, x, y)
-              })
-            }}
-          />
+      {/* Task milestone: show compact task views for each linked task */}
+      {milestone.type === 'task' && linkedTasks.length > 0 && (
+        <div className="ml-8 mt-1 flex flex-col gap-2">
+          {linkedTasks.map((linkedTask) => (
+            <CompactTaskItem
+              key={linkedTask.id}
+              task={linkedTask}
+              formatDueDate={(iso) => (iso ? formatStartDueDisplay(undefined, iso, timeZone) : null)}
+              onClick={() => onOpenEditTaskModal?.(linkedTask)}
+              onContextMenu={(e) => {
+                handleDesktopTaskContextMenu(e, ({ x, y }) => {
+                  onOpenTaskContextMenu?.(linkedTask, x, y)
+                })
+              }}
+            />
+          ))}
         </div>
       )}
     </div>

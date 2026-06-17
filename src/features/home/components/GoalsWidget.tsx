@@ -4,19 +4,12 @@ import { useMemo } from 'react'
 import { MaterialIcon } from '../../../components/MaterialIcon'
 import { DashboardBentoCard } from './DashboardBentoCard'
 import { useGoals } from '../../goals/hooks/useGoals'
-import type { Goal } from '../../goals/types'
+import { getGoalMaterialIcon } from '../../goals/utils/goalDisplay'
 
 export interface GoalsWidgetProps {
   onViewAll: () => void
 }
 
-/** Material icon for goal by name keyword */
-function getGoalMaterialIcon(goal: Goal, index: number): string {
-  const n = goal.name.toLowerCase()
-  if (n.includes('revenue') || n.includes('sales') || n.includes('target')) return 'park'
-  if (n.includes('learn') || n.includes('study') || n.includes('typescript')) return 'nature'
-  return index % 2 === 0 ? 'park' : 'nature'
-}
 
 /**
  * Active goals bento widget (6-column span): up to two goals with progress bars.

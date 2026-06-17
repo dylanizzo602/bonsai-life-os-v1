@@ -12,17 +12,20 @@ import { GoalDrawerHabits } from './components/drawer/GoalDrawerHabits'
 import { GoalDrawerHistory } from './components/drawer/GoalDrawerHistory'
 import { GoalDrawerFooter } from './components/drawer/GoalDrawerFooter'
 import type { Task } from '../tasks/types'
+import type { Goal, UpdateGoalInput } from './types'
 
 export interface GoalDrawerProps {
   goalId: string
   onClose: () => void
   onDeleted?: () => void
+  /** Sync goal field edits back to the goals list (e.g. icon, name) */
+  onGoalUpdated?: (goal: Goal) => void
 }
 
 /**
  * Material goal detail drawer: backdrop + slide-in panel with editable fields.
  */
-export function GoalDrawer({ goalId, onClose, onDeleted }: GoalDrawerProps) {
+export function GoalDrawer({ goalId, onClose, onDeleted, onGoalUpdated }: GoalDrawerProps) {
   const {
     goal,
     loading,
@@ -95,10 +98,23 @@ export function GoalDrawer({ goalId, onClose, onDeleted }: GoalDrawerProps) {
     }
   }, [goal?.milestones])
 
+  const wrappedUpdateGoal = useCallback(
+    async (id: string, input: UpdateGoalInput) => {
+      const updated = await updateGoal(id, input)
+      onGoalUpdated?.(updated)
+      return updated
+    },
+    [updateGoal, onGoalUpdated],
+  )
+
   const syncMilestoneForTask = useCallback(
     async (taskId: string, completed: boolean) => {
       if (!goal) return
-      const milestone = goal.milestones.find((m) => m.type === 'task' && m.task_id === taskId)
+      const milestone = goal.milestones.find(
+        (m) =>
+          m.type === 'task' &&
+          (m.linked_tasks?.some((t) => t.id === taskId) ?? false),
+      )
       if (milestone) await updateMilestone(milestone.id, { completed })
     },
     [goal, updateMilestone],
@@ -174,12 +190,12 @@ export function GoalDrawer({ goalId, onClose, onDeleted }: GoalDrawerProps) {
                 goal={goal}
                 progressPercent={goal.computed_progress}
                 onClose={onClose}
-                updateGoal={updateGoal}
+                updateGoal={wrappedUpdateGoal}
               />
 
               <div className="flex flex-col gap-8 px-8 py-6">
-                <GoalDrawerMetadataBar goal={goal} updateGoal={updateGoal} />
-                <GoalDrawerDescription goal={goal} updateGoal={updateGoal} />
+                <GoalDrawerMetadataBar goal={goal} updateGoal={wrappedUpdateGoal} />
+                <GoalDrawerDescription goal={goal} updateGoal={wrappedUpdateGoal} />
                 <GoalMilestoneTimeline
                   goalId={goal.id}
                   milestones={goal.milestones}
