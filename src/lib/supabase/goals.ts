@@ -852,6 +852,33 @@ export async function unlinkHabitFromGoal(goalId: string, habitId: string): Prom
 }
 
 /**
+ * Count milestone_completed goal_history rows in a UTC range for the current user's goals.
+ */
+export async function getMilestoneCompletionsInRange(
+  startISO: string,
+  endISO: string,
+): Promise<number> {
+  const goals = await getGoals()
+  if (goals.length === 0) return 0
+
+  const goalIds = goals.map((g) => g.id)
+  const { data, error } = await supabase
+    .from('goal_history')
+    .select('id')
+    .in('goal_id', goalIds)
+    .eq('event_type', 'milestone_completed')
+    .gte('created_at', startISO)
+    .lt('created_at', endISO)
+
+  if (error) {
+    console.error('Error fetching milestone completions in range:', error)
+    return 0
+  }
+
+  return (data ?? []).length
+}
+
+/**
  * Fetch goal history entries ordered by created_at descending.
  */
 export async function getGoalHistory(goalId: string): Promise<GoalHistory[]> {

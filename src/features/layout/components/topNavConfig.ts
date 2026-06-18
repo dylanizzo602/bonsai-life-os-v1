@@ -11,3 +11,8 @@ export const TOP_NAV_ITEMS: Array<{ id: NavigationSection; label: string }> = [
   { id: 'reflections', label: 'Reflect' },
   { id: 'notes', label: 'Notes' },
 ]
+
+/** Dev-only nav links (shown when dev mode is enabled in Settings) */
+export const PREVIEW_NAV_ITEMS: Array<{ id: NavigationSection; label: string }> = [
+  { id: 'briefings-preview', label: 'Briefing (Preview)' },
+]

@@ -1,62 +1,27 @@
-/* MorningBriefingCard: CTA card for morning and/or weekly briefing on the home dashboard */
+/* MorningBriefingCard: CTA card for morning briefing on the home dashboard */
 
 import { MaterialIcon } from '../../../components/MaterialIcon'
 import { useMorningBriefingBanner } from '../hooks/useMorningBriefingBanner'
-import { useWeeklyBriefingBanner } from '../hooks/useWeeklyBriefingBanner'
 
 interface MorningBriefingCardProps {
   onStartMorningBriefing: () => void
-  onStartWeeklyBriefing: () => void
 }
 
 /**
- * Briefing CTA card: hidden when morning (and weekly, if Sunday) are complete.
+ * Briefing CTA card: hidden when today's morning briefing is complete.
  */
-export function MorningBriefingCard({
-  onStartMorningBriefing,
-  onStartWeeklyBriefing,
-}: MorningBriefingCardProps) {
+export function MorningBriefingCard({ onStartMorningBriefing }: MorningBriefingCardProps) {
   const { needsMorningBriefing, showBanner: showMorningNudge, isLoading: morningLoading } =
     useMorningBriefingBanner()
-  const { needsWeeklyBriefing, isLoading: weeklyLoading } = useWeeklyBriefingBanner()
 
-  const isLoading = morningLoading || weeklyLoading
-
-  const showCard = !isLoading && (needsMorningBriefing || needsWeeklyBriefing)
-
-  if (!showCard) {
+  if (morningLoading || !needsMorningBriefing) {
     return null
   }
 
-  const bothIncomplete = needsMorningBriefing && needsWeeklyBriefing
-
-  const title = bothIncomplete
-    ? 'Morning & Weekly Briefing'
-    : needsWeeklyBriefing
-      ? 'Weekly Briefing'
-      : 'Morning Briefing'
-
-  const description = bothIncomplete
-    ? 'Plan your day and reflect on your week.'
-    : needsWeeklyBriefing
-      ? 'Reflect on your week and set intentions.'
-      : showMorningNudge
-        ? 'Finish reflecting on yesterday, then plan your day.'
-        : 'Plan your day and reflect on yesterday.'
-
-  const ctaLabel = bothIncomplete
-    ? 'Start Briefing'
-    : needsWeeklyBriefing
-      ? 'Start Weekly Briefing'
-      : 'Start Briefing'
-
-  const handleCta = () => {
-    if (needsMorningBriefing) {
-      onStartMorningBriefing()
-    } else {
-      onStartWeeklyBriefing()
-    }
-  }
+  const title = 'Morning Briefing'
+  const description = showMorningNudge
+    ? 'Finish reflecting on yesterday, then plan your day.'
+    : 'Plan your day and reflect on yesterday.'
 
   return (
     <div className="mb-12 flex flex-col items-start justify-between gap-6 rounded-2xl border border-surface-variant bg-surface-container-low p-6 transition-shadow duration-300 hover:ambient-shadow-dashboard md:flex-row md:items-center">
@@ -71,10 +36,10 @@ export function MorningBriefingCard({
       </div>
       <button
         type="button"
-        onClick={handleCta}
+        onClick={onStartMorningBriefing}
         className="flex items-center gap-2 rounded-lg bg-primary px-6 py-3 font-medium text-on-primary transition-colors duration-200 hover:bg-primary-container"
       >
-        {ctaLabel}
+        Start Briefing
         <MaterialIcon name="arrow_forward" className="text-[18px]" />
       </button>
     </div>

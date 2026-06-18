@@ -56,7 +56,7 @@ export function NoteCard({
             {note.title || 'Untitled'}
           </h4>
           {excerpt ? (
-            <p className="line-clamp-2 text-secondary text-on-surface-variant leading-relaxed">
+            <p className="line-clamp-2 whitespace-pre-line text-secondary text-on-surface-variant leading-relaxed">
               {excerpt}
             </p>
           ) : null}
@@ -99,7 +99,7 @@ export function NoteCard({
           {note.title || 'Untitled'}
         </h4>
         {excerpt ? (
-          <p className="line-clamp-3 text-secondary text-on-surface-variant leading-relaxed">
+          <p className="line-clamp-3 whitespace-pre-line text-secondary text-on-surface-variant leading-relaxed">
             {excerpt}
           </p>
         ) : null}

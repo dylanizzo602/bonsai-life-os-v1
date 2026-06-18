@@ -12,10 +12,8 @@ import { useReflections } from './hooks/useReflections'
 import { useBriefingStatus } from './hooks/useBriefingStatus'
 
 interface ReflectionsPageProps {
-  /** Optional handler to open the morning briefing flow */
-  onOpenMorningBriefing?: () => void
-  /** Optional handler to open the weekly briefing flow */
-  onOpenWeeklyBriefing?: () => void
+  /** Open morning briefing; pass true to continue today's session from the greeting */
+  onOpenMorningBriefing?: (continueSession?: boolean) => void
 }
 
 /** View mode: list landing, read-only detail, or journal editor */
@@ -24,7 +22,7 @@ type ViewMode = 'list' | 'detail' | 'journal'
 /**
  * Reflections section: briefing cards, searchable entry list, and type-specific detail views.
  */
-export function ReflectionsPage({ onOpenMorningBriefing, onOpenWeeklyBriefing }: ReflectionsPageProps) {
+export function ReflectionsPage({ onOpenMorningBriefing }: ReflectionsPageProps) {
   const {
     entries,
     loading,
@@ -43,7 +41,6 @@ export function ReflectionsPage({ onOpenMorningBriefing, onOpenWeeklyBriefing }:
 
   const {
     hasCompletedMorningToday,
-    hasCompletedWeeklyThisWeek,
     todaysMorningEntry,
   } = useBriefingStatus()
 
@@ -182,11 +179,8 @@ export function ReflectionsPage({ onOpenMorningBriefing, onOpenWeeklyBriefing }:
       {/* Briefing cards */}
       <BriefingsSection
         hasCompletedMorningToday={hasCompletedMorningToday}
-        hasCompletedWeeklyThisWeek={hasCompletedWeeklyThisWeek}
         todaysMorningEntry={todaysMorningEntry}
         onOpenMorningBriefing={onOpenMorningBriefing}
-        onOpenWeeklyBriefing={onOpenWeeklyBriefing}
-        onOpenTodaysMorningEntry={openEntry}
       />
 
       {/* Recent entries list */}

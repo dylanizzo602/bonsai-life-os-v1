@@ -18,7 +18,7 @@ interface ActiveGoalCardProps {
   milestones?: GoalMilestone[]
   /** Task trees keyed by milestone id */
   taskTreesByMilestoneId?: Record<string, Task[]>
-  /** Live progress from milestones; overrides stale goal.progress when set */
+  /** Raw aggregate fallback when milestones are absent; ActiveGoalCard derives display % via getActiveGoalCardProgress */
   computedProgressPercent?: number
   /** Card index for accent cycling */
   accentIndex: number

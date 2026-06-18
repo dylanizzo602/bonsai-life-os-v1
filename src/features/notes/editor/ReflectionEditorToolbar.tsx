@@ -81,7 +81,7 @@ export function ReflectionEditorToolbar({
         active: !editor.isActive('heading'),
         onSelect: () => setBlockStyle(editor, 'body'),
       },
-      ...([1, 2, 3, 4, 5, 6] as const).map((level) => ({
+      ...([1, 2, 3] as const).map((level) => ({
         id: `h${level}`,
         label: `Heading ${level}`,
         icon: 'title',
@@ -149,7 +149,7 @@ export function ReflectionEditorToolbar({
       aria-label="Text formatting"
     >
       <div className="flex flex-wrap items-center gap-1">
-        {/* Text style: H1–H6 and body */}
+        {/* Text style: body, H1, H2, H3 */}
         <EditorToolbarDropdown
           label={blockLabel}
           triggerIcon="title"
@@ -228,7 +228,7 @@ export function ReflectionEditorToolbar({
         />
         <ToolbarIconButton
           icon="format_quote"
-          title="Quote block"
+          title="Quote box"
           active={editor.isActive('quoteBlock')}
           onClick={() => toggleQuoteBlock(editor)}
           btnClass={btn}

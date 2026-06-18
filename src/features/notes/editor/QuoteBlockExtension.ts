@@ -1,27 +1,20 @@
-/* QuoteBlockExtension: Card-style quote block with bonsai accent for reflection editor */
+/* QuoteBlockExtension: Bordered callout box for highlighted or new text */
 
 import { Node, mergeAttributes } from '@tiptap/core'
-
-/** Public asset shown on the right side of quote blocks */
-export const QUOTE_BLOCK_ICON_SRC = '/images/reflection-quote-bonsai.png'
-
-/** Default placeholder text when inserting a new quote block */
-export const QUOTE_BLOCK_DEFAULT_TEXT =
-  'Productivity is not about efficiency; it\'s about being effective in the things that truly matter for your legacy.'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     quoteBlock: {
-      /** Insert a styled quote block at the cursor */
+      /** Insert an empty quote box at the cursor */
       insertQuoteBlock: () => ReturnType
-      /** Toggle quote block for the current block or selection */
+      /** Toggle quote box for the current block or lift out of one */
       toggleQuoteBlock: () => ReturnType
     }
   }
 }
 
 /**
- * TipTap node for the reflection quote card: italic quote text + bonsai image accent.
+ * TipTap node for a simple bordered box (empty or with wrapped paragraph content).
  */
 export const QuoteBlock = Node.create({
   name: 'quoteBlock',
@@ -41,25 +34,7 @@ export const QuoteBlock = Node.create({
         'data-type': 'quote-block',
         class: 'editor-quote-block',
       }),
-      [
-        'div',
-        { class: 'editor-quote-block__inner' },
-        ['div', { class: 'editor-quote-block__content' }, 0],
-        [
-          'div',
-          { class: 'editor-quote-block__media', 'aria-hidden': 'true' },
-          [
-            'img',
-            {
-              src: QUOTE_BLOCK_ICON_SRC,
-              alt: '',
-              class: 'editor-quote-block__image',
-              draggable: 'false',
-              contenteditable: 'false',
-            },
-          ],
-        ],
-      ],
+      0,
     ]
   },
 
@@ -72,12 +47,7 @@ export const QuoteBlock = Node.create({
             .focus()
             .insertContent({
               type: this.name,
-              content: [
-                {
-                  type: 'paragraph',
-                  content: [{ type: 'text', text: `"${QUOTE_BLOCK_DEFAULT_TEXT}"` }],
-                },
-              ],
+              content: [{ type: 'paragraph' }],
             })
             .run(),
 

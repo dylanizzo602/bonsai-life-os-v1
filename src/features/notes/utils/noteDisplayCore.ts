@@ -19,17 +19,27 @@ export const FOLDER_ICON_OPTIONS = [
 
 export const DEFAULT_FOLDER_ICON = 'folder_open'
 
-/** Strip HTML to plain text for card previews */
+/** Strip HTML to plain text for card previews (preserves line breaks from blocks and <br>) */
 export function stripHtmlPreview(html: string): string {
   if (!html.trim()) return ''
-  return html
+
+  const text = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|li|h[1-6]|tr|blockquote)>/gi, '\n')
     .replace(/<[^>]*>/g, '')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ')
+    .replace(/&#10;/g, '\n')
+    .replace(/&#13;/g, '')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim()
+
+  return text
 }
 
 /** Format updated_at as "Edited Oct 12, 2023" */

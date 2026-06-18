@@ -11,4 +11,5 @@ export const MOBILE_NAV_MATERIAL_ICONS: Partial<Record<NavigationSection, string
   reflections: 'auto_stories',
   notes: 'description',
   settings: 'settings',
+  'briefings-preview': 'science',
 }

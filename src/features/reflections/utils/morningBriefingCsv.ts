@@ -28,12 +28,19 @@ export interface MorningBriefingCsvParseError {
   message: string
 }
 
-/** Morning briefing question labels used when converting CSV Q&A columns to journal HTML */
-const BRIEFING_QUESTION_LABELS: Record<keyof MorningBriefingResponses, string> = {
+/** Morning briefing question labels for CSV import/export (excludes removed weekly prompts) */
+type MorningBriefingCsvKey = Exclude<
+  keyof MorningBriefingResponses,
+  'weekHighlights' | 'weekImprove'
+>
+
+const BRIEFING_QUESTION_LABELS: Record<MorningBriefingCsvKey, string> = {
   memorableMoment: 'What is one memorable moment from yesterday?',
   gratefulFor: 'What is something you are grateful for?',
   didEverything: 'Did you do everything you were supposed to yesterday? If not, why?',
   whatWouldMakeEasier: 'What would make today easier?',
+  habitsGotInTheWay: 'What got in the way yesterday?',
+  habitsDoDifferentlyToday: 'What can you do differently today?',
 }
 
 /* Escape HTML for plain-text answers when building journal body */
@@ -69,7 +76,7 @@ export function convertBriefingResponsesToJournalBody(
   const r = responses as MorningBriefingResponses
   const sections: string[] = []
 
-  for (const key of Object.keys(BRIEFING_QUESTION_LABELS) as (keyof MorningBriefingResponses)[]) {
+  for (const key of Object.keys(BRIEFING_QUESTION_LABELS) as MorningBriefingCsvKey[]) {
     const answer = r[key]
     if (!answer?.trim()) continue
     const label = BRIEFING_QUESTION_LABELS[key]

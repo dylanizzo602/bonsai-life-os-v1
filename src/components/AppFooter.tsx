@@ -3,13 +3,15 @@
 interface AppFooterProps {
   /** Optional extra classes on the root footer element */
   className?: string
+  /** When provided, shows a link to the in-app feedback page */
+  onNavigateToFeedback?: () => void
 }
 
 /**
  * Shared footer with brand links and copyright.
  * Used on the auth screen and at the bottom of every authenticated page.
  */
-export function AppFooter({ className = '' }: AppFooterProps) {
+export function AppFooter({ className = '', onNavigateToFeedback }: AppFooterProps) {
   return (
     <footer
       className={`mx-auto flex w-full max-w-7xl flex-col items-center justify-between gap-4 border-t border-outline-variant/10 bg-surface px-4 py-6 opacity-80 transition-opacity hover:opacity-100 md:flex-row md:px-8 ${className}`.trim()}
@@ -38,6 +40,15 @@ export function AppFooter({ className = '' }: AppFooterProps) {
           >
             Help Center
           </a>
+          {onNavigateToFeedback && (
+            <button
+              type="button"
+              className="font-body text-xs text-on-surface-variant transition-colors duration-200 hover:text-secondary"
+              onClick={onNavigateToFeedback}
+            >
+              Feedback
+            </button>
+          )}
         </nav>
       </div>
       <p className="font-body text-xs text-on-surface-variant">

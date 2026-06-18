@@ -1,4 +1,4 @@
-/* BriefingsSection: Grid of morning and weekly briefing cards on the Reflect landing page */
+/* BriefingsSection: Morning briefing card on the Reflect landing page */
 
 import type { ReflectionEntry } from '../types'
 import { BriefingCard } from './BriefingCard'
@@ -6,70 +6,45 @@ import { BriefingCard } from './BriefingCard'
 interface BriefingsSectionProps {
   /** Whether morning briefing is completed today */
   hasCompletedMorningToday: boolean | null
-  /** Whether weekly briefing is completed this week */
-  hasCompletedWeeklyThisWeek: boolean | null
   /** Today's morning briefing entry (when completed) */
   todaysMorningEntry: ReflectionEntry | null
-  /** Open the morning briefing flow */
-  onOpenMorningBriefing?: () => void
-  /** Open the weekly briefing flow */
-  onOpenWeeklyBriefing?: () => void
-  /** Open today's completed morning entry in detail view */
-  onOpenTodaysMorningEntry?: (entry: ReflectionEntry) => void
+  /** Open the morning briefing flow; pass true to continue today's session */
+  onOpenMorningBriefing?: (continueSession?: boolean) => void
 }
 
 /**
- * Briefings section: two-card grid for daily morning briefing and weekly review.
+ * Briefings section: daily morning briefing card (weekly review folded into Sunday morning briefing).
  */
 export function BriefingsSection({
   hasCompletedMorningToday,
-  hasCompletedWeeklyThisWeek,
   todaysMorningEntry,
   onOpenMorningBriefing,
-  onOpenWeeklyBriefing,
-  onOpenTodaysMorningEntry,
 }: BriefingsSectionProps) {
-  /* Morning card click: open today's entry if done, otherwise start briefing */
+  /* Morning card: resume full flow from greeting when already completed today */
   const handleMorningClick = () => {
-    if (hasCompletedMorningToday && todaysMorningEntry && onOpenTodaysMorningEntry) {
-      onOpenTodaysMorningEntry(todaysMorningEntry)
+    if (hasCompletedMorningToday) {
+      onOpenMorningBriefing?.(true)
       return
     }
-    onOpenMorningBriefing?.()
+    onOpenMorningBriefing?.(false)
   }
 
-  const morningCta =
-    hasCompletedMorningToday ? 'Continue Session' : 'Begin Briefing'
-
-  const weeklyCta =
-    hasCompletedWeeklyThisWeek ? 'Continue Review' : 'Begin Review'
+  const morningCta = hasCompletedMorningToday ? 'Continue Session' : 'Begin Briefing'
 
   return (
     <section className="px-0 pb-8 pt-4">
       <h2 className="pb-4 pt-2 text-body font-bold text-on-surface">Briefings</h2>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <BriefingCard
-          variant="morning"
-          title="Daily Morning Briefing"
-          description="Set your intentions, review your core tasks, and find your center for the day ahead."
-          ctaLabel={morningCta}
-          cadenceLabel="Today"
-          completedDate={
-            hasCompletedMorningToday && todaysMorningEntry
-              ? todaysMorningEntry.created_at
-              : null
-          }
-          onClick={handleMorningClick}
-        />
-        <BriefingCard
-          variant="weekly"
-          title="Weekly Review"
-          description="Reflect on the past seven days, evaluate your progress, and recalibrate for next week."
-          ctaLabel={weeklyCta}
-          cadenceLabel="Weekly"
-          onClick={() => onOpenWeeklyBriefing?.()}
-        />
-      </div>
+      <BriefingCard
+        variant="morning"
+        title="Daily Morning Briefing"
+        description="Set your intentions, review your core tasks, and find your center for the day ahead. On Sundays, includes weekly reflection."
+        ctaLabel={morningCta}
+        cadenceLabel="Today"
+        completedDate={
+          hasCompletedMorningToday && todaysMorningEntry ? todaysMorningEntry.created_at : null
+        }
+        onClick={handleMorningClick}
+      />
     </section>
   )
 }

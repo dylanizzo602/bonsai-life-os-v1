@@ -294,3 +294,37 @@ export async function deleteNoteCover(storagePath: string): Promise<void> {
     throw error
   }
 }
+
+const FEEDBACK_SCREENSHOTS_BUCKET = 'feedback-screenshots'
+
+/** Build a unique storage path for a feedback screenshot under the user's folder. */
+function buildFeedbackScreenshotPath(userId: string, file: File): string {
+  const ext = file.name.split('.').pop() ?? ''
+  const base = file.name.slice(0, -(ext.length + (ext ? 1 : 0)))
+  const safeName = `${base}-${Date.now()}${ext ? '.' + ext : ''}`.replace(/[^a-zA-Z0-9._-]/g, '_')
+  return `${userId}/${safeName}`
+}
+
+/**
+ * Upload an optional bug-report screenshot to the private feedback-screenshots bucket.
+ * Returns the storage path for the edge function to attach to the email.
+ */
+export async function uploadFeedbackScreenshot(userId: string, file: File): Promise<string> {
+  const path = buildFeedbackScreenshotPath(userId, file)
+
+  const { error: uploadError } = await supabase.storage
+    .from(FEEDBACK_SCREENSHOTS_BUCKET)
+    .upload(path, file, { upsert: false })
+
+  if (uploadError) {
+    console.error('Error uploading feedback screenshot:', uploadError)
+    if (uploadError.message?.includes('Bucket not found') || uploadError.message?.includes('not found')) {
+      throw new Error(
+        `Storage bucket "${FEEDBACK_SCREENSHOTS_BUCKET}" not found. Run supabase db push to create it.`,
+      )
+    }
+    throw uploadError
+  }
+
+  return path
+}

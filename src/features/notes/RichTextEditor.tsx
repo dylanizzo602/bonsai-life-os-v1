@@ -3,6 +3,7 @@
 import { useEditor, EditorContent } from '@tiptap/react'
 import { useCallback, useEffect } from 'react'
 import { createEditorExtensions } from './editor/createEditorExtensions'
+import { EDITOR_HEADING_BODY_PROSE_CLASS } from './editor/editorTypography'
 import { ReflectionEditorToolbar } from './editor/ReflectionEditorToolbar'
 import type { RichTextEditorSaveStatus, RichTextEditorVariant } from './editor/types'
 
@@ -27,44 +28,34 @@ interface RichTextEditorProps {
   saveStatus?: RichTextEditorSaveStatus
 }
 
-/** Quote block card styling inside the editor surface */
+/** Quote box styling inside the editor surface */
 const QUOTE_BLOCK_CONTENT_CLASS =
-  '[&_.editor-quote-block]:my-8 [&_.editor-quote-block]:rounded-3xl [&_.editor-quote-block]:border [&_.editor-quote-block]:border-outline-variant/10 ' +
-  '[&_.editor-quote-block]:bg-surface-container-low [&_.editor-quote-block]:p-6 md:[&_.editor-quote-block]:p-10 ' +
-  '[&_.editor-quote-block__inner]:flex [&_.editor-quote-block__inner]:items-center [&_.editor-quote-block__inner]:justify-between [&_.editor-quote-block__inner]:gap-6 ' +
-  '[&_.editor-quote-block__content]:min-w-0 [&_.editor-quote-block__content]:flex-1 ' +
-  '[&_.editor-quote-block__content_p]:m-0 [&_.editor-quote-block__content_p]:text-base [&_.editor-quote-block__content_p]:font-light [&_.editor-quote-block__content_p]:italic ' +
-  '[&_.editor-quote-block__content_p]:leading-relaxed [&_.editor-quote-block__content_p]:text-on-surface md:[&_.editor-quote-block__content_p]:text-lg ' +
-  '[&_.editor-quote-block__media]:shrink-0 ' +
-  '[&_.editor-quote-block__image]:h-14 [&_.editor-quote-block__image]:w-14 [&_.editor-quote-block__image]:rounded-lg [&_.editor-quote-block__image]:object-cover ' +
-  'md:[&_.editor-quote-block__image]:h-16 md:[&_.editor-quote-block__image]:w-16'
+  '[&_.editor-quote-block]:my-4 [&_.editor-quote-block]:min-h-[3.5rem] [&_.editor-quote-block]:rounded-xl ' +
+  '[&_.editor-quote-block]:border [&_.editor-quote-block]:border-outline-variant/30 ' +
+  '[&_.editor-quote-block]:bg-surface-container-low [&_.editor-quote-block]:px-4 [&_.editor-quote-block]:py-3 md:[&_.editor-quote-block]:px-6 md:[&_.editor-quote-block]:py-4 ' +
+  '[&_.editor-quote-block_p]:m-0 [&_.editor-quote-block_p]:text-body [&_.editor-quote-block_p]:leading-relaxed [&_.editor-quote-block_p]:text-on-surface'
 
 /** Shared prose classes for editor content areas */
 const REFLECTION_CONTENT_CLASS =
-  'min-h-[600px] text-base leading-relaxed text-on-surface-variant focus:outline-none lg:text-lg ' +
+  'min-h-[600px] text-body leading-relaxed text-on-surface-variant focus:outline-none ' +
+  EDITOR_HEADING_BODY_PROSE_CLASS + ' ' +
   QUOTE_BLOCK_CONTENT_CLASS + ' ' +
-  '[&_p]:mb-4 [&_ul]:list-disc [&_ul]:space-y-3 [&_ul]:pl-6 [&_ul]:marker:text-primary ' +
+  '[&_ul]:list-disc [&_ul]:space-y-3 [&_ul]:pl-6 [&_ul]:marker:text-primary ' +
   '[&_ul.editor-list-dashed]:list-none [&_ul.editor-list-dashed]:pl-0 ' +
   '[&_ul.editor-list-dashed>li]:relative [&_ul.editor-list-dashed>li]:pl-5 ' +
   "[&_ul.editor-list-dashed>li]:before:absolute [&_ul.editor-list-dashed>li]:before:left-0 [&_ul.editor-list-dashed>li]:before:text-primary [&_ul.editor-list-dashed>li]:before:content-['–'] " +
   '[&_ol]:list-decimal [&_ol]:space-y-3 [&_ol]:pl-6 [&_li]:ml-0 ' +
-  '[&_h1]:pt-2 [&_h1]:text-page-title [&_h1]:font-bold [&_h1]:text-on-surface ' +
-  '[&_h2]:pt-4 [&_h2]:text-2xl [&_h2]:font-medium [&_h2]:text-on-surface ' +
-  '[&_h3]:pt-3 [&_h3]:text-xl [&_h3]:font-medium [&_h3]:text-on-surface ' +
-  '[&_h4]:pt-2 [&_h4]:text-lg [&_h4]:font-medium [&_h4]:text-on-surface ' +
-  '[&_h5]:pt-2 [&_h5]:text-base [&_h5]:font-semibold [&_h5]:text-on-surface ' +
-  '[&_h6]:pt-2 [&_h6]:text-sm [&_h6]:font-semibold [&_h6]:uppercase [&_h6]:tracking-wide [&_h6]:text-on-surface ' +
   '[&_strong]:font-bold [&_em]:italic [&_u]:underline [&_img]:my-4 [&_img]:max-w-full [&_img]:rounded-lg'
 
 function getDefaultContentClass(minHeightClassName: string) {
   return (
     `${minHeightClassName} text-body text-bonsai-slate-800 focus:outline-none ` +
+    EDITOR_HEADING_BODY_PROSE_CLASS + ' ' +
     QUOTE_BLOCK_CONTENT_CLASS + ' ' +
-    '[&_p]:mb-2 [&_ul]:list-disc [&_ol]:list-decimal [&_li]:ml-4 ' +
+    '[&_ul]:list-disc [&_ol]:list-decimal [&_li]:ml-4 ' +
     '[&_ul.editor-list-dashed]:list-none [&_ul.editor-list-dashed>li]:relative [&_ul.editor-list-dashed>li]:pl-5 ' +
     "[&_ul.editor-list-dashed>li]:before:absolute [&_ul.editor-list-dashed>li]:before:left-0 [&_ul.editor-list-dashed>li]:before:content-['–'] " +
-    '[&_h1]:text-page-title [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-semibold ' +
-    '[&_h3]:text-lg [&_h3]:font-semibold [&_strong]:font-bold [&_em]:italic [&_u]:underline'
+    '[&_strong]:font-bold [&_em]:italic [&_u]:underline'
   )
 }
 

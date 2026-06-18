@@ -134,6 +134,34 @@ body {
       font-size: 1rem;   /* 16px */
     }
   }
+  /* Rich text editor headings: stepped scale below page-title */
+  .text-editor-h1 {
+    font-size: 28px;
+    line-height: 1.2;
+  }
+  @media (min-width: 1024px) {
+    .text-editor-h1 {
+      font-size: 36px;
+    }
+  }
+  .text-editor-h2 {
+    font-size: 22px;
+    line-height: 1.3;
+  }
+  @media (min-width: 1024px) {
+    .text-editor-h2 {
+      font-size: 28px;
+    }
+  }
+  .text-editor-h3 {
+    font-size: 18px;
+    line-height: 1.4;
+  }
+  @media (min-width: 1024px) {
+    .text-editor-h3 {
+      font-size: 20px;
+    }
+  }
   /* Hide scrollbar while keeping overflow scroll (e.g. popovers) */
   .scrollbar-hide {
     -ms-overflow-style: none;

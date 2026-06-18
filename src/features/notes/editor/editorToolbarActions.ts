@@ -2,13 +2,13 @@
 
 import type { Editor } from '@tiptap/core'
 
-export type BlockStyle = 'body' | 1 | 2 | 3 | 4 | 5 | 6
+export type BlockStyle = 'body' | 1 | 2 | 3
 export type ListStyle = 'bullet' | 'dashed' | 'ordered'
 export type AlignStyle = 'left' | 'center' | 'right' | 'justify'
 
 /** Resolve the current block label for the text-style dropdown */
 export function getActiveBlockLabel(editor: Editor): string {
-  for (let level = 1; level <= 6; level++) {
+  for (let level = 1; level <= 3; level++) {
     if (editor.isActive('heading', { level })) return `Heading ${level}`
   }
   return 'Body'
@@ -93,11 +93,35 @@ export function insertImageFromFile(editor: Editor) {
   input.click()
 }
 
-/** Insert or remove the card-style quote block */
+/** Insert an empty quote box, or wrap the current text selection inside one */
 export function toggleQuoteBlock(editor: Editor) {
   if (editor.isActive('quoteBlock')) {
-    editor.chain().focus().toggleQuoteBlock().run()
+    editor.chain().focus().lift('quoteBlock').run()
     return
   }
+
+  const { empty, from, to } = editor.state.selection
+
+  /* Wrap highlighted text in a quote box */
+  if (!empty) {
+    const text = editor.state.doc.textBetween(from, to, '\n').trim()
+    editor
+      .chain()
+      .focus()
+      .deleteSelection()
+      .insertContent({
+        type: 'quoteBlock',
+        content: [
+          {
+            type: 'paragraph',
+            ...(text ? { content: [{ type: 'text', text }] } : {}),
+          },
+        ],
+      })
+      .run()
+    return
+  }
+
+  /* No selection: insert an empty quote box */
   editor.chain().focus().insertQuoteBlock().run()
 }

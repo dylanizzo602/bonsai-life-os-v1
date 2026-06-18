@@ -45,7 +45,7 @@ export function createEditorExtensions({ variant }: CreateEditorExtensionsOption
 
   return [
     StarterKit.configure({
-      heading: { levels: [1, 2, 3, 4, 5, 6] },
+      heading: { levels: [1, 2, 3] },
       bulletList: false,
     }),
     StyledBulletList,

@@ -32,12 +32,19 @@ interface OverviewScreenProps {
   onGoToReflections?: () => void
 }
 
-/** Labels for morning briefing questions (core set without failures/week-in-a-life) */
-const QUESTION_LABELS: Record<keyof MorningBriefingResponses, string> = {
+/** Labels for morning briefing questions shown in overview (excludes removed weekly prompts) */
+type MorningBriefingDisplayKey = Exclude<
+  keyof MorningBriefingResponses,
+  'weekHighlights' | 'weekImprove'
+>
+
+const QUESTION_LABELS: Record<MorningBriefingDisplayKey, string> = {
   memorableMoment: 'What is one memorable moment from yesterday?',
   gratefulFor: 'What is something you are grateful for?',
   didEverything: 'Did you do everything you were supposed to yesterday? If not, why?',
   whatWouldMakeEasier: 'What would make today easier?',
+  habitsGotInTheWay: 'What got in the way yesterday?',
+  habitsDoDifferentlyToday: 'What can you do differently today?',
 }
 
 /**
@@ -50,9 +57,10 @@ export function OverviewScreen({
   onGoToReflections,
 }: OverviewScreenProps) {
   const r = responses as MorningBriefingResponses
-  const entries = (Object.keys(QUESTION_LABELS) as (keyof MorningBriefingResponses)[]).map(
-    (key) => ({ key, label: QUESTION_LABELS[key], value: r[key] ?? '' }),
-  )
+  /* Only show prompts that were answered (skip empty / deprecated fields) */
+  const entries = (Object.keys(QUESTION_LABELS) as MorningBriefingDisplayKey[])
+    .map((key) => ({ key, label: QUESTION_LABELS[key], value: r[key] ?? '' }))
+    .filter(({ value }) => value.trim().length > 0)
 
   return (
     <div className="flex flex-col">

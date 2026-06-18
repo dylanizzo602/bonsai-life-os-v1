@@ -12,7 +12,8 @@ import {
   SettingsIcon,
 } from '../../../components/icons'
 import { NotificationBellButton } from '../../notifications/components/NotificationBellButton'
-import { TOP_NAV_ITEMS } from './topNavConfig'
+import { TOP_NAV_ITEMS, PREVIEW_NAV_ITEMS } from './topNavConfig'
+import { useDevMode } from '../../settings/hooks/useDevMode'
 
 interface TopNavProps {
   activeSection: NavigationSection
@@ -41,6 +42,7 @@ export function TopNav({
 }: TopNavProps) {
   /* Desktop search expanded: fade center nav to avoid overlap */
   const [isDesktopSearchOpen, setIsDesktopSearchOpen] = useState(false)
+  const { devModeEnabled } = useDevMode()
 
   /* Utility buttons: search placeholder; notifications opens anchored popover */
   const utilityButtonClass =
@@ -93,6 +95,25 @@ export function TopNav({
             </button>
           )
         })}
+        {devModeEnabled
+          ? PREVIEW_NAV_ITEMS.map(({ id, label }) => {
+              const isActive = activeSection === id
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => onNavigate(id)}
+                  className={`relative font-headline text-sm tracking-wide transition-colors ${
+                    isActive
+                      ? 'font-bold text-tertiary after:absolute after:-bottom-2 after:left-0 after:h-0.5 after:w-full after:bg-tertiary after:content-[""]'
+                      : 'rounded px-2 py-1 text-on-surface-variant hover:bg-surface-container-low'
+                  }`}
+                >
+                  {label}
+                </button>
+              )
+            })
+          : null}
       </nav>
 
       {/* Right: utilities + mobile menu */}

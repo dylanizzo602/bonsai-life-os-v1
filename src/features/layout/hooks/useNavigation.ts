@@ -8,9 +8,11 @@ export type NavigationSection =
   | 'goals'
   | 'reflections'
   | 'briefings'
+  | 'briefings-preview'
   | 'weekly-briefing'
   | 'notes'
   | 'settings'
+  | 'feedback'
 
 interface UseNavigationReturn {
   /** Currently active navigation section */

@@ -4,7 +4,8 @@ import { useEffect } from 'react'
 import { MaterialIcon } from '../../../components/MaterialIcon'
 import type { NavigationSection } from '../hooks/useNavigation'
 import { setQuickAddIntent } from '../quickAddIntent'
-import { TOP_NAV_ITEMS } from './topNavConfig'
+import { TOP_NAV_ITEMS, PREVIEW_NAV_ITEMS } from './topNavConfig'
+import { useDevMode } from '../../settings/hooks/useDevMode'
 import { MOBILE_NAV_MATERIAL_ICONS } from './mobileNavConfig'
 import { MobileQuickAdd } from './MobileQuickAdd'
 import { MobileNavAccountSection } from './MobileNavAccountSection'
@@ -20,6 +21,8 @@ interface MobileSideNavProps {
  * Mobile navigation panel below the shared TopNav bar (TopNav stays visible with close X).
  */
 export function MobileSideNav({ isOpen, activeSection, onNavigate, onClose }: MobileSideNavProps) {
+  const { devModeEnabled } = useDevMode()
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden'
@@ -111,6 +114,35 @@ export function MobileSideNav({ isOpen, activeSection, onNavigate, onClose }: Mo
                     </li>
                   )
                 })}
+                {devModeEnabled
+                  ? PREVIEW_NAV_ITEMS.map(({ id, label }) => {
+                      const isActive = activeSection === id
+                      const symbol = MOBILE_NAV_MATERIAL_ICONS[id]
+
+                      return (
+                        <li key={id} className="shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleNavClick(id)}
+                            className={`flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors ${
+                              isActive
+                                ? 'border-l-[3px] border-tertiary bg-tertiary/10 font-semibold text-tertiary'
+                                : 'border-l-[3px] border-transparent text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
+                            }`}
+                            aria-current={isActive ? 'page' : undefined}
+                          >
+                            {symbol ? (
+                              <MaterialIcon
+                                name={symbol}
+                                className={`shrink-0 text-[20px] ${isActive ? 'text-tertiary' : 'text-outline'}`}
+                              />
+                            ) : null}
+                            <span className="text-body font-medium">{label}</span>
+                          </button>
+                        </li>
+                      )
+                    })
+                  : null}
               </ul>
             </nav>
 

@@ -115,10 +115,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
     <div className="mx-auto min-h-full w-full max-w-[1200px] py-6 md:py-10">
       <HomeGreeting />
 
-      <MorningBriefingCard
-        onStartMorningBriefing={() => onNavigate?.('briefings')}
-        onStartWeeklyBriefing={() => onNavigate?.('weekly-briefing')}
-      />
+      <MorningBriefingCard onStartMorningBriefing={() => onNavigate?.('briefings')} />
 
       {/* Bento grid */}
       <div className="grid grid-cols-1 gap-8 md:grid-cols-12">

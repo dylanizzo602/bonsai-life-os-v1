@@ -6,19 +6,20 @@ import { GoalsPage } from '../features/goals'
 import { TasksPage } from '../features/tasks'
 import { HabitsPage } from '../features/habits'
 import { ReflectionsPage } from '../features/reflections'
-import { WeeklyBriefingPage } from '../features/weekly-briefing'
 import { NotesPage } from '../features/notes'
 import { SettingsPage } from '../features/settings'
+import { FeedbackPage } from '../features/feedback'
 import { useViewportWidth } from '../hooks/useViewportWidth'
 import { useAuth } from '../features/auth/AuthContext'
 import { AuthScreen } from '../features/auth/AuthScreen'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   getHasCompletedMorningBriefingToday,
-  getHasCompletedWeeklyBriefingThisWeek,
 } from '../lib/supabase/reflections'
 import { useLocalNotificationScheduler } from '../features/notifications/hooks/useLocalNotificationScheduler'
 import { useUserTimeZone } from '../features/settings/useUserTimeZone'
+import { useDevMode } from '../features/settings/hooks/useDevMode'
+import type { NavigationSection } from '../features/layout/hooks/useNavigation'
 
 /**
  * Screen too small message component
@@ -65,6 +66,25 @@ function App() {
   /* Navigation hook: Default to briefings until we confirm completion for today */
   const { activeSection, setActiveSection } = useNavigation('briefings')
 
+  /* Continue session: reopen today's briefing from greeting with saved responses */
+  const [briefingContinueSession, setBriefingContinueSession] = useState(false)
+  const { devModeEnabled } = useDevMode()
+
+  const navigateToSection = useCallback(
+    (section: NavigationSection, options?: { continueMorningBriefing?: boolean }) => {
+      if (section === 'briefings') {
+        setBriefingContinueSession(options?.continueMorningBriefing ?? false)
+      }
+      setActiveSection(section)
+    },
+    [setActiveSection],
+  )
+
+  const closeBriefing = useCallback(() => {
+    setBriefingContinueSession(false)
+    setActiveSection('home')
+  }, [setActiveSection])
+
   /* Startup gate effect: on app start, route to Briefing until completed today */
   useEffect(() => {
     if (!session) return
@@ -81,6 +101,7 @@ function App() {
       if (completed) {
         setActiveSection('home')
       } else {
+        setBriefingContinueSession(false)
         setActiveSection('briefings')
       }
     })
@@ -90,51 +111,57 @@ function App() {
     }
   }, [session, setActiveSection, timeZone])
 
+  /* Dev mode gate: hide briefing preview route when dev mode is off */
+  useEffect(() => {
+    if (activeSection === 'briefings-preview' && !devModeEnabled) {
+      setActiveSection('home')
+    }
+  }, [activeSection, devModeEnabled, setActiveSection])
+
   /* Content rendering: Render the appropriate page component based on active section */
   const renderContent = () => {
     switch (activeSection) {
       case 'home':
-        return <HomePage onNavigate={setActiveSection} />
+        return <HomePage onNavigate={navigateToSection} />
       case 'briefings':
         return (
           <BriefingsPage
+            key={briefingContinueSession ? 'briefing-continue' : 'briefing-fresh'}
+            continueSession={briefingContinueSession}
             onNavigateToReflections={() => setActiveSection('reflections')}
-            onClose={async () => {
-              /* Sunday continuation: after morning briefing, prompt weekly briefing if not completed this week */
-              const isSunday = new Date().getDay() === 0
-              if (!isSunday) {
-                setActiveSection('home')
-                return
-              }
-
-              try {
-                const hasCompletedWeekly = await getHasCompletedWeeklyBriefingThisWeek()
-                setActiveSection(hasCompletedWeekly ? 'home' : 'weekly-briefing')
-              } catch {
-                setActiveSection('home')
-              }
-            }}
+            onClose={closeBriefing}
           />
         )
-      case 'weekly-briefing':
-        return <WeeklyBriefingPage onClose={() => setActiveSection('home')} />
+      case 'briefings-preview':
+        if (!devModeEnabled) return <HomePage onNavigate={navigateToSection} />
+        return (
+          <BriefingsPage
+            key="briefings-preview"
+            previewMode
+            onNavigateToReflections={() => setActiveSection('reflections')}
+            onClose={() => setActiveSection('home')}
+          />
+        )
+      case 'reflections':
+        return (
+          <ReflectionsPage
+            onOpenMorningBriefing={(continueSession) =>
+              navigateToSection('briefings', { continueMorningBriefing: continueSession })
+            }
+          />
+        )
       case 'goals':
         return <GoalsPage />
       case 'tasks':
         return <TasksPage />
       case 'habits':
         return <HabitsPage />
-      case 'reflections':
-        return (
-          <ReflectionsPage
-            onOpenMorningBriefing={() => setActiveSection('briefings')}
-            onOpenWeeklyBriefing={() => setActiveSection('weekly-briefing')}
-          />
-        )
       case 'notes':
         return <NotesPage />
       case 'settings':
         return <SettingsPage />
+      case 'feedback':
+        return <FeedbackPage />
       default:
         return <HomePage />
     }

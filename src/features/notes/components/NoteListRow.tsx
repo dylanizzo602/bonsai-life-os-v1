@@ -60,7 +60,9 @@ export function NoteListRow({
           {note.title || 'Untitled'}
         </h4>
         {excerpt ? (
-          <p className="mt-1 line-clamp-1 text-secondary text-on-surface-variant">{excerpt}</p>
+          <p className="mt-1 line-clamp-1 whitespace-pre-line text-secondary text-on-surface-variant">
+            {excerpt}
+          </p>
         ) : null}
       </div>
       <div className="hidden shrink-0 items-center gap-2 text-xs text-outline sm:flex">

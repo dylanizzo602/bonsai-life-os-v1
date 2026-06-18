@@ -1,8 +1,9 @@
-/* OverdueScreen: Overdue tasks and linked habit task rows */
+/* OverdueScreen: Missed-items catch-up step (tasks + habits) */
 
-import { CompactTaskItem } from '../tasks/CompactTaskItem'
-import { HabitReminderItem } from '../habits/HabitReminderItem'
-import { BriefingFooter } from './BriefingFooter'
+import { MaterialIcon } from '../../components/MaterialIcon'
+import { BriefingHabitCatchUpCard } from './components/BriefingHabitCatchUpCard'
+import { BriefingOverdueTaskRow } from './components/BriefingOverdueTaskRow'
+import { useUserTimeZone } from '../settings/useUserTimeZone'
 import type { Task } from '../tasks/types'
 import type { HabitWithStreaks } from '../habits/types'
 
@@ -17,83 +18,116 @@ interface OverdueScreenProps {
   overdueHabitReminders?: OverdueHabitReminder[]
   loading: boolean
   onEditTask: (task: Task) => void
+  onToggleComplete: (taskId: string) => void
   onHabitTargetComplete?: (habit: HabitWithStreaks, task: Task, remindAt: string | null) => void
   onHabitMinimum?: (habit: HabitWithStreaks, task: Task, remindAt: string | null) => void
   onHabitSkip?: (habit: HabitWithStreaks, task: Task, remindAt: string | null) => void
-  onBack?: () => void
-  onNext: () => void
+  onContinue: () => void
 }
 
 /**
- * Overdue step: overdue tasks and habit-linked task rows with Target / Minimum / Skip.
+ * Missed-items step: overdue tasks and unfinished habit reminders from yesterday.
  */
 export function OverdueScreen({
   overdueTasks,
   overdueHabitReminders,
   loading,
   onEditTask,
+  onToggleComplete,
   onHabitTargetComplete,
   onHabitMinimum,
   onHabitSkip,
-  onBack,
-  onNext,
+  onContinue,
 }: OverdueScreenProps) {
-  const hasAny =
-    overdueTasks.length > 0 || (overdueHabitReminders?.length ?? 0) > 0
+  const timeZone = useUserTimeZone()
+  const habits = overdueHabitReminders ?? []
 
   return (
-    <div className="flex flex-col">
+    <div className="mx-auto w-full max-w-2xl px-4 pb-40 pt-8 md:px-6">
+      {/* Hero */}
+      <div className="relative mb-10 h-48 w-full overflow-hidden rounded-xl">
+        <img
+          src="/images/morning-briefing-hero.jpg"
+          alt=""
+          className="h-full w-full object-cover opacity-90 grayscale-[20%] sepia-[10%]"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-background/40 to-transparent" />
+      </div>
+
+      <div className="mb-12 text-center">
+        <h1 className="text-page-title mb-4 font-semibold leading-tight text-on-surface">
+          Looks like you might have missed something.
+        </h1>
+        <p className="text-body mx-auto max-w-lg text-on-surface-variant">
+          Don&apos;t worry, your garden is patient. Take a moment to review and clear these items
+          from yesterday.
+        </p>
+      </div>
+
       {loading ? (
-        <p className="text-body text-bonsai-slate-500">Loading...</p>
-      ) : !hasAny ? (
-        <>
-          <p className="text-body font-medium text-bonsai-brown-700 mb-2">
-            Way to go — you're all caught up.
-          </p>
-          <p className="text-secondary text-bonsai-slate-600 mb-6">
-            No overdue tasks or incomplete habit reminders due yesterday.
-          </p>
-        </>
+        <p className="text-body text-on-surface-variant">Loading…</p>
       ) : (
         <>
-          <p className="text-body font-semibold text-bonsai-brown-700 mb-2">
-            What you were supposed to do yesterday (tasks and habits)
-          </p>
-          <p className="text-body font-medium text-bonsai-slate-700 mb-4">
-            Here are overdue tasks from before today, plus incomplete habit reminders due yesterday. Clear or update them, then continue.
-          </p>
-          <div className="space-y-2 mb-4">
-            {overdueTasks.map((task) => (
-              <CompactTaskItem
-                key={task.id}
-                task={task}
-                onClick={() => onEditTask(task)}
-                isBlocked={false}
-                isBlocking={false}
-              />
-            ))}
-          </div>
-          {overdueHabitReminders && overdueHabitReminders.length > 0 && (
-            <div className="space-y-2 mb-4">
-              {overdueHabitReminders.map(({ habit, task, remindAt }) => (
-                <HabitReminderItem
-                  key={habit.id}
-                  habit={habit}
-                  task={task}
-                  remindAt={remindAt}
-                  reminderTime={habit.reminder_time}
-                  onTargetComplete={() => onHabitTargetComplete?.(habit, task, remindAt)}
-                  onMinimum={() => onHabitMinimum?.(habit, task, remindAt)}
-                  onSkip={() => onHabitSkip?.(habit, task, remindAt)}
-                  density="compact"
-                />
-              ))}
-            </div>
+          {overdueTasks.length > 0 && (
+            <section className="mb-10">
+              <div className="mb-4 flex items-center gap-2">
+                <MaterialIcon name="history" className="text-sm text-primary" />
+                <h2 className="text-secondary text-xs font-bold uppercase tracking-widest text-outline">
+                  Overdue Tasks
+                </h2>
+              </div>
+              <div className="space-y-3">
+                {overdueTasks.map((task) => (
+                  <BriefingOverdueTaskRow
+                    key={task.id}
+                    task={task}
+                    timeZone={timeZone}
+                    onToggleComplete={onToggleComplete}
+                    onEdit={onEditTask}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {habits.length > 0 && (
+            <section className="mb-16">
+              <div className="mb-4 flex items-center gap-2">
+                <MaterialIcon name="auto_awesome" className="text-sm text-primary" />
+                <h2 className="text-secondary text-xs font-bold uppercase tracking-widest text-outline">
+                  Unfinished Habits
+                </h2>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {habits.map(({ habit, task, remindAt }) => (
+                  <BriefingHabitCatchUpCard
+                    key={habit.id}
+                    habit={habit}
+                    hasMinimumAction={Boolean(habit.minimum_action?.trim())}
+                    onTargetComplete={() => onHabitTargetComplete?.(habit, task, remindAt)}
+                    onMinimum={() => onHabitMinimum?.(habit, task, remindAt)}
+                    onSkip={() => onHabitSkip?.(habit, task, remindAt)}
+                  />
+                ))}
+              </div>
+            </section>
           )}
         </>
       )}
 
-      <BriefingFooter onBack={onBack} onNext={onNext} />
+      <div className="pt-8">
+        <button
+          type="button"
+          onClick={onContinue}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-4 text-body font-bold text-on-primary shadow-sm transition-all hover:bg-primary-container active:scale-[0.98]"
+        >
+          Continue to Today&apos;s Plan
+          <MaterialIcon name="arrow_forward" />
+        </button>
+        <p className="text-secondary mt-4 text-center text-xs text-outline">
+          These items will be archived if not addressed.
+        </p>
+      </div>
     </div>
   )
 }

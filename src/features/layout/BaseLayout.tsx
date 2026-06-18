@@ -60,7 +60,7 @@ export function BaseLayout({ children, activeSection, onNavigate }: BaseLayoutPr
       >
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
           <div className="p-4 md:p-6">{children}</div>
-          <AppFooter />
+          <AppFooter onNavigateToFeedback={() => onNavigate('feedback')} />
         </div>
       </main>
 

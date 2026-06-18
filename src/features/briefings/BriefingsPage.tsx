@@ -1,27 +1,48 @@
-/* Briefings page: Multi-step morning briefing flow with progress bar */
+/* Briefings page: Dynamic morning briefing flow with shared progress footer */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import { useTasks } from '../tasks/hooks/useTasks'
 import { useHabits } from '../habits/hooks/useHabits'
 import { useInbox } from '../home/hooks/useInbox'
+import { useGoals } from '../goals/hooks/useGoals'
 import { getDependenciesForTaskIds } from '../../lib/supabase/tasks'
-import { saveOrUpdateMorningBriefingEntryForToday } from '../../lib/supabase/reflections'
+import {
+  getMilestonesForGoal,
+  getMilestoneCompletionsInRange,
+  getTaskTreesByMilestoneId,
+  updateMilestone,
+  calculateGoalProgress,
+} from '../../lib/supabase/goals'
+import {
+  saveOrUpdateMorningBriefingEntryForToday,
+  getRandomReflectionEntryYearsAgoToday,
+  getTodaysMorningBriefingEntry,
+} from '../../lib/supabase/reflections'
 import {
   loadTodaysLineupTaskIds,
   saveTodaysLineupTaskIds,
+  hasLineupSeedRunToday,
+  markLineupSeedRunToday,
 } from '../../lib/todaysLineup'
 import { buildTodaysLineupSeedTasks } from '../tasks/utils/partitionBonsaiTasks'
-import { hasLineupSeedRunToday, markLineupSeedRunToday } from '../../lib/todaysLineup'
 import type { Task } from '../tasks/types'
 import type { MorningBriefingResponses } from '../reflections/types'
+import type { ReflectionEntry } from '../reflections/types'
 import type { HabitWithStreaks } from '../habits/types'
-import { BriefingProgressBar } from './BriefingProgressBar'
+import type { GoalMilestone, UpdateMilestoneInput } from '../goals/types'
+import { BriefingProgressFooter } from './components/BriefingProgressFooter'
+import { BriefingSaveContinueButton } from './components/BriefingSaveContinueButton'
 import { GreetingScreen } from './GreetingScreen'
+import { YesterdayInReviewScreen } from './YesterdayInReviewScreen'
 import { OverdueScreen } from './OverdueScreen'
+import { ClearUndergrowthScreen } from './ClearUndergrowthScreen'
 import { InboxReviewScreen } from './InboxReviewScreen'
-import { PlanDayScreen } from './PlanDayScreen'
-import { ReflectionQuestionScreen } from './ReflectionQuestionScreen'
+import { PlanDayScreen, PlanDayFinishButton } from './PlanDayScreen'
+import { GoalReviewScreen } from './GoalReviewScreen'
+import { YesterdayHabitReviewScreen } from './YesterdayHabitReviewScreen'
+import { MemorableMomentReflectionScreen } from './MemorableMomentReflectionScreen'
+import { GratitudeReflectionScreen } from './GratitudeReflectionScreen'
 import { CompletionScreen } from './CompletionScreen'
 import { OverviewScreen } from './OverviewScreen'
 import { AddEditTaskModal } from '../tasks/AddEditTaskModal'
@@ -34,92 +55,160 @@ import { computeBlockedTaskIds } from '../tasks/utils/dependencies'
 import { getAvailableTasksFromList } from '../tasks/utils/available'
 import { isoInstantToLocalCalendarYMD } from '../../lib/localCalendarDate'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
-import { AddEditHabitModal } from '../habits/AddEditHabitModal'
-import { isSelectedWeekday } from '../../lib/streaks'
-import { getRandomReflectionEntryYearsAgoToday } from '../../lib/supabase/reflections'
-
-/** Total steps in the flow (greeting + overdue + inbox review + plan + 4 reflection + completion) */
-const TOTAL_STEPS = 9
-
-/** Reflection question keys and labels (one per step 3–6; failures list and week-in-a-life removed) */
-const REFLECTION_QUESTIONS: { key: keyof MorningBriefingResponses; label: string }[] = [
-  { key: 'memorableMoment', label: 'What is one memorable moment from yesterday?' },
-  { key: 'gratefulFor', label: 'What is something you are grateful for?' },
-  { key: 'didEverything', label: 'Did you do everything you were supposed to yesterday? If not, why?' },
-  { key: 'whatWouldMakeEasier', label: 'What would make today easier?' },
-]
+import {
+  buildBriefingSteps,
+  buildPreviewBriefingSteps,
+  getBriefingPercentComplete,
+  type BriefingStepId,
+} from './types/briefingSteps'
+import {
+  isPreviewFixtureId,
+  PREVIEW_GOAL,
+  PREVIEW_HABIT_BREAKDOWN,
+  PREVIEW_INBOX_ITEMS,
+  PREVIEW_MILESTONES,
+  PREVIEW_OVERDUE_HABIT_REMINDERS,
+  PREVIEW_OVERDUE_TASKS,
+  PREVIEW_UNDERGROWTH_TASKS,
+  PREVIEW_YEARS_AGO_ENTRY,
+} from './preview/briefingPreviewFixtures'
+import {
+  formatFirstMeetingSubtitle,
+  getFirstTimedEventToday,
+  getPriorityTasksDueTodayCount,
+} from './utils/greetingSummary'
+import { computeYesterdayReviewStats } from './utils/yesterdayReviewStats'
+import { getYesterdayHabitBreakdown } from './utils/yesterdayHabitBreakdown'
+import { getUndergrowthTasks } from './utils/undergrowthTasks'
 
 export interface BriefingsPageProps {
+  /** Preview mode: walk the flow without saving a reflection entry or lineup changes */
+  previewMode?: boolean
+  /** Continue today's session: start at greeting with saved responses prefilled */
+  continueSession?: boolean
   /** Optional: navigate to Reflections section (e.g. from OverviewScreen) */
   onNavigateToReflections?: () => void
-  /** Optional: close the briefing flow (e.g. navigate to home); when provided, CompletionScreen shows Close button */
+  /** Optional: close the briefing flow (e.g. navigate to home) */
   onClose?: () => void
 }
 
 /**
- * Briefing section: step-based morning briefing (greeting → overdue → inbox → plan day → 4 reflection questions → completion → overview).
- * Progress bar at bottom; each completed briefing is saved as a reflection entry.
+ * Morning briefing orchestrator: dynamic step sequence, shared progress footer, reflection save.
  */
-export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPageProps) {
-  /* User time zone: overdue step uses same due semantics as Tasks */
+export function BriefingsPage({
+  previewMode = false,
+  continueSession = false,
+  onNavigateToReflections,
+  onClose,
+}: BriefingsPageProps) {
+  /* User time zone: due dates and briefing completion align with Settings */
   const timeZone = useUserTimeZone()
-  /* Step state: 0 = greeting, 1 = overdue, 2 = inbox, 3 = plan day, 4–7 = reflection Q1–Q4, 8 = completion */
-  const [step, setStep] = useState(0)
-  /* After completion, user can view overview (saved entry); overview is a separate view */
+  const { user } = useAuth()
+
+  /* Profile fields for personalized greeting */
+  const firstName =
+    typeof user?.user_metadata?.first_name === 'string' ? user.user_metadata.first_name : null
+  const location =
+    typeof user?.user_metadata?.location === 'string' ? user.user_metadata.location : null
+
+  /* Dynamic step index into the frozen step list */
+  const [stepIndex, setStepIndex] = useState(0)
+  const [frozenSteps, setFrozenSteps] = useState<BriefingStepId[] | null>(null)
+  const didFreezeStepsRef = useRef(false)
+
+  /* Overview view after completion */
   const [showOverview, setShowOverview] = useState(false)
-  /* Reflection answers (in-memory until saved) */
   const [reflectionAnswers, setReflectionAnswers] = useState<MorningBriefingResponses>({})
-  /* After saving, we have the entry id and title for overview */
   const [savedEntryId, setSavedEntryId] = useState<string | null>(null)
   const [savedEntryTitle, setSavedEntryTitle] = useState<string | null>(null)
-  /* Save guard: prevent double-submit races that can create duplicate morning briefings */
   const [isSavingEntry, setIsSavingEntry] = useState(false)
+  const [continueSessionLoading, setContinueSessionLoading] = useState(continueSession)
 
-  /* Years ago today: optional random entry shown on the greeting step */
+  /* Continue session: load today's saved responses and restart from greeting */
+  useEffect(() => {
+    if (!continueSession || previewMode) {
+      setContinueSessionLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setContinueSessionLoading(true)
+    didFreezeStepsRef.current = false
+    setFrozenSteps(null)
+    setStepIndex(0)
+    setShowOverview(false)
+
+    getTodaysMorningBriefingEntry(timeZone)
+      .then((entry) => {
+        if (cancelled || !entry) return
+        setReflectionAnswers((entry.responses ?? {}) as MorningBriefingResponses)
+        setSavedEntryId(entry.id)
+        setSavedEntryTitle(entry.title)
+      })
+      .finally(() => {
+        if (!cancelled) setContinueSessionLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [continueSession, previewMode, timeZone])
+
+  /* Years-ago entry for memorable moment step */
   const [yearsAgoEntry, setYearsAgoEntry] = useState<Awaited<
     ReturnType<typeof getRandomReflectionEntryYearsAgoToday>
-  > | null>(null)
+  > | null>(previewMode ? PREVIEW_YEARS_AGO_ENTRY : null)
+  const [yearsAgoLoading, setYearsAgoLoading] = useState(!previewMode)
   useEffect(() => {
+    if (previewMode) {
+      setYearsAgoEntry(PREVIEW_YEARS_AGO_ENTRY)
+      setYearsAgoLoading(false)
+      return
+    }
     let cancelled = false
-    getRandomReflectionEntryYearsAgoToday()
+    setYearsAgoLoading(true)
+    getRandomReflectionEntryYearsAgoToday({ timeZone })
       .then((result) => {
         if (!cancelled) setYearsAgoEntry(result)
       })
       .catch(() => {
         if (!cancelled) setYearsAgoEntry(null)
       })
+      .finally(() => {
+        if (!cancelled) setYearsAgoLoading(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [previewMode, timeZone])
 
-  /* Today's Lineup: date-scoped, shared with Tasks section */
+  /* Milestones completed yesterday for review stats */
+  const [milestonesReachedYesterday, setMilestonesReachedYesterday] = useState(0)
+  const [milestonesStatsLoading, setMilestonesStatsLoading] = useState(true)
+
+  /* Today's lineup task ids (shared with Tasks section) */
   const [lineUpTaskIds, setLineUpTaskIds] = useState<Set<string>>(new Set())
   useEffect(() => {
+    if (previewMode) {
+      setLineUpTaskIds(new Set())
+      return
+    }
     setLineUpTaskIds(loadTodaysLineupTaskIds())
-  }, [step])
+  }, [previewMode, stepIndex])
 
-  const addToLineUp = useCallback((id: string) => {
-    setLineUpTaskIds((prev) => {
-      const next = new Set(prev)
-      next.add(id)
-      saveTodaysLineupTaskIds(next)
-      return next
-    })
-  }, [])
-  const removeFromLineUp = useCallback((id: string) => {
-    setLineUpTaskIds((prev) => {
-      const next = new Set(prev)
-      next.delete(id)
-      saveTodaysLineupTaskIds(next)
-      return next
-    })
-  }, [])
+  const addToLineUp = useCallback(
+    (id: string) => {
+      setLineUpTaskIds((prev) => {
+        const next = new Set(prev)
+        next.add(id)
+        if (!previewMode) saveTodaysLineupTaskIds(next)
+        return next
+      })
+    },
+    [previewMode],
+  )
 
-  /* Auth: current user for calendar settings (ICS URLs stored in user metadata) */
-  const { user } = useAuth()
-
-  /* Tasks: fetch all top-level tasks */
+  /* Tasks hook */
   const {
     tasks,
     loading: tasksLoading,
@@ -136,7 +225,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     onRemoveDependency,
   } = useTasks()
 
-  /* Habits: overdue step + "did everything" reflection step (reuse HabitsPage card grid UI) */
+  /* Habits hook */
   const {
     habitsWithStreaks,
     entriesByHabit,
@@ -144,61 +233,17 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     todayYMD,
     setEntry: setHabitEntry,
     refetch: refetchHabits,
-    createHabit,
-    updateHabit,
-    deleteHabit,
     loading: habitsLoading,
   } = useHabits()
 
-  /* Habit edit modal: opened from HabitGrid settings button on the did-everything step */
-  const [habitBeingEdited, setHabitBeingEdited] = useState<HabitWithStreaks | null>(null)
+  /* Goals hook (Sunday goal review) */
+  const { goals, loading: goalsLoading, refetch: refetchGoals } = useGoals()
+  const [milestonesByGoal, setMilestonesByGoal] = useState<Record<string, GoalMilestone[]>>({})
+  const [taskTreesByMilestoneId, setTaskTreesByMilestoneId] = useState<Record<string, Task[]>>({})
+  /** Carousel index for Sunday goal review (footer shows Next until the last goal) */
+  const [goalReviewIndex, setGoalReviewIndex] = useState(0)
 
-  /* Yesterday YMD (local calendar day): used for the habits "accountability" reflection skip logic */
-  const yesterdayYMD = useMemo(() => {
-    return DateTime.fromISO(todayYMD, { zone: timeZone }).minus({ days: 1 }).toISODate() ?? todayYMD
-  }, [timeZone, todayYMD])
-
-  /* Accountability skip: true when every scheduled habit is marked Target (completed) for yesterday */
-  const allHabitsTargetYesterday = useMemo(() => {
-    /* No habits: keep reflections visible (avoid skipping the user's prompts unexpectedly) */
-    if (habitsWithStreaks.length === 0) return false
-
-    /* Determine which habits were actually scheduled yesterday (weekly bitmask habits may be off-day) */
-    const scheduledYesterday = habitsWithStreaks.filter((habit) => {
-      const isWeekly =
-        habit.frequency === 'weekly' &&
-        typeof habit.frequency_target === 'number' &&
-        habit.frequency_target >= 1 &&
-        habit.frequency_target <= 127
-      return !isWeekly || isSelectedWeekday(yesterdayYMD, habit.frequency_target ?? 0)
-    })
-
-    /* If nothing was scheduled yesterday, don't skip the reflection prompts */
-    if (scheduledYesterday.length === 0) return false
-
-    /* "Target" in the UI maps to entry status "completed" */
-    return scheduledYesterday.every((habit) => {
-      const entries = entriesByHabit[habit.id] ?? []
-      const e = entries.find((x) => x.entry_date === yesterdayYMD)
-      return e?.status === 'completed'
-    })
-  }, [entriesByHabit, habitsWithStreaks, yesterdayYMD])
-
-  /* Habits grid step: show yesterday as a single-day view (matches the Habits card grid) */
-  useEffect(() => {
-    /* We set this starting at step 5 so yesterday entries are already in-range when the skip condition is evaluated */
-    if (step >= 5 && step <= 7) {
-      setDateRange({ start: yesterdayYMD, end: yesterdayYMD })
-    }
-  }, [step, setDateRange, yesterdayYMD])
-
-  /* Close habit modal and refresh streak data after edits */
-  const closeHabitEditModal = useCallback(() => {
-    setHabitBeingEdited(null)
-    void refetchHabits()
-  }, [refetchHabits])
-
-  /* Inbox items: used for inbox review step to convert items into tasks or delete them */
+  /* Inbox hook */
   const {
     items: inboxItems,
     loading: inboxLoading,
@@ -206,19 +251,41 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     deleteItem: deleteInboxItem,
   } = useInbox()
 
-  /* Inbox skip: when there are no inbox items, omit the inbox review step entirely */
-  const shouldSkipInboxStep = useMemo(() => {
-    return !inboxLoading && !inboxError && inboxItems.length === 0
-  }, [inboxError, inboxItems.length, inboxLoading])
-
-  /* Step guard: if the user reaches inbox step with an empty inbox, automatically advance to planning */
-  useEffect(() => {
-    if (step === 2 && shouldSkipInboxStep) {
-      setStep(3)
+  /* Calendar day boundaries */
+  const { todayStart, todayEnd, yesterdayYMD, isSunday } = useMemo(() => {
+    const z = DateTime.now().setZone(timeZone)
+    const yesterday = z.minus({ days: 1 })
+    return {
+      todayStart: z.startOf('day').toMillis(),
+      todayEnd: z.endOf('day').toMillis(),
+      yesterdayYMD: yesterday.toISODate() ?? z.toISODate() ?? todayYMD,
+      isSunday: z.weekday === 7,
     }
-  }, [shouldSkipInboxStep, step])
+  }, [timeZone, todayYMD])
 
-  /* Blocked/blocking task IDs for "available" filter */
+  /* Include yesterday in habit date range once past greeting */
+  useEffect(() => {
+    if (stepIndex >= 1) {
+      setDateRange({ start: yesterdayYMD, end: yesterdayYMD })
+    }
+  }, [stepIndex, setDateRange, yesterdayYMD])
+
+  /* Fetch milestone completions for yesterday stats */
+  useEffect(() => {
+    const start = DateTime.fromISO(yesterdayYMD, { zone: timeZone }).startOf('day').toUTC().toISO()!
+    const end = DateTime.fromISO(yesterdayYMD, { zone: timeZone })
+      .plus({ days: 1 })
+      .startOf('day')
+      .toUTC()
+      .toISO()!
+    setMilestonesStatsLoading(true)
+    getMilestoneCompletionsInRange(start, end)
+      .then(setMilestonesReachedYesterday)
+      .catch(() => setMilestonesReachedYesterday(0))
+      .finally(() => setMilestonesStatsLoading(false))
+  }, [yesterdayYMD, timeZone])
+
+  /* Blocked task ids for available filter */
   const [blockedTaskIds, setBlockedTaskIds] = useState<Set<string>>(new Set())
   useEffect(() => {
     if (tasks.length === 0) {
@@ -228,40 +295,66 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     const taskIds = tasks.map((t) => t.id)
     const taskLookup = Object.fromEntries(tasks.map((t) => [t.id, t]))
     getDependenciesForTaskIds(taskIds)
-      .then((deps) => {
-        setBlockedTaskIds(computeBlockedTaskIds(deps, taskLookup))
-      })
+      .then((deps) => setBlockedTaskIds(computeBlockedTaskIds(deps, taskLookup)))
       .catch(() => setBlockedTaskIds(new Set()))
   }, [tasks])
 
-  /* Daily seed: at most once per day (shared with Tasks); skip if Tasks already seeded today */
-  useEffect(() => {
-    if (tasks.length === 0) return
-    if (hasLineupSeedRunToday()) return
+  /* Calendar agenda sources */
+  const calendarUrlsBySource = useMemo(() => {
+    const metadata = (user?.user_metadata ?? {}) as Record<string, unknown>
+    let google =
+      typeof metadata.calendar_ics_google === 'string' ? metadata.calendar_ics_google : ''
+    let microsoft =
+      typeof metadata.calendar_ics_microsoft === 'string' ? metadata.calendar_ics_microsoft : ''
+    let apple = typeof metadata.calendar_ics_apple === 'string' ? metadata.calendar_ics_apple : ''
 
-    const seedTasks = buildTodaysLineupSeedTasks(tasks, blockedTaskIds, timeZone, 5)
-    markLineupSeedRunToday()
-
-    if (seedTasks.length === 0) return
-
-    const mergedIds = new Set([
-      ...loadTodaysLineupTaskIds(),
-      ...seedTasks.map((t) => t.id),
-    ])
-    setLineUpTaskIds(mergedIds)
-    saveTodaysLineupTaskIds(mergedIds)
-  }, [tasks, blockedTaskIds, timeZone])
-
-  /* Today start/end for filtering (same IANA zone as Settings / task list) */
-  const { todayStart, todayEnd } = useMemo(() => {
-    const z = DateTime.now().setZone(timeZone)
-    return {
-      todayStart: z.startOf('day').toMillis(),
-      todayEnd: z.endOf('day').toMillis(),
+    if (typeof window !== 'undefined') {
+      if (!google) google = window.localStorage.getItem('bonsai_calendar_ics_google') ?? ''
+      if (!microsoft) microsoft = window.localStorage.getItem('bonsai_calendar_ics_microsoft') ?? ''
+      if (!apple) apple = window.localStorage.getItem('bonsai_calendar_ics_apple') ?? ''
     }
-  }, [timeZone])
 
-  /* Tasks due today (count for greeting) */
+    return { google, microsoft, apple }
+  }, [user])
+
+  const {
+    loading: calendarLoading,
+    error: calendarError,
+    eventsToday: calendarEventsToday,
+    countToday: calendarEventCount,
+  } = useCalendarAgenda({ urlsBySource: calendarUrlsBySource })
+
+  const {
+    loading: googleCalendarLoading,
+    connected: googleCalendarConnected,
+    error: googleCalendarError,
+    eventsToday: googleCalendarEventsToday,
+    countToday: googleCalendarEventCount,
+  } = useGoogleCalendarEventsToday()
+
+  const effectiveCalendarLoading = googleCalendarConnected ? googleCalendarLoading : calendarLoading
+  const effectiveCalendarError = googleCalendarConnected ? googleCalendarError : calendarError
+  const effectiveCalendarEventsToday = googleCalendarConnected
+    ? googleCalendarEventsToday
+    : calendarEventsToday
+  const effectiveCalendarEventCount = googleCalendarConnected
+    ? googleCalendarEventCount
+    : calendarEventCount
+
+  const firstMeetingSubtitle = useMemo(
+    () =>
+      formatFirstMeetingSubtitle(
+        getFirstTimedEventToday(effectiveCalendarEventsToday),
+        effectiveCalendarEventsToday,
+      ),
+    [effectiveCalendarEventsToday],
+  )
+
+  const priorityTasksDueTodayCount = useMemo(
+    () => getPriorityTasksDueTodayCount(tasks, todayStart, todayEnd),
+    [tasks, todayStart, todayEnd],
+  )
+
   const tasksDueTodayCount = useMemo(
     () =>
       tasks.filter(
@@ -274,58 +367,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     [tasks, todayStart, todayEnd],
   )
 
-  /* Calendar agenda: aggregate today events across configured ICS URLs from user metadata or localStorage */
-  const calendarUrlsBySource = useMemo(() => {
-    const metadata = (user?.user_metadata ?? {}) as Record<string, unknown>
-    let google =
-      typeof metadata.calendar_ics_google === 'string' ? metadata.calendar_ics_google : ''
-    let microsoft =
-      typeof metadata.calendar_ics_microsoft === 'string' ? metadata.calendar_ics_microsoft : ''
-    let apple =
-      typeof metadata.calendar_ics_apple === 'string' ? metadata.calendar_ics_apple : ''
-
-    if (typeof window !== 'undefined') {
-      if (!google) {
-        google = window.localStorage.getItem('bonsai_calendar_ics_google') ?? ''
-      }
-      if (!microsoft) {
-        microsoft = window.localStorage.getItem('bonsai_calendar_ics_microsoft') ?? ''
-      }
-      if (!apple) {
-        apple = window.localStorage.getItem('bonsai_calendar_ics_apple') ?? ''
-      }
-    }
-
-    return {
-      google,
-      microsoft,
-      apple,
-    }
-  }, [user])
-
-  const {
-    loading: calendarLoading,
-    error: calendarError,
-    eventsToday: calendarEventsToday,
-    countToday: calendarEventCount,
-  } = useCalendarAgenda({ urlsBySource: calendarUrlsBySource })
-
-  /* Google Calendar (OAuth): preferred source for today's agenda when connected */
-  const {
-    loading: googleCalendarLoading,
-    connected: googleCalendarConnected,
-    error: googleCalendarError,
-    eventsToday: googleCalendarEventsToday,
-    countToday: googleCalendarEventCount,
-  } = useGoogleCalendarEventsToday()
-
-  /* Calendar source selection: prefer Google OAuth when connected, fallback to ICS links */
-  const effectiveCalendarLoading = googleCalendarConnected ? googleCalendarLoading : calendarLoading
-  const effectiveCalendarError = googleCalendarConnected ? googleCalendarError : calendarError
-  const effectiveCalendarEventsToday = googleCalendarConnected ? googleCalendarEventsToday : calendarEventsToday
-  const effectiveCalendarEventCount = googleCalendarConnected ? googleCalendarEventCount : calendarEventCount
-
-  /* Overdue tasks (exclude habit-linked rows — those use overdue habit list) */
+  /* Overdue tasks (non-habit-linked) */
   const overdueTasks = useMemo(
     () =>
       tasks.filter(
@@ -338,24 +380,17 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     [tasks, timeZone],
   )
 
-  /* Overdue linked habit tasks */
+  /* Overdue habit reminders from yesterday */
   const overdueHabitReminders = useMemo(() => {
-    /* Due-date normalization: interpret task.due_date as a calendar day in the user's time zone */
     const dueYMDInZone = (dueDate: string | null | undefined): string | null => {
       if (!dueDate) return null
-
-      /* Date-only due dates are already a civil YYYY-MM-DD in the user's zone */
       if (!dueDate.includes('T')) return dueDate
-
-      /* Legacy / date-only encoded as midnight ISO: treat as the date-part only (avoid zone shifting) */
       const timeMatch = dueDate.match(/T(\d{2}):(\d{2})/)
       const hasExplicitTime = !!timeMatch && (timeMatch[1] !== '00' || timeMatch[2] !== '00')
       if (!hasExplicitTime) {
         const datePart = dueDate.slice(0, 10)
         return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : null
       }
-
-      /* Timed due dates: convert the instant into the user's zone then take the local calendar day */
       const dt = DateTime.fromISO(dueDate, { setZone: true }).setZone(timeZone)
       return dt.isValid ? dt.toISODate() : null
     }
@@ -376,39 +411,212 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
       .filter((x): x is { habit: HabitWithStreaks; task: Task; remindAt: string | null } => x != null)
   }, [habitsWithStreaks, tasks, timeZone, yesterdayYMD])
 
-  /* Overdue skip: when there is nothing overdue to review, omit this step entirely */
-  const shouldSkipOverdueStep = useMemo(() => {
-    return !tasksLoading && overdueTasks.length === 0 && overdueHabitReminders.length === 0
-  }, [overdueHabitReminders.length, overdueTasks.length, tasksLoading])
+  const hasMissedItems = overdueTasks.length > 0 || overdueHabitReminders.length > 0
 
-  /* Step guard: if the user reaches overdue step with nothing to review, automatically advance */
+  const undergrowthTasks = useMemo(() => getUndergrowthTasks(tasks), [tasks])
+  const activeGoals = useMemo(() => goals.filter((g) => g.is_active !== false), [goals])
+
+  const habitBreakdown = useMemo(
+    () => getYesterdayHabitBreakdown(habitsWithStreaks, entriesByHabit, yesterdayYMD),
+    [entriesByHabit, habitsWithStreaks, yesterdayYMD],
+  )
+
+  const yesterdayReviewStats = useMemo(
+    () =>
+      computeYesterdayReviewStats(
+        tasks,
+        habitsWithStreaks,
+        entriesByHabit,
+        yesterdayYMD,
+        timeZone,
+        milestonesReachedYesterday,
+      ),
+    [
+      entriesByHabit,
+      habitsWithStreaks,
+      milestonesReachedYesterday,
+      tasks,
+      timeZone,
+      yesterdayYMD,
+    ],
+  )
+
+  /* Step context: drives optional steps in live briefing (preview uses buildPreviewBriefingSteps) */
+  const stepContext = useMemo(
+    () => ({
+      isSunday,
+      hasMissedItems,
+      hasUndergrowthTasks: undergrowthTasks.length > 0,
+      hasInboxItems: !inboxLoading && !inboxError && inboxItems.length > 0,
+      hasActiveGoals: activeGoals.length > 0,
+      hasSkippedHabitsYesterday: habitBreakdown.skippedYesterday.length > 0,
+    }),
+    [
+      activeGoals.length,
+      habitBreakdown.skippedYesterday.length,
+      hasMissedItems,
+      inboxError,
+      inboxItems.length,
+      inboxLoading,
+      isSunday,
+      undergrowthTasks.length,
+    ],
+  )
+
+  const dataReadyForFreeze = previewMode
+    ? true
+    : !tasksLoading && !habitsLoading && !inboxLoading && !goalsLoading && !milestonesStatsLoading
+
   useEffect(() => {
-    if (step === 1 && shouldSkipOverdueStep) {
-      setStep(2)
-    }
-  }, [shouldSkipOverdueStep, step])
+    if (didFreezeStepsRef.current || !dataReadyForFreeze) return
+    didFreezeStepsRef.current = true
+    setFrozenSteps(buildBriefingSteps(stepContext))
+  }, [dataReadyForFreeze, stepContext])
 
-  /* Available tasks: use shared helper so semantics match Available view and Upcoming widgets */
+  const steps = useMemo(
+    () => (previewMode ? buildPreviewBriefingSteps() : frozenSteps ?? buildBriefingSteps(stepContext)),
+    [previewMode, frozenSteps, stepContext],
+  )
+  const currentStepId: BriefingStepId = steps[stepIndex] ?? 'greeting'
+  const percentComplete = getBriefingPercentComplete(currentStepId, stepIndex, steps.length)
+
+  /* Preview fallbacks: show every screen even when the account has no matching data */
+  const displayUndergrowthTasks =
+    previewMode && undergrowthTasks.length === 0 ? PREVIEW_UNDERGROWTH_TASKS : undergrowthTasks
+  const displayInboxItems =
+    previewMode && inboxItems.length === 0 ? PREVIEW_INBOX_ITEMS : inboxItems
+  const displayInboxLoading = previewMode && inboxItems.length === 0 ? false : inboxLoading
+  const displayGoals =
+    previewMode && activeGoals.length === 0 ? [PREVIEW_GOAL] : activeGoals
+  const displayOverdueTasks =
+    previewMode && overdueTasks.length === 0 ? PREVIEW_OVERDUE_TASKS : overdueTasks
+  const displayOverdueHabitReminders =
+    previewMode && overdueHabitReminders.length === 0
+      ? PREVIEW_OVERDUE_HABIT_REMINDERS
+      : overdueHabitReminders
+  const displayHabitBreakdown =
+    previewMode &&
+    habitBreakdown.completed.length === 0 &&
+    habitBreakdown.missed.length === 0
+      ? PREVIEW_HABIT_BREAKDOWN
+      : habitBreakdown
+
+  const showYesterdayReview =
+    currentStepId === 'reviewYesterday' ||
+    (currentStepId === 'review' && !hasMissedItems)
+  const showMissedItemsReview =
+    currentStepId === 'reviewMissed' || (currentStepId === 'review' && hasMissedItems)
+
+  const advanceStep = useCallback(() => {
+    setStepIndex((i) => Math.min(i + 1, steps.length - 1))
+  }, [steps.length])
+
+  /* Reset goal carousel when entering the goal review step */
+  useEffect(() => {
+    if (currentStepId === 'goalReview') {
+      setGoalReviewIndex(0)
+    }
+  }, [currentStepId])
+
+  /* Advance carousel or leave goal review once every goal has been shown */
+  const handleGoalReviewContinue = useCallback(() => {
+    const lastGoalIndex = Math.max(0, displayGoals.length - 1)
+    if (goalReviewIndex < lastGoalIndex) {
+      setGoalReviewIndex((i) => i + 1)
+      return
+    }
+    setGoalReviewIndex(0)
+    advanceStep()
+  }, [advanceStep, displayGoals.length, goalReviewIndex])
+
+  const goToPreviousStep = useCallback(() => {
+    setStepIndex((i) => Math.max(0, i - 1))
+  }, [])
+
+  /** Back navigation for reflection steps (not on greeting) */
+  const briefingGoBack = stepIndex > 0 ? goToPreviousStep : undefined
+
+  /* Lineup seed when entering plan step */
+  useEffect(() => {
+    if (previewMode || currentStepId !== 'plan') return
+    if (tasks.length === 0) return
+    if (hasLineupSeedRunToday()) return
+
+    const seedTasks = buildTodaysLineupSeedTasks(tasks, blockedTaskIds, timeZone, 5)
+    markLineupSeedRunToday()
+    if (seedTasks.length === 0) return
+
+    const mergedIds = new Set([
+      ...loadTodaysLineupTaskIds(),
+      ...seedTasks.map((t) => t.id),
+    ])
+    setLineUpTaskIds(mergedIds)
+    saveTodaysLineupTaskIds(mergedIds)
+  }, [blockedTaskIds, currentStepId, previewMode, tasks, timeZone])
+
+  /* Fetch milestones for Sunday goal review (or preview fixtures when no goals) */
+  useEffect(() => {
+    if (!steps.includes('goalReview')) return
+
+    if (previewMode && activeGoals.length === 0) {
+      setMilestonesByGoal({ [PREVIEW_GOAL.id]: PREVIEW_MILESTONES })
+      setTaskTreesByMilestoneId({})
+      return
+    }
+
+    if (activeGoals.length === 0) return
+
+    const fetchMilestones = async () => {
+      const map: Record<string, GoalMilestone[]> = {}
+      const mergedTrees: Record<string, Task[]> = {}
+      for (const goal of activeGoals) {
+        try {
+          const milestones = await getMilestonesForGoal(goal.id)
+          map[goal.id] = milestones
+          const trees = await getTaskTreesByMilestoneId(milestones)
+          Object.assign(mergedTrees, trees)
+        } catch {
+          map[goal.id] = []
+        }
+      }
+      setMilestonesByGoal(map)
+      setTaskTreesByMilestoneId(mergedTrees)
+    }
+
+    void fetchMilestones()
+  }, [activeGoals, previewMode, steps])
+
   const availableTasks = useMemo(
     () => getAvailableTasksFromList(tasks, blockedTaskIds, timeZone),
     [tasks, blockedTaskIds, timeZone],
   )
 
-  /* Briefing-only filter: Today's Lineup picker should not include habit-linked reminder tasks */
   const briefingAvailableTasks = useMemo(
     () => availableTasks.filter((t) => !t.habit_id),
     [availableTasks],
   )
 
-  /* Edit task modal (used on overdue step and inbox review convert-to-task) */
-  const [editTask, setEditTask] = useState<Task | null>(null)
-  const [taskModalOpen, setTaskModalOpen] = useState(false)
-  const [initialTitle, setInitialTitle] = useState<string>('')
-  const [inboxItemToRemoveOnCreate, setInboxItemToRemoveOnCreate] = useState<InboxItem | null>(
-    null,
+  const lineupTasks = useMemo(
+    () => tasks.filter((t) => lineUpTaskIds.has(t.id) && !t.habit_id),
+    [lineUpTaskIds, tasks],
   )
 
-  /* Open task modal for editing an existing task (from overdue step) */
+  const backlogCandidates = useMemo(
+    () => briefingAvailableTasks.filter((t) => !lineUpTaskIds.has(t.id)),
+    [briefingAvailableTasks, lineUpTaskIds],
+  )
+
+  const goalsById = useMemo(
+    () => Object.fromEntries(goals.map((g) => [g.id, g.name])),
+    [goals],
+  )
+
+  /* Task modal state */
+  const [editTask, setEditTask] = useState<Task | null>(null)
+  const [taskModalOpen, setTaskModalOpen] = useState(false)
+  const [initialTitle, setInitialTitle] = useState('')
+  const [inboxItemToRemoveOnCreate, setInboxItemToRemoveOnCreate] = useState<InboxItem | null>(null)
+
   const openEditTask = useCallback((task: Task) => {
     setEditTask(task)
     setInitialTitle('')
@@ -416,7 +624,6 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     setTaskModalOpen(true)
   }, [])
 
-  /* Open task modal to convert an inbox item into a new task (from inbox review step) */
   const openConvertInboxItem = useCallback((item: InboxItem) => {
     setEditTask(null)
     setInitialTitle(item.name)
@@ -424,7 +631,6 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     setTaskModalOpen(true)
   }, [])
 
-  /* Close task modal and reset related state */
   const closeTaskModal = useCallback(() => {
     setTaskModalOpen(false)
     setEditTask(null)
@@ -432,7 +638,6 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     setInboxItemToRemoveOnCreate(null)
   }, [])
 
-  /* Create task handler: used when converting an inbox item; deletes inbox item after successful create */
   const handleCreateTask = useCallback(
     async (input: Parameters<typeof createTask>[0]) => {
       const created = await createTask(input)
@@ -447,7 +652,6 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     [createTask, inboxItemToRemoveOnCreate, deleteInboxItem, refetchTasks, closeTaskModal],
   )
 
-  /* Update task handler: refresh tasks after updating from the overdue step */
   const handleUpdateTask = useCallback(
     async (id: string, input: Parameters<typeof updateTask>[1]) => {
       const updated = await updateTask(id, input)
@@ -457,47 +661,120 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
     [updateTask, refetchTasks],
   )
 
-  /* Save reflection entry once when moving to completion (step 6); use shared helper so only one entry exists per day */
-  const saveEntryAndGoToCompletion = useCallback(async () => {
-    if (savedEntryId || isSavingEntry) {
-      setStep(8)
+  const handleDeleteUndergrowthTask = useCallback(
+    async (task: Task) => {
+      if (previewMode && isPreviewFixtureId(task.id)) return
+      await deleteTask(task.id)
+      await refetchTasks()
+    },
+    [deleteTask, previewMode, refetchTasks],
+  )
+
+  const handleToggleTaskComplete = useCallback(
+    (taskId: string) => {
+      if (previewMode && isPreviewFixtureId(taskId)) return
+      void toggleComplete(taskId, true)
+    },
+    [previewMode, toggleComplete],
+  )
+
+  /* Goal milestone handlers for Sunday review */
+  const refreshGoalMilestones = useCallback(async (goalId: string) => {
+    const milestones = await getMilestonesForGoal(goalId)
+    setMilestonesByGoal((prev) => ({ ...prev, [goalId]: milestones }))
+    const trees = await getTaskTreesByMilestoneId(milestones)
+    setTaskTreesByMilestoneId((prev) => ({ ...prev, ...trees }))
+    await calculateGoalProgress(goalId)
+    await refetchGoals()
+  }, [refetchGoals])
+
+  const handleBriefingUpdateMilestone = useCallback(
+    async (milestoneId: string, input: UpdateMilestoneInput) => {
+      if (previewMode && isPreviewFixtureId(milestoneId)) {
+        let updated: GoalMilestone | null = null
+        setMilestonesByGoal((prev) => {
+          const next = { ...prev }
+          for (const goalId of Object.keys(next)) {
+            next[goalId] = next[goalId].map((m) => {
+              if (m.id !== milestoneId) return m
+              updated = { ...m, ...input }
+              return updated
+            })
+          }
+          return next
+        })
+        if (!updated) {
+          throw new Error('Milestone not found')
+        }
+        return updated
+      }
+
+      const goalId = Object.entries(milestonesByGoal).find(([, list]) =>
+        list.some((m) => m.id === milestoneId),
+      )?.[0]
+      const updated = await updateMilestone(milestoneId, input)
+      if (goalId) await refreshGoalMilestones(goalId)
+      return updated
+    },
+    [milestonesByGoal, previewMode, refreshGoalMilestones],
+  )
+
+  const briefingGetTasks = useCallback(async () => {
+    const list = await getTasks()
+    return list.map((t) => ({ id: t.id, title: t.title }))
+  }, [getTasks])
+
+  /* Persist reflection entry before completion (skipped in preview mode) */
+  const saveEntryAndAdvance = useCallback(async () => {
+    if (previewMode) {
+      setSavedEntryTitle('Preview — Morning briefing')
+      advanceStep()
       return
     }
+
+    if (savedEntryId) {
+      advanceStep()
+      return
+    }
+    if (isSavingEntry) return
+
     try {
       setIsSavingEntry(true)
-      const title = `Morning briefing – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+      const title = `Morning briefing – ${new Date().toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })}`
       const entry = await saveOrUpdateMorningBriefingEntryForToday(
-        {
-          title,
-          responses: reflectionAnswers,
-        },
+        { title, responses: reflectionAnswers },
         timeZone,
       )
       setSavedEntryId(entry.id)
       setSavedEntryTitle(entry.title ?? title)
-      setStep(8)
+      advanceStep()
     } finally {
       setIsSavingEntry(false)
     }
-  }, [isSavingEntry, reflectionAnswers, savedEntryId, timeZone])
+  }, [advanceStep, isSavingEntry, previewMode, reflectionAnswers, savedEntryId, timeZone])
 
-  /* Progress bar: adjust total/current when accountability questions are skipped */
-  const effectiveTotalSteps =
-    TOTAL_STEPS -
-    (allHabitsTargetYesterday ? 2 : 0) -
-    (shouldSkipInboxStep ? 1 : 0) -
-    (shouldSkipOverdueStep ? 1 : 0)
-  const effectiveCurrentStep = useMemo(() => {
-    /* Step offset: account for optional step skips so progress stays accurate */
-    const overdueOffset = shouldSkipOverdueStep && step >= 2 ? 1 : 0
-    const inboxOffset = shouldSkipInboxStep && step >= 3 ? 1 : 0
-    const habitsOffset = allHabitsTargetYesterday && step >= 8 ? 2 : 0
-    return step - overdueOffset - inboxOffset - habitsOffset
-  }, [allHabitsTargetYesterday, shouldSkipInboxStep, shouldSkipOverdueStep, step])
+  const stepBeforeCompletion = steps[steps.length - 2]
+  const isLastReflectionStep = currentStepId === stepBeforeCompletion
 
-  /* View overview: show saved entry; create or update today's entry first so we never create duplicates */
+  const handleContinueFromReflection = useCallback(async () => {
+    if (isLastReflectionStep) {
+      await saveEntryAndAdvance()
+    } else {
+      advanceStep()
+    }
+  }, [advanceStep, isLastReflectionStep, saveEntryAndAdvance])
+
   const handleViewOverview = useCallback(async () => {
     if (isSavingEntry) return
+    if (previewMode) {
+      setSavedEntryTitle('Preview — Morning briefing')
+      setShowOverview(true)
+      return
+    }
     if (!savedEntryId && Object.keys(reflectionAnswers).length > 0) {
       const title = `Morning briefing – ${new Date().toLocaleDateString('en-US', {
         month: 'short',
@@ -507,10 +784,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
       try {
         setIsSavingEntry(true)
         const entry = await saveOrUpdateMorningBriefingEntryForToday(
-          {
-            title,
-            responses: reflectionAnswers,
-          },
+          { title, responses: reflectionAnswers },
           timeZone,
         )
         setSavedEntryId(entry.id)
@@ -520,56 +794,151 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
       }
     }
     setShowOverview(true)
-  }, [isSavingEntry, savedEntryId, reflectionAnswers, timeZone])
+  }, [isSavingEntry, previewMode, reflectionAnswers, savedEntryId, timeZone])
 
-  /* Back from overview to completion step */
   const handleBackToBriefing = useCallback(() => {
     setShowOverview(false)
   }, [])
 
-  /* Go back to the previous briefing step (not used on greeting) */
-  const goToPreviousStep = useCallback(() => {
-    setStep((prev) => (prev > 0 ? prev - 1 : 0))
-  }, [])
+  const handleReadYearsAgoEntry = useCallback(
+    (_entry: ReflectionEntry) => {
+      onNavigateToReflections?.()
+    },
+    [onNavigateToReflections],
+  )
 
-  /* Render overview when user clicked "View overview" */
+  /* Footer action slot by step */
+  const footerAction = useMemo(() => {
+    switch (currentStepId) {
+      case 'undergrowth':
+      case 'inbox':
+      case 'goalReview':
+        return (
+          <BriefingSaveContinueButton
+            onClick={handleGoalReviewContinue}
+            label={
+              goalReviewIndex < displayGoals.length - 1 ? 'Next' : 'Save & Continue'
+            }
+          />
+        )
+      case 'plan':
+        return <PlanDayFinishButton onClick={advanceStep} />
+      case 'habitReview':
+        return (
+          <BriefingSaveContinueButton
+            onClick={advanceStep}
+            label="Save & Continue"
+          />
+        )
+      case 'memorableMoment':
+      case 'gratitude':
+        return (
+          <BriefingSaveContinueButton
+            onClick={() => void handleContinueFromReflection()}
+            loading={isSavingEntry}
+            disabled={isSavingEntry}
+          />
+        )
+      default:
+        return undefined
+    }
+  }, [
+    advanceStep,
+    currentStepId,
+    displayGoals.length,
+    goalReviewIndex,
+    handleContinueFromReflection,
+    handleGoalReviewContinue,
+    isSavingEntry,
+  ])
+
+  const showProgressFooter = currentStepId !== 'greeting' && currentStepId !== 'completion'
+
+  if (continueSessionLoading) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <p className="text-body text-on-surface-variant">Loading your briefing…</p>
+      </div>
+    )
+  }
+
+  /* Overview of saved responses */
   if (showOverview) {
     return (
       <div className="min-h-full">
-        <h1 className="text-page-title font-bold text-bonsai-brown-700 mb-6">Briefing</h1>
+        {previewMode ? (
+          <div className="mb-4 rounded-lg border border-tertiary/30 bg-tertiary-container/40 px-4 py-2 text-center">
+            <p className="text-secondary font-medium text-on-surface">
+              Preview mode — not saved to your account
+            </p>
+          </div>
+        ) : null}
+        <h1 className="text-page-title mb-6 font-bold text-bonsai-brown-700">Briefing</h1>
         <OverviewScreen
-          title={savedEntryTitle ?? `Morning briefing – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
+          title={
+            savedEntryTitle ??
+            (previewMode
+              ? 'Preview — Morning briefing'
+              : `Morning briefing – ${new Date().toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}`)
+          }
           responses={reflectionAnswers}
           onBackToBriefing={handleBackToBriefing}
-          onGoToReflections={onNavigateToReflections}
+          onGoToReflections={previewMode ? undefined : onNavigateToReflections}
         />
       </div>
     )
   }
 
-  /* Main flow: step 0–7 with progress bar */
   return (
     <div className="min-h-full flex flex-col">
-      <h1 className="text-page-title font-bold text-bonsai-brown-700 mb-6">Briefing</h1>
+      {previewMode ? (
+        <div className="sticky top-20 z-30 border-b border-tertiary/30 bg-tertiary-container/40 px-4 py-2 text-center md:top-[4.5rem]">
+          <p className="text-secondary font-medium text-on-surface">
+            Preview mode — full briefing tour (all paths + Sunday steps). Nothing is saved to your
+            account.
+          </p>
+        </div>
+      ) : null}
 
-      {step === 0 && (
+      {currentStepId === 'greeting' && (
         <GreetingScreen
+          firstName={firstName}
+          location={location}
           tasksDueTodayCount={tasksDueTodayCount}
+          priorityTasksDueTodayCount={priorityTasksDueTodayCount}
           calendarEventCount={effectiveCalendarEventCount}
           calendarLoading={effectiveCalendarLoading}
           calendarError={effectiveCalendarError}
-          yearsAgoEntry={yearsAgoEntry}
-          onBegin={() => setStep(1)}
+          firstMeetingSubtitle={firstMeetingSubtitle}
+          onBegin={advanceStep}
         />
       )}
 
-      {step === 1 && (
+      {showYesterdayReview ? (
+        <YesterdayInReviewScreen
+          firstName={firstName}
+          stats={yesterdayReviewStats}
+          loading={tasksLoading || habitsLoading || milestonesStatsLoading}
+          onContinue={advanceStep}
+        />
+      ) : null}
+
+      {showMissedItemsReview ? (
         <OverdueScreen
-          overdueTasks={overdueTasks}
-          overdueHabitReminders={overdueHabitReminders}
+          overdueTasks={displayOverdueTasks}
+          overdueHabitReminders={displayOverdueHabitReminders}
           loading={tasksLoading}
-          onEditTask={openEditTask}
+          onEditTask={(task) => {
+            if (previewMode && isPreviewFixtureId(task.id)) return
+            openEditTask(task)
+          }}
+          onToggleComplete={handleToggleTaskComplete}
           onHabitTargetComplete={async (habit, task, remindAt) => {
+            if (previewMode && isPreviewFixtureId(habit.id)) return
             const occurrenceDate =
               isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
             await setHabitEntry(habit.id, occurrenceDate, 'completed')
@@ -577,6 +946,7 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
             await refetchTasks()
           }}
           onHabitMinimum={async (habit, task, remindAt) => {
+            if (previewMode && isPreviewFixtureId(habit.id)) return
             const occurrenceDate =
               isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
             await setHabitEntry(habit.id, occurrenceDate, 'minimum')
@@ -584,140 +954,121 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
             await refetchTasks()
           }}
           onHabitSkip={async (habit, task, remindAt) => {
+            if (previewMode && isPreviewFixtureId(habit.id)) return
             const occurrenceDate =
               isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
             await setHabitEntry(habit.id, occurrenceDate, 'skipped')
             await refetchHabits()
             await refetchTasks()
           }}
-          onBack={goToPreviousStep}
-          onNext={() => setStep(2)}
+          onContinue={advanceStep}
+        />
+      ) : null}
+
+      {currentStepId === 'undergrowth' && (
+        <ClearUndergrowthScreen
+          tasks={displayUndergrowthTasks}
+          onDeleteTask={(task) => void handleDeleteUndergrowthTask(task)}
+          onEditTask={(task) => {
+            if (previewMode && isPreviewFixtureId(task.id)) return
+            openEditTask(task)
+          }}
         />
       )}
 
-      {step === 2 && (
+      {currentStepId === 'inbox' && (
         <InboxReviewScreen
-          items={inboxItems}
-          loading={inboxLoading}
-          error={inboxError}
+          items={displayInboxItems}
+          loading={displayInboxLoading}
+          error={previewMode && inboxItems.length === 0 ? null : inboxError}
           onConvertToTask={openConvertInboxItem}
-          onDeleteItem={deleteInboxItem}
-          onBack={() => setStep(shouldSkipOverdueStep ? 0 : 1)}
-          onNext={() => setStep(3)}
+          onDeleteItem={async (id) => {
+            if (previewMode && isPreviewFixtureId(id)) return
+            await deleteInboxItem(id)
+          }}
+          onClose={onClose}
         />
       )}
 
-      {step === 3 && (
+      {currentStepId === 'plan' && (
         <PlanDayScreen
-          availableTasks={briefingAvailableTasks}
-          lineUpTaskIds={lineUpTaskIds}
+          lineupTasks={lineupTasks}
+          backlogCandidates={backlogCandidates}
+          goalsById={goalsById}
           calendarEvents={effectiveCalendarEventsToday}
           calendarLoading={effectiveCalendarLoading}
           calendarError={effectiveCalendarError}
-          onEditTask={openEditTask}
           onAddToLineUp={addToLineUp}
-          onRemoveFromLineUp={removeFromLineUp}
-          onBack={() => {
-            /* Back navigation: account for optional step skips (inbox + overdue) */
-            if (!shouldSkipInboxStep) {
-              setStep(2)
-              return
-            }
-            if (!shouldSkipOverdueStep) {
-              setStep(1)
-              return
-            }
-            setStep(0)
-          }}
-          onNext={() => setStep(4)}
+          onEditTask={openEditTask}
+          onToggleComplete={handleToggleTaskComplete}
+          onClose={onClose}
         />
       )}
 
-      {step >= 4 && step <= 7 && (
-        <ReflectionQuestionScreen
-          aboveQuestion={
-            step === 6
-              ? habitsLoading
-                ? (
-                    <p className="text-body text-bonsai-slate-500">Loading habits…</p>
-                  )
-                : habitsWithStreaks.length === 0
-                  ? (
-                      <p className="text-secondary text-bonsai-slate-600">
-                        No habits yet. Add habits in the Habits section to track them here.
-                      </p>
-                    )
-                  : (
-                      <div className="w-full">
-                        {/* Habit accountability summary: show only habits marked "skipped" yesterday (text-only) */}
-                        {(() => {
-                          const skipped = habitsWithStreaks
-                            .map((habit) => {
-                              const entries = entriesByHabit[habit.id] ?? []
-                              const entry = entries.find((x) => x.entry_date === yesterdayYMD)
-                              return entry?.status === 'skipped' ? habit : null
-                            })
-                            .filter((h): h is HabitWithStreaks => h != null)
+      {currentStepId === 'goalReview' && (
+        <GoalReviewScreen
+          goals={displayGoals}
+          index={goalReviewIndex}
+          onIndexChange={setGoalReviewIndex}
+          milestonesByGoal={milestonesByGoal}
+          taskTreesByMilestoneId={taskTreesByMilestoneId}
+          onUpdateMilestone={handleBriefingUpdateMilestone}
+          getTasks={briefingGetTasks}
+          onOpenEditTaskModal={openEditTask}
+          onClose={onClose}
+        />
+      )}
 
-                          return skipped.length === 0 ? (
-                            <p className="text-secondary text-bonsai-slate-600">
-                              No habits were marked as skipped yesterday.
-                            </p>
-                          ) : (
-                            <div className="space-y-1">
-                              <p className="text-secondary font-medium text-bonsai-slate-700">
-                                Habits you skipped yesterday:
-                              </p>
-                              <ul className="list-disc pl-5 text-body text-bonsai-slate-800">
-                                {skipped.map((habit) => (
-                                  <li key={habit.id}>{habit.name}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )
-                        })()}
-                      </div>
-                    )
-              : undefined
+      {currentStepId === 'habitReview' && (
+        <YesterdayHabitReviewScreen
+          completed={displayHabitBreakdown.completed}
+          missed={displayHabitBreakdown.missed}
+          gotInTheWay={reflectionAnswers.habitsGotInTheWay ?? ''}
+          doDifferentlyToday={reflectionAnswers.habitsDoDifferentlyToday ?? ''}
+          onGotInTheWayChange={(value) =>
+            setReflectionAnswers((prev) => ({ ...prev, habitsGotInTheWay: value }))
           }
-          question={REFLECTION_QUESTIONS[step - 4].label}
-          value={reflectionAnswers[REFLECTION_QUESTIONS[step - 4].key] ?? ''}
+          onDoDifferentlyChange={(value) =>
+            setReflectionAnswers((prev) => ({ ...prev, habitsDoDifferentlyToday: value }))
+          }
+          onBack={briefingGoBack}
+          onClose={onClose}
+        />
+      )}
+
+      {currentStepId === 'memorableMoment' && (
+        <MemorableMomentReflectionScreen
+          value={reflectionAnswers.memorableMoment ?? ''}
           onChange={(value) =>
-            setReflectionAnswers((prev) => ({
-              ...prev,
-              [REFLECTION_QUESTIONS[step - 4].key]: value,
-            }))
+            setReflectionAnswers((prev) => ({ ...prev, memorableMoment: value }))
           }
-          onNext={() => {
-            /* Skip accountability questions when yesterday's scheduled habits are all marked Target */
-            if (allHabitsTargetYesterday && step === 5) {
-              saveEntryAndGoToCompletion()
-              return
-            }
-
-            if (step === 7) saveEntryAndGoToCompletion()
-            else setStep(step + 1)
-          }}
-          isNextDisabled={isSavingEntry}
-          isNextLoading={isSavingEntry}
-          onBack={step > 4 ? goToPreviousStep : undefined}
-          showBack={step > 4}
+          yearsAgoEntry={yearsAgoEntry}
+          yearsAgoLoading={yearsAgoLoading}
+          onReadYearsAgoEntry={handleReadYearsAgoEntry}
+          onBack={briefingGoBack}
+          onClose={onClose}
         />
       )}
 
-      {step === 8 && (
-        <CompletionScreen onViewOverview={handleViewOverview} onClose={onClose} />
-      )}
-
-      {/* Progress bar: show for steps 1–8 (not greeting); total 9 steps */}
-      {step >= 1 && step <= 8 && (
-        <BriefingProgressBar
-          currentStep={effectiveCurrentStep}
-          totalSteps={effectiveTotalSteps}
+      {currentStepId === 'gratitude' && (
+        <GratitudeReflectionScreen
+          value={reflectionAnswers.gratefulFor ?? ''}
+          onChange={(value) =>
+            setReflectionAnswers((prev) => ({ ...prev, gratefulFor: value }))
+          }
+          onBack={briefingGoBack}
+          onClose={onClose}
         />
       )}
 
-      {/* Add/Edit task modal (overdue step edit and inbox convert-to-task) */}
+      {currentStepId === 'completion' && (
+        <CompletionScreen onViewOverview={() => void handleViewOverview()} onClose={onClose} />
+      )}
+
+      {showProgressFooter ? (
+        <BriefingProgressFooter percentComplete={percentComplete} action={footerAction} />
+      ) : null}
+
       <AddEditTaskModal
         isOpen={taskModalOpen}
         onClose={closeTaskModal}
@@ -734,16 +1085,6 @@ export function BriefingsPage({ onNavigateToReflections, onClose }: BriefingsPag
         getTaskDependencies={getTaskDependencies}
         onAddDependency={onAddDependency}
         onRemoveDependency={onRemoveDependency}
-      />
-
-      {/* Edit habit from briefing habit table (did-everything step) */}
-      <AddEditHabitModal
-        isOpen={habitBeingEdited !== null}
-        onClose={closeHabitEditModal}
-        habit={habitBeingEdited}
-        onCreateHabit={createHabit}
-        onUpdateHabit={updateHabit}
-        onDeleteHabit={deleteHabit}
       />
     </div>
   )

@@ -22,6 +22,7 @@ import { BillingSettingsSection } from './sections/BillingSettingsSection'
 import { BriefingSettingsSection } from './sections/BriefingSettingsSection'
 import { NotificationsSettingsSection } from './sections/NotificationsSettingsSection'
 import { DataManagementSettingsSection } from './sections/DataManagementSettingsSection'
+import { DevSettingsSection } from './sections/DevSettingsSection'
 
 /**
  * Settings page: account profile, integrations, notifications, and data tools.
@@ -362,6 +363,8 @@ export function SettingsPage() {
           onReflectionsFileChange={(f) => void handleImportReflectionsCsvFile(f)}
           onResetHabitsFreshStart={() => void handleResetHabitsFreshStart()}
         />
+
+        <DevSettingsSection />
 
         {/* Sign out */}
         <section className="pb-8">

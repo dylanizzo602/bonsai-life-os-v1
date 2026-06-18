@@ -8,12 +8,21 @@ export interface JournalResponses {
   body?: string
 }
 
-/** Morning briefing: core reflection questions answered in the briefing flow */
+/** Morning briefing: reflection questions answered in the briefing flow */
 export interface MorningBriefingResponses {
   memorableMoment?: string
   gratefulFor?: string
+  /** @deprecated Replaced by habit review step; kept for legacy entries */
   didEverything?: string
   whatWouldMakeEasier?: string
+  /** Habit skip review: what got in the way yesterday */
+  habitsGotInTheWay?: string
+  /** Habit skip review: what to do differently today */
+  habitsDoDifferentlyToday?: string
+  /** @deprecated Removed from morning briefing flow */
+  weekHighlights?: string
+  /** @deprecated Removed from morning briefing flow */
+  weekImprove?: string
 }
 
 /** Reflection entry stored in DB (e.g. one completed morning briefing) */
