@@ -236,4 +236,8 @@ body {
   .bonsai-gradient {
     background: linear-gradient(135deg, rgba(81, 96, 81, 0.05) 0%, rgba(81, 96, 81, 0) 100%);
   }
+  /* Notes library card shadow */
+  .note-card-shadow {
+    box-shadow: 0 10px 30px -15px rgba(81, 96, 81, 0.1);
+  }
 }

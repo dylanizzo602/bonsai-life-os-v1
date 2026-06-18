@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { MaterialIcon } from '../../../components/MaterialIcon'
 import { DashboardBentoCard } from './DashboardBentoCard'
 import { useGoals } from '../../goals/hooks/useGoals'
+import { useGoalMilestoneProgress } from '../../goals/hooks/useGoalMilestoneProgress'
 import { getGoalMaterialIcon } from '../../goals/utils/goalDisplay'
 
 export interface GoalsWidgetProps {
@@ -16,14 +17,24 @@ export interface GoalsWidgetProps {
  */
 export function GoalsWidget({ onViewAll }: GoalsWidgetProps) {
   const { goals } = useGoals()
+  const { progressByGoalId, displayProgressByGoalId } = useGoalMilestoneProgress(goals)
 
+  /* Top active goals by live progress (same rules as Goals page active section) */
   const two = useMemo(
     () =>
       [...goals]
-        .filter((g) => g.is_active !== false)
-        .sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0))
+        .filter((g) => {
+          if (g.is_active === false) return false
+          const progress = progressByGoalId[g.id] ?? g.progress ?? 0
+          return progress < 100
+        })
+        .sort(
+          (a, b) =>
+            (displayProgressByGoalId[b.id] ?? b.progress ?? 0) -
+            (displayProgressByGoalId[a.id] ?? a.progress ?? 0),
+        )
         .slice(0, 2),
-    [goals],
+    [goals, progressByGoalId, displayProgressByGoalId],
   )
 
   return (
@@ -37,7 +48,9 @@ export function GoalsWidget({ onViewAll }: GoalsWidgetProps) {
       ) : (
         <div className="flex flex-col gap-6">
           {two.map((goal, index) => {
-            const pct = Math.round(Math.min(100, Math.max(0, goal.progress ?? 0)))
+            const pct = Math.round(
+              Math.min(100, Math.max(0, displayProgressByGoalId[goal.id] ?? goal.progress ?? 0)),
+            )
             return (
               <button
                 key={goal.id}

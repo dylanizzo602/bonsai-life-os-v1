@@ -2,7 +2,7 @@
 
 import { supabase } from './client'
 import { DateTime } from 'luxon'
-import type { ReflectionEntry, CreateReflectionEntryInput } from '../../features/reflections/types'
+import type { ReflectionEntry, CreateReflectionEntryInput, UpdateReflectionEntryInput, JournalResponses } from '../../features/reflections/types'
 
 /* Zoned day range helper: compute [startOfDay, nextDayStart) in UTC for a given IANA time zone */
 function getZonedDayRangeUtc(timeZone: string, baseInstant?: DateTime): { from: string; to: string } {
@@ -118,6 +118,58 @@ export async function getReflectionEntry(id: string): Promise<ReflectionEntry | 
 }
 
 /**
+ * Update an existing reflection entry (e.g. journal title/body edits).
+ */
+export async function updateReflectionEntry(
+  id: string,
+  input: UpdateReflectionEntryInput,
+): Promise<ReflectionEntry> {
+  const payload: Record<string, unknown> = {}
+  if (input.title !== undefined) payload.title = input.title
+  if (input.responses !== undefined) payload.responses = input.responses
+  if (input.created_at !== undefined) payload.created_at = input.created_at
+
+  const { data, error } = await supabase
+    .from('reflection_entries')
+    .update(payload)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Error updating reflection entry:', error)
+    throw error
+  }
+  return data as ReflectionEntry
+}
+
+/**
+ * Fetch today's morning briefing entry for the user's calendar day (if any).
+ */
+export async function getTodaysMorningBriefingEntry(
+  timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone,
+): Promise<ReflectionEntry | null> {
+  const { from, to } = getZonedDayRangeUtc(timeZone)
+
+  const { data, error } = await supabase
+    .from('reflection_entries')
+    .select('*')
+    .eq('type', 'morning_briefing')
+    .gte('created_at', from)
+    .lt('created_at', to)
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  if (error) {
+    console.error('Error fetching today\'s morning briefing entry:', error)
+    return null
+  }
+
+  const rows = (data as ReflectionEntry[] | null) ?? []
+  return rows[0] ?? null
+}
+
+/**
  * Fetch reflection entries for listing (e.g. Reflections page), newest first.
  */
 export async function getReflectionEntriesPage(options?: {
@@ -125,20 +177,37 @@ export async function getReflectionEntriesPage(options?: {
   page?: number
   /** Number of entries per page */
   pageSize?: number
+  /** Optional search query (title or journal body) */
+  search?: string
+  /** Optional type filter */
+  types?: string[]
 }): Promise<{ entries: ReflectionEntry[]; total: number }> {
   /* Pagination inputs: clamp to safe defaults to avoid invalid ranges */
   const page = Math.max(1, options?.page ?? 1)
-  const pageSize = Math.max(1, options?.pageSize ?? 25)
+  const pageSize = Math.max(1, options?.pageSize ?? 10)
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
 
-  /* Paged query: request total count and only this page’s rows */
-  const { data, error, count } = await supabase
+  const types =
+    options?.types && options.types.length > 0
+      ? options.types
+      : ['morning_briefing', 'weekly_briefing', 'journal']
+
+  /* Base query: filtered reflection types, newest first */
+  let query = supabase
     .from('reflection_entries')
     .select('*', { count: 'exact' })
-    .neq('type', 'weekly_briefing')
+    .in('type', types)
     .order('created_at', { ascending: false })
-    .range(from, to)
+
+  if (options?.search?.trim()) {
+    const term = `%${options.search.trim()}%`
+    query = query.or(
+      `title.ilike.${term},responses->>body.ilike.${term}`,
+    )
+  }
+
+  const { data, error, count } = await query.range(from, to)
 
   if (error) {
     console.error('Error fetching reflection entries page:', error)
@@ -149,10 +218,10 @@ export async function getReflectionEntriesPage(options?: {
 }
 
 /**
- * Fetch all morning briefing entries for the current user (for CSV export).
+ * Fetch all journal entries for the current user (for CSV export).
  * Uses pagination to avoid limits for large histories.
  */
-export async function getAllMorningBriefingEntries(): Promise<ReflectionEntry[]> {
+export async function getAllJournalEntriesForExport(): Promise<ReflectionEntry[]> {
   /* Pagination settings: fetch in chunks so exports can scale */
   const pageSize = 500
   let from = 0
@@ -164,12 +233,12 @@ export async function getAllMorningBriefingEntries(): Promise<ReflectionEntry[]>
     const { data, error } = await supabase
       .from('reflection_entries')
       .select('*')
-      .eq('type', 'morning_briefing')
+      .eq('type', 'journal')
       .order('created_at', { ascending: true })
       .range(from, to)
 
     if (error) {
-      console.error('Error fetching all morning briefing entries:', error)
+      console.error('Error fetching journal entries for export:', error)
       throw error
     }
 
@@ -182,14 +251,19 @@ export async function getAllMorningBriefingEntries(): Promise<ReflectionEntry[]>
   return all
 }
 
+/** @deprecated Use getAllJournalEntriesForExport */
+export async function getAllMorningBriefingEntries(): Promise<ReflectionEntry[]> {
+  return getAllJournalEntriesForExport()
+}
+
 /**
- * Bulk insert morning briefing entries for CSV import.
+ * Bulk insert journal entries from CSV import.
  * Inserts in chunks so large imports don't exceed request limits.
  */
-export async function bulkInsertMorningBriefingEntries(
+export async function bulkInsertJournalEntriesFromCsv(
   rows: Array<{
     title: string | null
-    responses: Record<string, unknown>
+    responses: JournalResponses | Record<string, unknown>
     created_at?: string | null
   }>,
 ): Promise<void> {
@@ -199,18 +273,29 @@ export async function bulkInsertMorningBriefingEntries(
     const chunk = rows.slice(i, i + chunkSize)
 
     const payload = chunk.map((r) => ({
-      type: 'morning_briefing',
+      type: 'journal',
       title: r.title ?? null,
-      responses: r.responses ?? {},
+      responses: r.responses ?? { body: '' },
       ...(r.created_at ? { created_at: r.created_at } : {}),
     }))
 
     const { error } = await supabase.from('reflection_entries').insert(payload)
     if (error) {
-      console.error('Error bulk inserting morning briefing entries:', error)
+      console.error('Error bulk inserting journal entries from CSV:', error)
       throw error
     }
   }
+}
+
+/** @deprecated Use bulkInsertJournalEntriesFromCsv */
+export async function bulkInsertMorningBriefingEntries(
+  rows: Array<{
+    title: string | null
+    responses: Record<string, unknown>
+    created_at?: string | null
+  }>,
+): Promise<void> {
+  return bulkInsertJournalEntriesFromCsv(rows)
 }
 
 /**

@@ -23,6 +23,12 @@ export interface TaskSearchSelectProps {
   disabled?: boolean
   /** Additional CSS classes */
   className?: string
+  /** Optional classes for the search input (e.g. modal field styling) */
+  inputClassName?: string
+  /** Optional classes for the results dropdown panel */
+  dropdownClassName?: string
+  /** Optional classes for each result row */
+  optionClassName?: string
   /** ARIA label for accessibility */
   'aria-label'?: string
 }
@@ -41,6 +47,9 @@ export function TaskSearchSelect({
   label,
   disabled = false,
   className = '',
+  inputClassName = '',
+  dropdownClassName = '',
+  optionClassName = '',
   'aria-label': ariaLabel,
 }: TaskSearchSelectProps) {
   /* Search query state: user's typed text */
@@ -246,12 +255,15 @@ export function TaskSearchSelect({
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         role="combobox"
+        className={inputClassName}
       />
 
       {/* Dropdown list: shows filtered tasks when open and search query exists; limited to three results so dropdown fits content without scrolling */}
       {isOpen && searchQuery.trim() && (
         <div
-          className="absolute z-50 w-full mt-1 bg-white border border-bonsai-slate-300 rounded-lg shadow-lg"
+          className={`absolute z-50 w-full mt-1 rounded-lg border shadow-lg ${
+            dropdownClassName || 'bg-white border-bonsai-slate-300'
+          }`}
           role="listbox"
         >
           {loading ? (
@@ -273,9 +285,11 @@ export function TaskSearchSelect({
                 onClick={() => handleSelectTask(task)}
                 onMouseEnter={() => setHighlightedIndex(index)}
                 className={`w-full text-left px-4 py-2 text-body text-bonsai-slate-700 hover:bg-bonsai-slate-100 focus:bg-bonsai-slate-100 focus:outline-none ${
+                  optionClassName
+                } ${
                   index === highlightedIndex
-                    ? 'bg-bonsai-slate-100'
-                    : 'bg-white'
+                    ? optionClassName ? 'bg-surface-variant/20' : 'bg-bonsai-slate-100'
+                    : optionClassName ? '' : 'bg-white'
                 }`}
                 role="option"
                 aria-selected={index === highlightedIndex}

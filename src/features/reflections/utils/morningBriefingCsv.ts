@@ -1,9 +1,9 @@
-/* Morning briefing CSV utils: Parse imports and generate exports for reflection entries */
+/* Morning briefing CSV utils: Parse imports and generate exports for reflection entries (stored as journal type) */
 
 import Papa from 'papaparse'
-import type { MorningBriefingResponses, ReflectionEntry } from '../types'
+import type { MorningBriefingResponses, ReflectionEntry, JournalResponses } from '../types'
 
-/* CSV schema: accepted columns for morning briefing reflections */
+/* CSV schema: accepted columns for reflection import/export */
 export const MORNING_BRIEFING_CSV_HEADERS = [
   'created_at',
   'title',
@@ -19,12 +19,66 @@ export type MorningBriefingCsvHeader = (typeof MORNING_BRIEFING_CSV_HEADERS)[num
 export interface ParsedMorningBriefingCsvRow {
   created_at: string | null
   title: string | null
-  responses: MorningBriefingResponses | Record<string, unknown>
+  /** Journal body HTML assembled from CSV columns */
+  responses: JournalResponses
 }
 
 export interface MorningBriefingCsvParseError {
   rowNumber: number
   message: string
+}
+
+/** Morning briefing question labels used when converting CSV Q&A columns to journal HTML */
+const BRIEFING_QUESTION_LABELS: Record<keyof MorningBriefingResponses, string> = {
+  memorableMoment: 'What is one memorable moment from yesterday?',
+  gratefulFor: 'What is something you are grateful for?',
+  didEverything: 'Did you do everything you were supposed to yesterday? If not, why?',
+  whatWouldMakeEasier: 'What would make today easier?',
+}
+
+/* Escape HTML for plain-text answers when building journal body */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+/* Convert a single answer to HTML (preserve TipTap HTML or escape plain text) */
+function answerToHtml(value: string): string {
+  if (!value.trim()) return ''
+  const looksLikeHtml = /<\s*(p|ul|ol|li|strong|em|h1|h2|br|div)[\s>]/i.test(value)
+  if (looksLikeHtml) return value
+  return escapeHtml(value).replace(/\n/g, '<br />')
+}
+
+/**
+ * Convert morning-briefing-style CSV responses into a journal body (TipTap HTML).
+ */
+export function convertBriefingResponsesToJournalBody(
+  responses: MorningBriefingResponses | Record<string, unknown>,
+): string {
+  /* Already a journal body: use as-is */
+  const existingBody = (responses as JournalResponses).body
+  if (typeof existingBody === 'string' && existingBody.trim()) {
+    return existingBody
+  }
+
+  const r = responses as MorningBriefingResponses
+  const sections: string[] = []
+
+  for (const key of Object.keys(BRIEFING_QUESTION_LABELS) as (keyof MorningBriefingResponses)[]) {
+    const answer = r[key]
+    if (!answer?.trim()) continue
+    const label = BRIEFING_QUESTION_LABELS[key]
+    sections.push(
+      `<p><strong>${escapeHtml(label)}</strong></p>${answerToHtml(answer)}`,
+    )
+  }
+
+  return sections.join('') || '<p></p>'
 }
 
 /* Date formatting: create "Reflection – MMM d, yyyy" label for imported rows */
@@ -139,11 +193,12 @@ export async function parseMorningBriefingCsvFile(file: File): Promise<{
       }
     }
 
-    const responses = buildResponsesFromCsvRow(record)
+    const briefingResponses = buildResponsesFromCsvRow(record)
 
     /* Import title: always override to "Reflection – <date>" using created_at date */
     const title = formatImportedReflectionTitle(createdAt)
-    rows.push({ created_at: createdAt, title, responses })
+    const body = convertBriefingResponsesToJournalBody(briefingResponses)
+    rows.push({ created_at: createdAt, title, responses: { body } })
   }
 
   /* Structural parse errors from PapaParse (e.g. unmatched quotes) */
@@ -160,13 +215,17 @@ export async function parseMorningBriefingCsvFile(file: File): Promise<{
 }
 
 /**
- * Export morning briefing reflection entries to CSV with a stable header order.
- * Includes both explicit columns and `responses_json` for forward compatibility.
+ * Export journal reflection entries to CSV with a stable header order.
+ * Includes explicit Q&A columns when present (legacy imports) and `responses_json` for forward compatibility.
  */
 export function exportMorningBriefingEntriesToCsv(entries: ReflectionEntry[]): string {
   /* Flatten: map DB shape to CSV row shape */
   const rows = entries.map((entry) => {
-    const responses = (entry.responses ?? {}) as MorningBriefingResponses | Record<string, unknown>
+    const responses = (entry.responses ?? {}) as MorningBriefingResponses &
+      JournalResponses &
+      Record<string, unknown>
+
+    /* Journal entries: body lives in responses_json; Q&A columns filled when legacy fields exist */
     const r = responses as MorningBriefingResponses
 
     return {

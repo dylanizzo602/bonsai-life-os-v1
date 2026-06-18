@@ -224,3 +224,73 @@ export async function uploadIdentityBadge(
     storagePath: path,
   }
 }
+
+const NOTE_COVERS_BUCKET = 'note-covers'
+
+export interface NoteCoverUpload {
+  /** Public URL for the uploaded cover image */
+  url: string
+  /** Original filename (for display) */
+  name: string
+  /** Mime type when available */
+  type?: string
+  /** Supabase storage path (to persist in DB) */
+  storagePath: string
+}
+
+/**
+ * Note cover upload: stores under `${userId}/${noteId}/${safeName}`.
+ * Bucket must be public so cards can display covers without auth.
+ */
+export async function uploadNoteCover(noteId: string, file: File): Promise<NoteCoverUpload> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+
+  if (userError || !user) {
+    throw new Error('You must be signed in to upload a cover image.')
+  }
+
+  const ext = file.name.split('.').pop() ?? ''
+  const base = file.name.slice(0, -(ext.length + (ext ? 1 : 0)))
+  const safeName = `${base}-${Date.now()}${ext ? '.' + ext : ''}`.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const path = `${user.id}/${noteId}/${safeName}`
+
+  const { error: uploadError } = await supabase.storage
+    .from(NOTE_COVERS_BUCKET)
+    .upload(path, file, { upsert: false })
+
+  if (uploadError) {
+    console.error('Error uploading note cover:', uploadError)
+    if (uploadError.message?.includes('Bucket not found') || uploadError.message?.includes('not found')) {
+      throw new Error(
+        `Storage bucket "${NOTE_COVERS_BUCKET}" not found. Run supabase db push to create it.`,
+      )
+    }
+    throw uploadError
+  }
+
+  const { data: urlData } = supabase.storage.from(NOTE_COVERS_BUCKET).getPublicUrl(path)
+
+  return {
+    url: urlData.publicUrl,
+    name: file.name,
+    type: file.type || undefined,
+    storagePath: path,
+  }
+}
+
+/**
+ * Delete a note cover file from storage by its storage path.
+ */
+export async function deleteNoteCover(storagePath: string): Promise<void> {
+  if (!storagePath.trim()) return
+
+  const { error } = await supabase.storage.from(NOTE_COVERS_BUCKET).remove([storagePath])
+
+  if (error) {
+    console.error('Error deleting note cover:', error)
+    throw error
+  }
+}

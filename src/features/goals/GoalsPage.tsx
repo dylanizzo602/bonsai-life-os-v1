@@ -1,19 +1,16 @@
 /* Goals page: Material-style list with active cards, inactive rows, and completed forest */
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { MaterialIcon } from '../../components/MaterialIcon'
 import { GoalsIcon } from '../../components/icons'
 import { useGoals } from './hooks/useGoals'
+import { useGoalMilestoneProgress } from './hooks/useGoalMilestoneProgress'
 import { ActiveGoalCard } from './ActiveGoalCard'
 import { InactiveGoalRow } from './InactiveGoalRow'
 import { CompletedGoalsForest } from './CompletedGoalsForest'
 import { GoalDrawer } from './GoalDrawer'
 import { AddEditGoalModal } from './AddEditGoalModal'
-import { getMilestonesForGoal, getTaskTreesByMilestoneId } from '../../lib/supabase/goals'
-import type { Task } from '../tasks/types'
-import type { Goal, GoalMilestone } from './types'
-import { aggregateGoalProgressPercent } from './utils/milestoneProgress'
-import { resolveGoalProgressPercent } from './utils/goalDisplay'
+import type { Goal } from './types'
 
 /**
  * Goals page component.
@@ -23,52 +20,9 @@ import { resolveGoalProgressPercent } from './utils/goalDisplay'
 export function GoalsPage() {
   /* Data + modal state: list goals, optional detail view, create/edit modal */
   const { goals, loading, error, createGoal, createGoalWithSetup, updateGoal, refetch, patchGoal } = useGoals()
+  const { milestonesByGoal, taskTreesByMilestoneId, progressByGoalId } = useGoalMilestoneProgress(goals)
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null)
-  const [milestonesByGoal, setMilestonesByGoal] = useState<Record<string, GoalMilestone[]>>({})
-  const [taskTreesByMilestoneId, setTaskTreesByMilestoneId] = useState<Record<string, Task[]>>({})
   const [modalOpen, setModalOpen] = useState(false)
-
-  /* Fetch milestones and task trees for progress labels and bucketing */
-  useEffect(() => {
-    const fetchMilestones = async () => {
-      const milestonesMap: Record<string, GoalMilestone[]> = {}
-      const mergedTrees: Record<string, Task[]> = {}
-      for (const goal of goals) {
-        try {
-          const milestones = await getMilestonesForGoal(goal.id)
-          milestonesMap[goal.id] = milestones
-          const trees = await getTaskTreesByMilestoneId(milestones)
-          Object.assign(mergedTrees, trees)
-        } catch (err) {
-          console.error(`Error fetching milestones for goal ${goal.id}:`, err)
-          milestonesMap[goal.id] = []
-        }
-      }
-      setMilestonesByGoal(milestonesMap)
-      setTaskTreesByMilestoneId(mergedTrees)
-    }
-
-    if (goals.length > 0) {
-      void fetchMilestones()
-    } else {
-      setMilestonesByGoal({})
-      setTaskTreesByMilestoneId({})
-    }
-  }, [goals])
-
-  /* Resolve progress percent per goal for three-bucket split */
-  const progressByGoalId = useMemo(() => {
-    const map: Record<string, number> = {}
-    for (const goal of goals) {
-      map[goal.id] = resolveGoalProgressPercent(
-        goal,
-        milestonesByGoal[goal.id],
-        taskTreesByMilestoneId,
-        aggregateGoalProgressPercent,
-      )
-    }
-    return map
-  }, [goals, milestonesByGoal, taskTreesByMilestoneId])
 
   /* Split goals into active, inactive, and completed sections */
   const { activeGoals, inactiveGoals, completedGoals } = useMemo(() => {

@@ -767,6 +767,25 @@ export async function deleteMilestone(id: string): Promise<void> {
 }
 
 /**
+ * Fetch the first goal id linked to a habit (habits typically link to one goal in the modal).
+ */
+export async function getLinkedGoalIdForHabit(habitId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('goal_habits')
+    .select('goal_id')
+    .eq('habit_id', habitId)
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    console.error('Error fetching linked goal for habit:', error)
+    throw error
+  }
+
+  return data ? (data as { goal_id: string }).goal_id : null
+}
+
+/**
  * Link a habit to a goal and add history entry.
  */
 export async function linkHabitToGoal(goalId: string, habitId: string): Promise<void> {

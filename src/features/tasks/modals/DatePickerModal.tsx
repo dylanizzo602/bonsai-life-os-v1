@@ -704,7 +704,7 @@ export function DatePickerModal({
                 Start Date
               </label>
               <div
-                className={`relative flex min-w-0 items-center gap-1.5 rounded-lg px-2.5 py-2 sm:gap-2 sm:px-3 sm:py-2.5 ${dateFieldShell('start')}`}
+                className={`flex min-w-0 items-center gap-1.5 rounded-lg px-2.5 py-2 sm:gap-2 sm:px-3 sm:py-2.5 ${dateFieldShell('start')}`}
                 onPointerDown={() => setFocusedField('start')}
                 onClick={() => setFocusedField('start')}
               >
@@ -801,7 +801,7 @@ export function DatePickerModal({
                       setStart('')
                       setShowStartTime(false)
                     }}
-                    className="absolute -right-1.5 -top-1.5 rounded-full bg-surface p-0.5 text-outline-variant shadow-sm hover:text-error"
+                    className="shrink-0 rounded-full p-0.5 text-outline-variant transition-colors hover:text-error"
                     aria-label="Clear start date"
                   >
                     <MaterialIcon name="close" className="text-sm" />
@@ -820,7 +820,7 @@ export function DatePickerModal({
                 Due Date
               </label>
               <div
-                className={`relative flex min-w-0 items-center gap-1.5 rounded-lg px-2.5 py-2 sm:gap-2 sm:px-3 sm:py-2.5 ${dateFieldShell('due')}`}
+                className={`flex min-w-0 items-center gap-1.5 rounded-lg px-2.5 py-2 sm:gap-2 sm:px-3 sm:py-2.5 ${dateFieldShell('due')}`}
                 onPointerDown={() => setFocusedField('due')}
                 onClick={() => setFocusedField('due')}
               >
@@ -917,7 +917,7 @@ export function DatePickerModal({
                       setDue('')
                       setShowDueTime(false)
                     }}
-                    className="absolute -right-1.5 -top-1.5 rounded-full bg-surface p-0.5 text-outline-variant shadow-sm hover:text-error"
+                    className="shrink-0 rounded-full p-0.5 text-outline-variant transition-colors hover:text-error"
                     aria-label="Clear due date"
                   >
                     <MaterialIcon name="close" className="text-sm" />
@@ -929,8 +929,8 @@ export function DatePickerModal({
 
           {/* Quick picks and calendar */}
           <div className="grid min-w-0 grid-cols-1 gap-4 rounded-lg bg-surface-container-low/50 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:gap-6 lg:p-5">
-            {/* Quick select shortcuts */}
-            <div className="space-y-1">
+            {/* Quick select shortcuts: desktop only; mobile uses calendar + typed dates */}
+            <div className="hidden space-y-1 lg:block">
               {QUICK_OPTIONS.map((opt) => {
                 const date = opt.getDate()
                 const suffix = getQuickOptionSuffix(date, opt.isLater)
@@ -1052,7 +1052,7 @@ export function DatePickerModal({
             onClick={() => void handleSave()}
             className="w-full rounded-lg bg-sage px-6 py-2.5 font-bold text-white shadow-lg shadow-sage/20 transition-all active:scale-[0.98] hover:bg-primary-container sm:w-auto sm:px-8 sm:py-3"
           >
-            Apply Schedule
+            Apply Date(s)
           </button>
         </footer>
       </div>

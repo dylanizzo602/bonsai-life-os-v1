@@ -16,6 +16,12 @@ import { useSmartQuickAdd } from './hooks/useSmartQuickAdd'
 import type { SmartQuickAddResult } from './utils/smartQuickAdd'
 import { PlusIcon } from '../../components/icons'
 import { ModalChecklistSection } from './components/modal/ModalChecklistSection'
+import { ModalTaskRelationshipSearch } from './components/modal/ModalTaskRelationshipSearch'
+import type { TaskOption } from '../../components/TaskSearchSelect'
+import {
+  getTopLevelTaskSearchOptions,
+  mapTasksToSearchOptions,
+} from './utils/taskSearch'
 import { DatePickerModal } from './modals/DatePickerModal'
 import { PriorityPickerModal } from './modals/PriorityPickerModal'
 import { TagModal } from './modals/TagModal'
@@ -307,6 +313,44 @@ export function AddEditSubtaskModal({
 
   const dependencyTaskTitle = (taskId: string) =>
     dependencyTasks.find((t) => t.id === taskId)?.title ?? 'Unknown task'
+
+  const parentTask =
+    subtask?.parent_id != null
+      ? dependencyTasks.find((t) => t.id === subtask.parent_id) ?? null
+      : null
+  const parentTaskDisplayTitle = parentTask?.title ?? parentTaskTitle
+
+  /* Task search helpers: shared picker for parent, blocked by, and blocking */
+  const getAllTasksForSearch = useCallback(async (): Promise<TaskOption[]> => {
+    if (!getTasks) return []
+    const list = await getTasks()
+    setDependencyTasks(list)
+    return mapTasksToSearchOptions(list)
+  }, [getTasks])
+
+  const getParentTaskOptions = useCallback(async (): Promise<TaskOption[]> => {
+    if (!getTasks) return []
+    const list = await getTasks()
+    setDependencyTasks(list)
+    return getTopLevelTaskSearchOptions(list)
+  }, [getTasks])
+
+  const handleSetParentTask = useCallback(
+    async (option: TaskOption) => {
+      if (!subtask?.id || !onUpdateTask) return
+      await onUpdateTask(subtask.id, { parent_id: option.id })
+      const list = getTasks ? await getTasks() : dependencyTasks
+      setDependencyTasks(list)
+    },
+    [subtask?.id, onUpdateTask, getTasks, dependencyTasks],
+  )
+
+  const handleClearParentTask = useCallback(async () => {
+    if (!subtask?.id || !onUpdateTask) return
+    await onUpdateTask(subtask.id, { parent_id: null })
+    const list = getTasks ? await getTasks() : dependencyTasks
+    setDependencyTasks(list)
+  }, [subtask?.id, onUpdateTask, getTasks, dependencyTasks])
 
   /* Tag resolution: map @tag names to tag ids (create missing tags), then merge with selected tags. */
   const resolveSmartTagIds = async (names: string[]): Promise<string[]> => {
@@ -943,19 +987,34 @@ export function AddEditSubtaskModal({
               Relationships &amp; Links
             </span>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
-                  <MaterialIcon name="link" className="text-base" />
-                  Parent Task
-                </label>
-                {parentTaskTitle ? (
-                  <div className="flex items-center gap-2 rounded-lg border border-outline-variant/30 bg-surface-variant/10 px-4 py-2.5">
-                    <span className="flex-1 text-sm text-on-surface truncate">{parentTaskTitle}</span>
-                  </div>
-                ) : (
-                  <p className="text-secondary text-on-surface-variant">No parent task</p>
-                )}
-              </div>
+              <ModalTaskRelationshipSearch
+                label={
+                  <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+                    <MaterialIcon name="link" className="text-base" />
+                    Parent Task
+                  </label>
+                }
+                linkedItems={
+                  parentTaskDisplayTitle
+                    ? [
+                        {
+                          id: subtask?.parent_id ?? 'parent',
+                          title: parentTaskDisplayTitle,
+                          onRemove:
+                            subtask?.id && onUpdateTask
+                              ? () => void handleClearParentTask()
+                              : undefined,
+                        },
+                      ]
+                    : []
+                }
+                getTasks={getParentTaskOptions}
+                onSelectTask={handleSetParentTask}
+                excludeTaskIds={subtask?.id ? [subtask.id] : []}
+                placeholder="Search for a parent task..."
+                disabled={!subtask?.id || !onUpdateTask}
+                aria-label="Search and link parent task"
+              />
               <div className="space-y-2">
                 <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
                   <MaterialIcon name="emoji_events" className="text-base" />
@@ -994,114 +1053,72 @@ export function AddEditSubtaskModal({
             </div>
             {subtask?.id && getTaskDependencies && onAddDependency ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
-                    <MaterialIcon name="link" className="text-base" />
-                    Blocked by
-                  </label>
-                  {taskDeps.blockedBy.length > 0 ? (
-                    <ul className="space-y-1.5 mb-2">
-                      {taskDeps.blockedBy.map((dep) => (
-                        <li
-                          key={dep.id}
-                          className="flex items-center justify-between gap-2 rounded-lg border border-outline-variant/30 bg-surface-variant/10 px-3 py-2 text-sm"
-                        >
-                          <span className="truncate">{dependencyTaskTitle(dep.blocker_id)}</span>
-                          {onRemoveDependency ? (
-                            <button
-                              type="button"
-                              className="shrink-0 text-secondary text-error hover:underline"
-                              onClick={() => {
-                                void onRemoveDependency(dep.id).then(() => refreshTaskDependencies())
-                              }}
-                            >
-                              Remove
-                            </button>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <div className="relative">
-                    <select
-                      className="w-full appearance-none bg-surface-variant/10 border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none cursor-pointer"
-                      disabled={!onAddDependency}
-                      defaultValue=""
-                      onChange={(e) => {
-                        const selected = e.target.value
-                        if (!selected || !subtask?.id || !onAddDependency) return
-                        void onAddDependency({
-                          blocker_id: selected,
-                          blocked_id: subtask.id,
-                        }).then(() => refreshTaskDependencies())
-                        e.currentTarget.value = ''
-                      }}
-                    >
-                      <option value="">Select a task blocking this...</option>
-                      {dependencyTasks
-                        .filter((t) => t.id !== subtask.id)
-                        .map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.title}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
-                    <MaterialIcon name="link_off" className="text-base" />
-                    Blocking
-                  </label>
-                  {taskDeps.blocking.length > 0 ? (
-                    <ul className="space-y-1.5 mb-2">
-                      {taskDeps.blocking.map((dep) => (
-                        <li
-                          key={dep.id}
-                          className="flex items-center justify-between gap-2 rounded-lg border border-outline-variant/30 bg-surface-variant/10 px-3 py-2 text-sm"
-                        >
-                          <span className="truncate">{dependencyTaskTitle(dep.blocked_id)}</span>
-                          {onRemoveDependency ? (
-                            <button
-                              type="button"
-                              className="shrink-0 text-secondary text-error hover:underline"
-                              onClick={() => {
-                                void onRemoveDependency(dep.id).then(() => refreshTaskDependencies())
-                              }}
-                            >
-                              Remove
-                            </button>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <div className="relative">
-                    <select
-                      className="w-full appearance-none bg-surface-variant/10 border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none cursor-pointer"
-                      disabled={!onAddDependency}
-                      defaultValue=""
-                      onChange={(e) => {
-                        const selected = e.target.value
-                        if (!selected || !subtask?.id || !onAddDependency) return
-                        void onAddDependency({
-                          blocker_id: subtask.id,
-                          blocked_id: selected,
-                        }).then(() => refreshTaskDependencies())
-                        e.currentTarget.value = ''
-                      }}
-                    >
-                      <option value="">Select a task this blocks...</option>
-                      {dependencyTasks
-                        .filter((t) => t.id !== subtask.id)
-                        .map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.title}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                </div>
+                <ModalTaskRelationshipSearch
+                  label={
+                    <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+                      <MaterialIcon name="link" className="text-base" />
+                      Blocked by
+                    </label>
+                  }
+                  linkedItems={taskDeps.blockedBy.map((dep) => ({
+                    id: dep.id,
+                    title: dependencyTaskTitle(dep.blocker_id),
+                    onRemove: onRemoveDependency
+                      ? () => {
+                          void onRemoveDependency(dep.id).then(() => refreshTaskDependencies())
+                        }
+                      : undefined,
+                  }))}
+                  getTasks={getAllTasksForSearch}
+                  onSelectTask={async (option) => {
+                    if (!subtask?.id || !onAddDependency) return
+                    await onAddDependency({
+                      blocker_id: option.id,
+                      blocked_id: subtask.id,
+                    })
+                    await refreshTaskDependencies()
+                  }}
+                  excludeTaskIds={[
+                    subtask.id,
+                    ...taskDeps.blockedBy.map((dep) => dep.blocker_id),
+                  ]}
+                  placeholder="Search for a blocking task..."
+                  disabled={!onAddDependency}
+                  aria-label="Search and link tasks blocking this subtask"
+                />
+                <ModalTaskRelationshipSearch
+                  label={
+                    <label className="text-[10px] font-bold uppercase tracking-[0.1em] text-outline flex items-center gap-1.5">
+                      <MaterialIcon name="link_off" className="text-base" />
+                      Blocking
+                    </label>
+                  }
+                  linkedItems={taskDeps.blocking.map((dep) => ({
+                    id: dep.id,
+                    title: dependencyTaskTitle(dep.blocked_id),
+                    onRemove: onRemoveDependency
+                      ? () => {
+                          void onRemoveDependency(dep.id).then(() => refreshTaskDependencies())
+                        }
+                      : undefined,
+                  }))}
+                  getTasks={getAllTasksForSearch}
+                  onSelectTask={async (option) => {
+                    if (!subtask?.id || !onAddDependency) return
+                    await onAddDependency({
+                      blocker_id: subtask.id,
+                      blocked_id: option.id,
+                    })
+                    await refreshTaskDependencies()
+                  }}
+                  excludeTaskIds={[
+                    subtask.id,
+                    ...taskDeps.blocking.map((dep) => dep.blocked_id),
+                  ]}
+                  placeholder="Search for a task this blocks..."
+                  disabled={!onAddDependency}
+                  aria-label="Search and link tasks blocked by this subtask"
+                />
               </div>
             ) : (
               <p className="text-sm text-bonsai-slate-500">

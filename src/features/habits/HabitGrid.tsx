@@ -1,10 +1,10 @@
 /* HabitGrid: Card-based habits layout for a single selected date (set entry status, show streak + breakdown) */
 
 import { useMemo } from 'react'
-import { isSelectedWeekday } from '../../lib/streaks'
 import { MoreVerticalIcon } from '../../components/icons'
 import type { HabitEntry, HabitWithStreaks } from './types'
 import { formatHabitStreakCount } from './formatHabitStreak'
+import { isHabitScheduledOnDate } from './utils/habitScheduling'
 
 export interface HabitGridProps {
   /* Data: habits already decorated with streak numbers */
@@ -62,16 +62,6 @@ function formatReminderTime(hhmmss: string): string {
   const ampm = h < 12 ? 'AM' : 'PM'
   const hour12 = h % 12 || 12
   return `${hour12}:${String(m).padStart(2, '0')} ${ampm}`
-}
-
-/** True when habit is scheduled on the given date (weekly habits use weekday bitmask; others always scheduled). */
-function isHabitScheduledOnDate(habit: HabitWithStreaks, ymd: string): boolean {
-  const isWeekly =
-    habit.frequency === 'weekly' &&
-    typeof habit.frequency_target === 'number' &&
-    habit.frequency_target >= 1 &&
-    habit.frequency_target <= 127
-  return !isWeekly || isSelectedWeekday(ymd, habit.frequency_target ?? 0)
 }
 
 /**

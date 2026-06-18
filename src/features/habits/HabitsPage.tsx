@@ -1,14 +1,21 @@
-/* Habits page: Header, date picker, card grid (streak + breakdown), add/edit modal */
+/* Habits page: Material layout with active cards, completed section, reminders bento, and modal */
 
-import { useMemo, useState } from 'react'
-import { AddButton } from '../../components/AddButton'
-import { HabitsIcon, PlusIcon } from '../../components/icons'
+import { useMemo, useState, useEffect } from 'react'
+import { MaterialIcon } from '../../components/MaterialIcon'
+import { HabitsIcon } from '../../components/icons'
+import { useTasks } from '../tasks/hooks/useTasks'
 import { useHabits } from './hooks/useHabits'
 import { AddEditHabitModal } from './AddEditHabitModal'
-import { HabitGrid } from './HabitGrid'
-import type { HabitWithStreaks } from './types'
+import { HabitDateNav } from './components/HabitDateNav'
+import { HabitDatePickerModal } from './components/HabitDatePickerModal'
+import { HabitActiveCard } from './components/HabitActiveCard'
+import { HabitCompletedSection } from './components/HabitCompletedSection'
+import { HabitRemindersPanel } from './components/HabitRemindersPanel'
+import { HabitSectionHeader } from './components/HabitSectionHeader'
+import type { HabitEntry, HabitWithStreaks } from './types'
+import { isHabitScheduledOnDate } from './utils/habitScheduling'
 
-/** Format YYYY-MM-DD for a friendly label (e.g. "Today", "Tomorrow", or "Apr 9, 2026") */
+/** Format YYYY-MM-DD for a friendly label */
 function formatSelectedDateLabel(ymd: string, todayYMD: string): string {
   const d = new Date(ymd + 'T12:00:00')
   const today = new Date(todayYMD + 'T12:00:00')
@@ -19,7 +26,28 @@ function formatSelectedDateLabel(ymd: string, todayYMD: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-/** Habits section: single-day editing with a date picker and card grid */
+/** Add n days to YYYY-MM-DD */
+function addDays(ymd: string, n: number): string {
+  const d = new Date(ymd + 'T12:00:00')
+  d.setDate(d.getDate() + n)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** Resolve entry status for a habit on the selected date */
+function getStatusForDate(
+  entriesByHabit: Record<string, HabitEntry[]>,
+  habitId: string,
+  ymd: string,
+): 'completed' | 'minimum' | 'skipped' | null {
+  const entries = entriesByHabit[habitId] ?? []
+  const e = entries.find((x) => x.entry_date === ymd)
+  return e ? e.status : null
+}
+
+/** Habits section: single-day editing with date nav and Material card grid */
 export function HabitsPage() {
   const {
     habitsWithStreaks,
@@ -34,17 +62,55 @@ export function HabitsPage() {
     setEntry,
   } = useHabits()
 
-  /* Selected date: drive the hook's dateRange as a single day so entriesByHabit contains that day */
-  const [selectedDateYMD, setSelectedDateYMD] = useState(() => todayYMD)
+  const { tasks } = useTasks()
 
+  const [selectedDateYMD, setSelectedDateYMD] = useState(() => todayYMD)
   const [modalOpen, setModalOpen] = useState(false)
+  const [datePickerOpen, setDatePickerOpen] = useState(false)
   const [editingHabit, setEditingHabit] = useState<HabitWithStreaks | null>(null)
 
-  /* Sync selected date to "today" when the hook's today rolls over at midnight */
+  /* Sync hook date range to the selected single day on mount and when date changes */
+  useEffect(() => {
+    setDateRange({ start: selectedDateYMD, end: selectedDateYMD })
+  }, [selectedDateYMD, setDateRange])
+
   const selectedLabel = useMemo(
     () => formatSelectedDateLabel(selectedDateYMD, todayYMD),
     [selectedDateYMD, todayYMD],
   )
+
+  const completedSectionTitle =
+    selectedDateYMD === todayYMD ? 'Completed Today' : `Completed on ${selectedLabel}`
+
+  /* Partition habits for the selected date */
+  const { activeHabits, completedHabits, unscheduledHabits } = useMemo(() => {
+    const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
+    const sorted = [...habitsWithStreaks].sort((a, b) => collator.compare(a.name, b.name))
+
+    const active: HabitWithStreaks[] = []
+    const completed: HabitWithStreaks[] = []
+    const unscheduled: HabitWithStreaks[] = []
+
+    for (const habit of sorted) {
+      const scheduled = isHabitScheduledOnDate(habit, selectedDateYMD)
+      if (!scheduled) {
+        unscheduled.push(habit)
+        continue
+      }
+      const status = getStatusForDate(entriesByHabit, habit.id, selectedDateYMD)
+      if (status === 'completed') {
+        completed.push(habit)
+      } else {
+        active.push(habit)
+      }
+    }
+
+    return { activeHabits: active, completedHabits: completed, unscheduledHabits: unscheduled }
+  }, [habitsWithStreaks, selectedDateYMD, entriesByHabit])
+
+  const handleChangeSelectedDate = (ymd: string) => {
+    setSelectedDateYMD(ymd)
+  }
 
   const handleOpenCreate = () => {
     setEditingHabit(null)
@@ -63,116 +129,140 @@ export function HabitsPage() {
 
   const hasHabits = habitsWithStreaks.length > 0
 
-  /* Date picker: update selected date and load the entries for that day */
-  const handleChangeSelectedDate = (ymd: string) => {
-    setSelectedDateYMD(ymd)
-    setDateRange({ start: ymd, end: ymd })
-  }
-
   return (
-    <div className="min-h-full overflow-x-hidden">
-      <div className="w-full max-w-6xl mx-auto px-4 md:px-6">
-        {/* Header: title + primary action */}
-        <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-4 py-4 md:py-6">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-page-title font-bold text-bonsai-brown-700">Habits</h1>
-            <p className="text-secondary text-bonsai-slate-600 mt-1">
-              Target and minimum actions build your streak. Daily habits count consecutive days; weekly habits count
-              consecutive weeks where every chosen day is done.
-            </p>
-          </div>
-          <div className="shrink-0 w-full md:w-auto">
-            <AddButton onClick={handleOpenCreate} hideChevron>
-              New Habit
-            </AddButton>
-          </div>
-        </header>
+    <div className="min-h-full w-full max-w-[1200px] mx-auto pb-16 md:pb-24">
+      {/* Header: title, date nav, add habit */}
+      <header className="mb-10 flex flex-col items-start justify-between gap-6 md:mb-12 md:flex-row md:items-end">
+        <div>
+          <h1 className="text-page-title font-semibold font-headline tracking-tight text-on-surface">
+            Habits
+          </h1>
+          <p className="mt-2 max-w-xl text-secondary text-on-surface-variant">
+            Consistency is the bridge between goals and accomplishment.
+          </p>
+        </div>
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
+          <HabitDateNav
+            label={selectedLabel}
+            onPrev={() => handleChangeSelectedDate(addDays(selectedDateYMD, -1))}
+            onNext={() => handleChangeSelectedDate(addDays(selectedDateYMD, 1))}
+            onOpenDatePicker={() => setDatePickerOpen(true)}
+          />
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-body font-semibold text-on-primary shadow-sm transition-all hover:bg-primary-container active:scale-95"
+          >
+            <MaterialIcon name="add" className="text-[20px]" />
+            Add Habit
+          </button>
+        </div>
+      </header>
 
-        {/* Date controls: pick a day to edit past/future entries */}
-        <div className="mb-4 rounded-xl border border-bonsai-slate-200 bg-white p-3 md:p-4 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-3">
-              <label className="text-secondary font-medium text-bonsai-slate-700" htmlFor="habits-date">
-                Date
-              </label>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                <input
-                  id="habits-date"
-                  type="date"
-                  value={selectedDateYMD}
-                  onChange={(e) => handleChangeSelectedDate(e.target.value)}
-                  className="w-full sm:w-auto rounded-lg border border-bonsai-slate-200 bg-white px-3 py-2 text-body text-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500"
-                />
-                <span className="text-secondary text-bonsai-slate-600">{selectedLabel}</span>
+      {/* Loading / error */}
+      {loading && (
+        <p className="text-body py-8 text-on-surface-variant">Loading habits…</p>
+      )}
+      {error && (
+        <p className="text-body py-2 text-error" role="alert">
+          {error}
+        </p>
+      )}
+
+      {/* Empty state */}
+      {!loading && habitsWithStreaks.length === 0 && (
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <div className="w-full max-w-md rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-8 shadow-sm">
+            <div className="flex justify-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-container-high">
+                <HabitsIcon className="h-7 w-7 text-outline" />
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <h2 className="mt-4 text-center text-body font-semibold text-on-surface">
+              No habits yet
+            </h2>
+            <p className="mt-2 text-center text-body text-on-surface-variant">
+              Start building consistency by creating your first habit tracker.
+            </p>
+            <div className="mt-8 flex justify-center">
               <button
                 type="button"
-                onClick={() => handleChangeSelectedDate(todayYMD)}
-                className="w-full sm:w-auto rounded-lg border border-bonsai-slate-200 bg-white px-3 py-2 text-body font-semibold text-bonsai-slate-800 hover:bg-bonsai-slate-50 focus:outline-none focus:ring-2 focus:ring-bonsai-sage-500"
+                onClick={handleOpenCreate}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-body font-semibold text-on-primary transition-colors hover:bg-primary-container"
               >
-                Today
+                <MaterialIcon name="add" className="text-[20px]" />
+                Create Your First Habit
               </button>
             </div>
           </div>
-          <p className="mt-2 text-secondary text-bonsai-slate-500">
-            Select a date to log entries in the past or plan ahead.
-          </p>
         </div>
+      )}
 
-        {/* Status: loading / error */}
-        {loading && (
-          <p className="text-body text-bonsai-slate-500 py-8">Loading habits…</p>
-        )}
-        {error && (
-          <p className="text-body text-red-600 py-2" role="alert">
-            {error}
-          </p>
-        )}
-
-        {/* Empty state: no habits */}
-        {!loading && habitsWithStreaks.length === 0 && (
-          <div className="flex min-h-[60vh] items-center justify-center">
-            <div className="w-full max-w-md rounded-xl border border-bonsai-slate-200 bg-white p-8 shadow-sm">
-              <div className="flex justify-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-bonsai-slate-100">
-                  <HabitsIcon className="h-7 w-7 text-bonsai-slate-500" />
-                </div>
-              </div>
-              <h2 className="mt-4 text-center text-body font-semibold text-bonsai-brown-700">
-                No habits yet
-              </h2>
-              <p className="mt-2 text-center text-body text-bonsai-slate-600">
-                Start building consistency by creating your first habit tracker.
-              </p>
-              <div className="mt-8 flex justify-center">
-                <button
-                  type="button"
-                  onClick={handleOpenCreate}
-                  className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-body font-semibold text-white transition-colors hover:bg-bonsai-slate-800 focus:outline-none focus:ring-2 focus:ring-bonsai-slate-500 focus:ring-offset-2"
-                >
-                  <PlusIcon className="h-5 w-5" />
-                  Create Your First Habit
-                </button>
-              </div>
-            </div>
+      {/* Active habits grid */}
+      {!loading && hasHabits && activeHabits.length > 0 && (
+        <section className="mb-16">
+          <HabitSectionHeader label="Active Habits" />
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {activeHabits.map((habit) => (
+              <HabitActiveCard
+                key={habit.id}
+                habit={habit}
+                entriesByHabit={entriesByHabit}
+                selectedDateYMD={selectedDateYMD}
+                isScheduled
+                onSetEntry={setEntry}
+                onEditHabit={handleEditHabit}
+              />
+            ))}
           </div>
-        )}
+        </section>
+      )}
 
-        {/* Main content: habits grid */}
-        <div className="pb-8">
-          {!loading && hasHabits && (
-            <HabitGrid
-              habits={habitsWithStreaks}
-              entriesByHabit={entriesByHabit}
-              selectedDateYMD={selectedDateYMD}
-              onSetEntry={setEntry}
-              onEditHabit={handleEditHabit}
-            />
-          )}
-        </div>
-      </div>
+      {/* No active habits message when all completed or none scheduled */}
+      {!loading && hasHabits && activeHabits.length === 0 && completedHabits.length === 0 && unscheduledHabits.length === 0 && (
+        <p className="mb-8 text-body text-on-surface-variant">
+          No habits are scheduled for this date.
+        </p>
+      )}
+
+      {/* Completed section */}
+      {!loading && (
+        <HabitCompletedSection
+          title={completedSectionTitle}
+          habits={completedHabits}
+          onEditHabit={handleEditHabit}
+        />
+      )}
+
+      {/* Unscheduled habits */}
+      {!loading && unscheduledHabits.length > 0 && (
+        <section className="mb-16">
+          <HabitSectionHeader label="Not Scheduled" />
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {unscheduledHabits.map((habit) => (
+              <HabitActiveCard
+                key={habit.id}
+                habit={habit}
+                entriesByHabit={entriesByHabit}
+                selectedDateYMD={selectedDateYMD}
+                isScheduled={false}
+                onSetEntry={setEntry}
+                onEditHabit={handleEditHabit}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Reminders bento */}
+      {!loading && hasHabits && (
+        <HabitRemindersPanel
+          habits={habitsWithStreaks}
+          tasks={tasks}
+          todayYMD={todayYMD}
+          entriesByHabit={entriesByHabit}
+        />
+      )}
 
       <AddEditHabitModal
         isOpen={modalOpen}
@@ -181,6 +271,13 @@ export function HabitsPage() {
         onUpdateHabit={updateHabit}
         onDeleteHabit={deleteHabit}
         habit={editingHabit}
+      />
+
+      <HabitDatePickerModal
+        isOpen={datePickerOpen}
+        onClose={() => setDatePickerOpen(false)}
+        value={selectedDateYMD}
+        onSelect={handleChangeSelectedDate}
       />
     </div>
   )

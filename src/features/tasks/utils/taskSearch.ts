@@ -1,6 +1,17 @@
 /* taskSearch: Client-side task name search for Bonsai search results view */
 
+import type { TaskOption } from '../../../components/TaskSearchSelect'
 import type { Task } from '../types'
+
+/** Map tasks to the shared TaskSearchSelect option shape */
+export function mapTasksToSearchOptions(tasks: Task[]): TaskOption[] {
+  return tasks.map((t) => ({ id: t.id, title: t.title }))
+}
+
+/** Top-level tasks only (candidates for parent task or link-as-subtask source) */
+export function getTopLevelTaskSearchOptions(tasks: Task[]): TaskOption[] {
+  return mapTasksToSearchOptions(tasks.filter((t) => t.parent_id === null))
+}
 
 /** True when task title contains the query (case-insensitive). */
 export function matchesTaskNameSearch(task: Task, searchQuery: string): boolean {

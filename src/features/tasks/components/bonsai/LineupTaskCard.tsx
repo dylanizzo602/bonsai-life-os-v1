@@ -298,7 +298,7 @@ export function LineupTaskCard({
 
             <BonsaiTaskStatusButton
               status={task.status}
-              buttonRef={statusButtonRef}
+              buttonRef={!isDesktopLineupLayout ? statusButtonRef : undefined}
               onClick={handleStatusClick}
               disabled={!onUpdateStatus}
             />
@@ -393,7 +393,12 @@ export function LineupTaskCard({
 
         <div className="flex w-10 shrink-0 items-center justify-center">
 
-          <BonsaiTaskStatusButton status={task.status} onClick={handleStatusClick} />
+          <BonsaiTaskStatusButton
+            status={task.status}
+            buttonRef={isDesktopLineupLayout ? statusButtonRef : undefined}
+            onClick={handleStatusClick}
+            disabled={!onUpdateStatus}
+          />
 
         </div>
 

@@ -5,20 +5,10 @@ import { MaterialIcon } from '../../../components/MaterialIcon'
 import { DashboardBentoCard } from './DashboardBentoCard'
 import { useHabits } from '../../habits/hooks/useHabits'
 import { formatHabitStreakBadge } from '../../habits/formatHabitStreak'
-import type { HabitWithStreaks } from '../../habits/types'
+import { getHabitMaterialIcon } from '../../habits/utils/habitDisplay'
 
 export interface HabitsWidgetProps {
   onViewAll: () => void
-}
-
-/** Material icon for habit by name keyword */
-function getHabitMaterialIcon(habit: HabitWithStreaks): string {
-  const n = habit.name.toLowerCase()
-  if (n.includes('meditat')) return 'self_improvement'
-  if (n.includes('read')) return 'menu_book'
-  if (n.includes('exercise') || n.includes('workout') || n.includes('gym')) return 'fitness_center'
-  if (n.includes('water') || n.includes('hydrat')) return 'water_drop'
-  return 'auto_awesome_motion'
 }
 
 /**

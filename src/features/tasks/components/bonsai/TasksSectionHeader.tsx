@@ -65,10 +65,11 @@ export function TasksSectionHeader({
           <button
             type="button"
             onClick={() => onSearchExpandedChange(true)}
-            className="rounded-lg p-2 text-on-surface-variant transition-colors hover:bg-surface-container"
+            className="flex items-center gap-3 rounded-lg border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface-variant transition-colors hover:bg-surface-container"
             aria-label="Search tasks"
           >
-            <MaterialIcon name="search" />
+            <span className="text-secondary text-on-surface-variant">Search tasks</span>
+            <MaterialIcon name="search" className="shrink-0 text-on-surface-variant" />
           </button>
           <button
             type="button"

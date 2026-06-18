@@ -46,6 +46,8 @@ export interface Habit {
   /** Next scheduled instant for habit todo / linked task due alignment */
   todo_remind_at: string | null
   color: HabitColorId
+  /** Material Symbols icon name for habit display */
+  icon_name?: string
   created_at: string
   updated_at: string
 }
@@ -78,6 +80,7 @@ export interface CreateHabitInput {
   /** Additional reminder offsets in minutes relative to reminder_time (negative=before, positive=after). */
   additional_reminder_offsets_mins?: number[] | null
   color?: HabitColorId
+  icon_name?: string
 }
 
 /** Input for updating an existing habit (all optional except name can be updated) */
@@ -99,6 +102,7 @@ export interface UpdateHabitInput {
   additional_reminder_offsets_mins?: number[] | null
   reminder_id?: string | null
   color?: HabitColorId
+  icon_name?: string
 }
 
 /** Habit with integer streak (days or consecutive complete weeks) and streak dates for shading */

@@ -7,7 +7,7 @@ import { useGoogleCalendarConnection } from './hooks/useGoogleCalendarConnection
 import { useNotificationSettings } from './hooks/useNotificationSettings'
 import { useTaskImportExport } from './hooks/useTaskImportExport'
 import { requestNotificationPermission, registerServiceWorker } from '../../lib/notifications/pushClient'
-import { bulkInsertMorningBriefingEntries, getAllMorningBriefingEntries } from '../../lib/supabase/reflections'
+import { bulkInsertJournalEntriesFromCsv, getAllJournalEntriesForExport } from '../../lib/supabase/reflections'
 import { resetHabitsFreshStart } from '../../lib/supabase/habits'
 import { saveDismissedHabitReminderKeys } from '../notifications/dismissedHabitNotifications'
 import {
@@ -128,9 +128,9 @@ export function SettingsPage() {
   const handleExportReflectionsCsv = useCallback(async () => {
     try {
       clearStatus()
-      const all = await getAllMorningBriefingEntries()
+      const all = await getAllJournalEntriesForExport()
       const csvText = exportMorningBriefingEntriesToCsv(all)
-      downloadCsv('reflections-morning-briefing-export.csv', csvText)
+      downloadCsv('reflections-journal-export.csv', csvText)
     } catch (err) {
       console.error('Error exporting reflections CSV:', err)
     }
@@ -153,10 +153,10 @@ export function SettingsPage() {
           firstErrors,
         })
         if (errors.length > 0 || rows.length === 0) return
-        await bulkInsertMorningBriefingEntries(
+        await bulkInsertJournalEntriesFromCsv(
           rows.map((r) => ({
             title: r.title,
-            responses: r.responses as Record<string, unknown>,
+            responses: r.responses,
             created_at: r.created_at,
           })),
         )

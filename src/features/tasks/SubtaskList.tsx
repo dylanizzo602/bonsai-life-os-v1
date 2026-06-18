@@ -13,6 +13,7 @@ import { TaskContextPopover } from './modals/TaskContextPopover'
 import { handleDesktopTaskContextMenu } from './utils/taskContextMenu'
 import { TaskSearchSelect } from '../../components/TaskSearchSelect'
 import type { TaskOption } from '../../components/TaskSearchSelect'
+import { getTopLevelTaskSearchOptions } from './utils/taskSearch'
 import { getDependencyEnrichmentFlags } from './utils/dependencies'
 
 interface SubtaskListProps {
@@ -105,9 +106,7 @@ export function SubtaskList({
   const getTasksForLinking = useCallback(async (): Promise<TaskOption[]> => {
     if (!getTasks) return []
     const all = await getTasks()
-    return all
-      .filter((t) => t.parent_id === null)
-      .map((t) => ({ id: t.id, title: t.title }))
+    return getTopLevelTaskSearchOptions(all)
   }, [getTasks])
 
   /* Link existing task: update its parent_id to this task and refresh subtasks/enrichment */

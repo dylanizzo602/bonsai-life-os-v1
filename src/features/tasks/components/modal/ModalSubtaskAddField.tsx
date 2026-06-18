@@ -1,7 +1,12 @@
-/* ModalSubtaskAddField: Add new subtask or link an existing task from one modal-styled row */
+/* ModalSubtaskAddField: Add new subtask or link an existing task using shared task search */
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import type { TaskOption } from '../../../../components/TaskSearchSelect'
+import { useState, useCallback } from 'react'
+import { TaskSearchSelect, type TaskOption } from '../../../../components/TaskSearchSelect'
+import {
+  MODAL_TASK_SEARCH_DROPDOWN_CLASS,
+  MODAL_TASK_SEARCH_INPUT_CLASS,
+  MODAL_TASK_SEARCH_OPTION_CLASS,
+} from './modalTaskSearchStyles'
 
 export interface ModalSubtaskAddFieldProps {
   /** Parent task id (excluded from link search) */
@@ -18,8 +23,8 @@ export interface ModalSubtaskAddFieldProps {
 }
 
 /**
- * Combined subtask add + link control for the task edit modal.
- * Type to search existing tasks; Enter or Add creates a new subtask when no match is selected.
+ * Subtask add + link controls for the task edit modal.
+ * Create uses a title field; linking reuses the shared TaskSearchSelect picker.
  */
 export function ModalSubtaskAddField({
   taskId,
@@ -29,64 +34,35 @@ export function ModalSubtaskAddField({
   excludeTaskIds = [],
   disabled = false,
 }: ModalSubtaskAddFieldProps) {
-  const [query, setQuery] = useState('')
-  const [allTasks, setAllTasks] = useState<TaskOption[]>([])
-  const [loading, setLoading] = useState(false)
-  const [isOpen, setIsOpen] = useState(false)
-  const [highlightedIndex, setHighlightedIndex] = useState(-1)
+  const [title, setTitle] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
 
   const addFieldClassName =
     'flex-1 bg-surface-variant/10 border border-outline-variant/30 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none'
   const addButtonClassName =
     'px-6 py-2 bg-primary/10 text-primary rounded-lg text-xs font-bold hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0'
 
-  const excluded = useMemo(
-    () => new Set([taskId, ...excludeTaskIds]),
-    [taskId, excludeTaskIds],
-  )
-
-  /* Load linkable tasks on first focus */
-  const ensureTasksLoaded = useCallback(async () => {
-    if (loading || allTasks.length > 0) return
-    setLoading(true)
+  /* Create subtask: persist title from the add field */
+  const handleCreate = useCallback(async () => {
+    const trimmed = title.trim()
+    if (!trimmed || submitting) return
+    setSubmitting(true)
     try {
-      const tasks = await getTasksForLinking()
-      setAllTasks(tasks)
+      await onCreateSubtask(trimmed)
+      setTitle('')
     } catch (err) {
-      console.error('Error fetching tasks for subtask link:', err)
+      console.error('Error creating subtask:', err)
     } finally {
-      setLoading(false)
+      setSubmitting(false)
     }
-  }, [allTasks.length, getTasksForLinking, loading])
+  }, [onCreateSubtask, submitting, title])
 
-  /* Filter tasks for the link dropdown */
-  const filteredTasks = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return []
-    return allTasks
-      .filter((t) => !excluded.has(t.id))
-      .filter((t) => t.title.toLowerCase().includes(q))
-      .sort((a, b) => {
-        const aIdx = a.title.toLowerCase().indexOf(q)
-        const bIdx = b.title.toLowerCase().indexOf(q)
-        if (aIdx === bIdx) return a.title.localeCompare(b.title)
-        return aIdx - bIdx
-      })
-      .slice(0, 3)
-  }, [allTasks, excluded, query])
-
-  const handleSelectLink = useCallback(
+  /* Link existing task: delegate to shared search picker */
+  const handleLinkExistingTask = useCallback(
     async (task: TaskOption) => {
       setSubmitting(true)
       try {
         await onLinkExistingTask(task)
-        setQuery('')
-        setIsOpen(false)
-        setHighlightedIndex(-1)
-        inputRef.current?.blur()
       } catch (err) {
         console.error('Error linking task as subtask:', err)
       } finally {
@@ -96,95 +72,22 @@ export function ModalSubtaskAddField({
     [onLinkExistingTask],
   )
 
-  const handleCreate = useCallback(async () => {
-    const trimmed = query.trim()
-    if (!trimmed || submitting) return
-    setSubmitting(true)
-    try {
-      await onCreateSubtask(trimmed)
-      setQuery('')
-      setIsOpen(false)
-      setHighlightedIndex(-1)
-    } catch (err) {
-      console.error('Error creating subtask:', err)
-    } finally {
-      setSubmitting(false)
-    }
-  }, [onCreateSubtask, query, submitting])
-
-  /* Close dropdown on outside click */
-  useEffect(() => {
-    if (!isOpen) return
-    const onMouseDown = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false)
-        setHighlightedIndex(-1)
-      }
-    }
-    document.addEventListener('mousedown', onMouseDown)
-    return () => document.removeEventListener('mousedown', onMouseDown)
-  }, [isOpen])
-
   return (
-    <div ref={containerRef} className="relative">
+    <div className="space-y-3">
+      {/* Create row: new subtask title + Add button */}
       <div className="flex gap-2">
         <input
-          ref={inputRef}
           className={addFieldClassName}
-          placeholder="Add or link a subtask"
+          placeholder="Add a new subtask"
           type="text"
-          value={query}
+          value={title}
           disabled={disabled || submitting}
-          aria-expanded={isOpen}
-          aria-haspopup="listbox"
-          role="combobox"
-          aria-label="Add or link a subtask"
-          onChange={(e) => {
-            const value = e.target.value
-            setQuery(value)
-            setIsOpen(value.trim().length > 0)
-            setHighlightedIndex(-1)
-          }}
-          onFocus={() => {
-            void ensureTasksLoaded()
-            if (query.trim()) setIsOpen(true)
-          }}
+          aria-label="New subtask title"
+          onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => {
-            if (disabled || submitting) return
-            switch (e.key) {
-              case 'ArrowDown':
-                if (filteredTasks.length === 0) return
-                e.preventDefault()
-                setIsOpen(true)
-                setHighlightedIndex((prev) =>
-                  prev < filteredTasks.length - 1 ? prev + 1 : prev,
-                )
-                break
-              case 'ArrowUp':
-                if (filteredTasks.length === 0) return
-                e.preventDefault()
-                setIsOpen(true)
-                setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : -1))
-                break
-              case 'Enter':
-                e.preventDefault()
-                if (
-                  highlightedIndex >= 0 &&
-                  highlightedIndex < filteredTasks.length
-                ) {
-                  void handleSelectLink(filteredTasks[highlightedIndex])
-                } else {
-                  void handleCreate()
-                }
-                break
-              case 'Escape':
-                e.preventDefault()
-                setIsOpen(false)
-                setHighlightedIndex(-1)
-                inputRef.current?.blur()
-                break
-              default:
-                break
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              void handleCreate()
             }
           }}
         />
@@ -192,45 +95,24 @@ export function ModalSubtaskAddField({
           type="button"
           className={addButtonClassName}
           onClick={() => void handleCreate()}
-          disabled={disabled || submitting || !query.trim()}
+          disabled={disabled || submitting || !title.trim()}
         >
           Add
         </button>
       </div>
 
-      {/* Link matches dropdown */}
-      {isOpen && query.trim() ? (
-        <div
-          className="absolute z-50 mt-1 w-full rounded-lg border border-outline-variant/30 bg-surface shadow-lg"
-          role="listbox"
-        >
-          {loading ? (
-            <div className="px-3 py-2 text-secondary text-on-surface-variant">
-              Loading tasks...
-            </div>
-          ) : filteredTasks.length === 0 ? (
-            <div className="px-3 py-2 text-secondary text-on-surface-variant">
-              No matching tasks — press Add to create a new subtask
-            </div>
-          ) : (
-            filteredTasks.map((task, index) => (
-              <button
-                key={task.id}
-                type="button"
-                onClick={() => void handleSelectLink(task)}
-                onMouseEnter={() => setHighlightedIndex(index)}
-                className={`w-full px-3 py-2 text-left text-sm text-on-surface hover:bg-surface-variant/20 ${
-                  index === highlightedIndex ? 'bg-surface-variant/20' : ''
-                }`}
-                role="option"
-                aria-selected={index === highlightedIndex}
-              >
-                Link: {task.title}
-              </button>
-            ))
-          )}
-        </div>
-      ) : null}
+      {/* Link row: shared task search with top match suggestions */}
+      <TaskSearchSelect
+        getTasks={getTasksForLinking}
+        onSelectTask={handleLinkExistingTask}
+        excludeTaskIds={[taskId, ...excludeTaskIds]}
+        placeholder="Search to link an existing task..."
+        disabled={disabled || submitting}
+        aria-label="Search and link existing task as subtask"
+        inputClassName={MODAL_TASK_SEARCH_INPUT_CLASS}
+        dropdownClassName={MODAL_TASK_SEARCH_DROPDOWN_CLASS}
+        optionClassName={MODAL_TASK_SEARCH_OPTION_CLASS}
+      />
     </div>
   )
 }

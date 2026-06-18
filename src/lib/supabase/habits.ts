@@ -113,6 +113,7 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
     reminder_id: null,
     todo_remind_at: todoRemindAt,
     color: input.color ?? 'green',
+    icon_name: input.icon_name ?? 'spa',
   }
 
   if (input.user_id) {
@@ -233,6 +234,7 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
   }
   if (input.reminder_id !== undefined) updateData.reminder_id = input.reminder_id
   if (input.color !== undefined) updateData.color = input.color
+  if (input.icon_name !== undefined) updateData.icon_name = input.icon_name
   updateData.todo_remind_at = todoRemindAt
 
   const { data, error } = await supabase
