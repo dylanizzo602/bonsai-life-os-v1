@@ -1,5 +1,6 @@
 /* BriefingProgressFooter: Fixed bottom progress bar for the morning briefing flow */
 
+import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 
 export interface BriefingProgressFooterProps {
@@ -22,8 +23,13 @@ export function BriefingProgressFooter({
 
   const percent = Math.min(100, Math.max(0, percentComplete))
 
-  return (
-    <div className="fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-surface via-surface to-transparent pb-[env(safe-area-inset-bottom)]">
+  /* Portal: escape BaseLayout scroll container so fixed positioning stays viewport-pinned */
+  const footer = (
+    <div
+      className="fixed inset-x-0 bottom-0 z-[45] bg-gradient-to-t from-surface via-surface to-transparent pb-[env(safe-area-inset-bottom)]"
+      role="region"
+      aria-label="Morning briefing progress"
+    >
       <div className="mx-auto w-full max-w-5xl px-4 pb-6 pt-4 md:px-8">
         {/* Optional step CTA slot */}
         {action != null ? <div className="mb-4 flex justify-center">{action}</div> : null}
@@ -50,4 +56,6 @@ export function BriefingProgressFooter({
       </div>
     </div>
   )
+
+  return createPortal(footer, document.body)
 }

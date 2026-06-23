@@ -1,10 +1,12 @@
-/* NotificationsPopover: Habit reminders in-app (full-screen mobile, anchored desktop) */
+/* NotificationsPopover: In-app notifications (habits, tasks, briefing) — mobile full-screen, desktop anchored */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { MaterialIcon } from '../../../components/MaterialIcon'
 import { HabitReminderItem } from '../../habits/HabitReminderItem'
 import type { useInAppNotifications } from '../hooks/useInAppNotifications'
+import { BriefingNotificationItem } from './BriefingNotificationItem'
+import { TaskNotificationItem } from './TaskNotificationItem'
 
 const PANEL_MAX_WIDTH = 420
 const ANCHOR_GAP_PX = 8
@@ -17,8 +19,10 @@ interface NotificationsPopoverProps {
   onClose: () => void
   triggerRef: React.RefObject<HTMLElement | null>
   notifications: InAppNotifications
-  /** Navigate to Tasks when user taps a reminder title area */
+  /** Navigate to Tasks when user taps a task or habit reminder */
   onGoToTasks?: () => void
+  /** Navigate to Briefings when user taps the morning briefing row */
+  onGoToBriefings?: () => void
 }
 
 /** Match Tailwind `md` breakpoint: mobile = viewport below 768px */
@@ -39,7 +43,7 @@ function useIsMobileViewport(): boolean {
 }
 
 /**
- * Notifications UI: habit reminders with Target / Minimum / Skip actions.
+ * Notifications UI: mixed feed with dismiss actions and habit quick-complete buttons.
  */
 export function NotificationsPopover({
   isOpen,
@@ -47,20 +51,21 @@ export function NotificationsPopover({
   triggerRef,
   notifications,
   onGoToTasks,
+  onGoToBriefings,
 }: NotificationsPopoverProps) {
   const isMobile = useIsMobileViewport()
   const panelRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState({ top: 0, left: 0, width: PANEL_MAX_WIDTH })
 
   const {
-    visibleReminders,
-    dismissReminder,
+    visibleNotifications,
+    dismissNotification,
     dismissAll,
     runHabitAction,
     actionInFlightIds,
   } = notifications
 
-  /* Refresh tasks/habits when panel opens */
+  /* Refresh tasks/habits/briefing when panel opens */
   useEffect(() => {
     if (isOpen) {
       void notifications.refetch()
@@ -118,7 +123,7 @@ export function NotificationsPopover({
       window.removeEventListener('resize', updatePosition)
       window.removeEventListener('scroll', updatePosition, true)
     }
-  }, [isOpen, isMobile, triggerRef, visibleReminders.length])
+  }, [isOpen, isMobile, triggerRef, visibleNotifications.length])
 
   /* ESC to close */
   useEffect(() => {
@@ -135,16 +140,17 @@ export function NotificationsPopover({
 
   const panelContent = (
     <NotificationsPanel
-      reminders={visibleReminders}
+      items={visibleNotifications}
       showCloseButton={isMobile}
       onClose={onClose}
       onDismissAll={() => void dismissAll()}
-      onDismissReminder={dismissReminder}
+      onDismiss={dismissNotification}
       onTargetComplete={(row) => void runHabitAction(row.rowKey, row, 'completed')}
       onMinimum={(row) => void runHabitAction(row.rowKey, row, 'minimum')}
       onSkip={(row) => void runHabitAction(row.rowKey, row, 'skipped')}
       actionInFlightIds={actionInFlightIds}
       onGoToTasks={onGoToTasks}
+      onGoToBriefings={onGoToBriefings}
     />
   )
 
@@ -191,31 +197,46 @@ export function NotificationsPopover({
 }
 
 interface NotificationsPanelProps {
-  reminders: InAppNotifications['visibleReminders']
+  items: InAppNotifications['visibleNotifications']
   showCloseButton: boolean
   onClose: () => void
   onDismissAll: () => void
-  onDismissReminder: (rowKey: string) => void
-  onTargetComplete: (row: InAppNotifications['visibleReminders'][number]) => void
-  onMinimum: (row: InAppNotifications['visibleReminders'][number]) => void
-  onSkip: (row: InAppNotifications['visibleReminders'][number]) => void
+  onDismiss: (rowKey: string) => void
+  onTargetComplete: (row: Extract<InAppNotifications['visibleNotifications'][number], { kind: 'habit' }>) => void
+  onMinimum: (row: Extract<InAppNotifications['visibleNotifications'][number], { kind: 'habit' }>) => void
+  onSkip: (row: Extract<InAppNotifications['visibleNotifications'][number], { kind: 'habit' }>) => void
   actionInFlightIds: Set<string>
   onGoToTasks?: () => void
+  onGoToBriefings?: () => void
 }
 
-/** Shared header + scrollable habit reminder list */
+/** Shared header + scrollable mixed notification list */
 function NotificationsPanel({
-  reminders,
+  items,
   showCloseButton,
   onClose,
   onDismissAll,
-  onDismissReminder,
+  onDismiss,
   onTargetComplete,
   onMinimum,
   onSkip,
   actionInFlightIds,
   onGoToTasks,
+  onGoToBriefings,
 }: NotificationsPanelProps) {
+  const dismissButtonClass =
+    'absolute right-2 top-2 rounded-md border border-outline-variant/40 bg-surface-container-lowest px-2 py-0.5 text-xs font-semibold text-primary shadow-sm hover:bg-primary/10'
+
+  const handleOpenTasks = () => {
+    onGoToTasks?.()
+    onClose()
+  }
+
+  const handleOpenBriefings = () => {
+    onGoToBriefings?.()
+    onClose()
+  }
+
   return (
     <>
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-outline-variant/20 px-5 py-4 md:px-6 md:py-5">
@@ -234,7 +255,7 @@ function NotificationsPanel({
             Notifications
           </h2>
         </div>
-        {reminders.length > 0 ? (
+        {items.length > 0 ? (
           <button
             type="button"
             onClick={onDismissAll}
@@ -246,45 +267,80 @@ function NotificationsPanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4 md:max-h-[min(600px,70vh)] md:p-5">
-        {reminders.length === 0 ? (
+        {items.length === 0 ? (
           <p className="py-10 text-center text-secondary text-on-surface-variant">
             You&apos;re all caught up.
           </p>
         ) : (
           <div className="space-y-3">
-            {reminders.map((row) => (
-              <div key={row.rowKey} className="relative">
-                <HabitReminderItem
-                  habit={row.habit}
-                  task={row.task}
-                  remindAt={row.remindAt}
-                  reminderTime={row.habit.reminder_time}
-                  onTargetComplete={() => onTargetComplete(row)}
-                  onMinimum={() => onMinimum(row)}
-                  onSkip={() => onSkip(row)}
-                  actionsDisabled={actionInFlightIds.has(row.rowKey)}
-                  density="compact"
-                  showStreakBreakdown={false}
-                />
-                <button
-                  type="button"
-                  onClick={() => void onDismissReminder(row.rowKey)}
-                  className="absolute right-2 top-2 rounded-md border border-outline-variant/40 bg-surface-container-lowest px-2 py-0.5 text-xs font-semibold text-primary shadow-sm hover:bg-primary/10"
-                  aria-label="Dismiss reminder"
-                >
-                  Dismiss
-                </button>
-              </div>
-            ))}
+            {items.map((item) => {
+              if (item.kind === 'morning_briefing') {
+                return (
+                  <div key={item.rowKey} className="relative">
+                    <BriefingNotificationItem onOpen={handleOpenBriefings} />
+                    <button
+                      type="button"
+                      onClick={() => void onDismiss(item.rowKey)}
+                      className={dismissButtonClass}
+                      aria-label="Dismiss notification"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )
+              }
+
+              if (item.kind === 'task_overdue' || item.kind === 'task_due_soon') {
+                return (
+                  <div key={item.rowKey} className="relative">
+                    <TaskNotificationItem
+                      task={item.task}
+                      variant={item.kind}
+                      onOpen={handleOpenTasks}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void onDismiss(item.rowKey)}
+                      className={dismissButtonClass}
+                      aria-label="Dismiss notification"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )
+              }
+
+              return (
+                <div key={item.rowKey} className="relative">
+                  <HabitReminderItem
+                    habit={item.habit}
+                    task={item.task}
+                    remindAt={item.remindAt}
+                    reminderTime={item.habit.reminder_time}
+                    onTargetComplete={() => onTargetComplete(item)}
+                    onMinimum={() => onMinimum(item)}
+                    onSkip={() => onSkip(item)}
+                    actionsDisabled={actionInFlightIds.has(item.rowKey)}
+                    density="compact"
+                    showStreakBreakdown={false}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void onDismiss(item.rowKey)}
+                    className={dismissButtonClass}
+                    aria-label="Dismiss reminder"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )
+            })}
           </div>
         )}
         {onGoToTasks ? (
           <button
             type="button"
-            onClick={() => {
-              onGoToTasks()
-              onClose()
-            }}
+            onClick={handleOpenTasks}
             className="mt-4 w-full text-center text-secondary font-medium text-primary hover:underline"
           >
             Open Tasks

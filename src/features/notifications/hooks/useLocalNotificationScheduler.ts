@@ -1,6 +1,5 @@
 /* Local notification scheduler: trigger browser notifications for task/habit/briefing time rules while the app is open */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { DateTime } from 'luxon'
 import { useAuth } from '../../auth/AuthContext'
 import { useUserTimeZone } from '../../settings/useUserTimeZone'
 import { getTasks } from '../../../lib/supabase/tasks'
@@ -18,6 +17,11 @@ import type { Habit } from '../../habits/types'
 import { resolveHabitReminderInstants } from '../../habits/habitReminderEligibility'
 import { getDueStatus } from '../../tasks/utils/date'
 import { isHabitOccurrenceResolved } from '../../../lib/habitReminderOccurrences'
+import {
+  getDayKeyInTimeZone,
+  isWithinMorningBriefingNoonWindow,
+  resolveNoonGateTimeZone,
+} from '../utils/notificationTime'
 
 /** Local scheduler polling cadence: frequent enough to catch 12pm and minute-level habit/timed due transitions */
 const TICK_MS = 30 * 1000
@@ -30,24 +34,6 @@ const NOTIFIABLE_TASK_STATUSES = new Set(['active', 'in_progress'])
 
 /** Timeout for service worker readiness so scheduler ticks can't hang indefinitely */
 const SW_READY_TIMEOUT_MS = 1500
-
-/** Morning briefing noon window: only notify in a short period after local noon. */
-const MORNING_BRIEFING_NOON_WINDOW_MS = 60 * 1000
-
-/** Device timezone: for local-only notifications, prefer the current device zone. */
-function getDeviceTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone
-}
-
-/**
- * Resolve the best timezone to use for time-of-day gates like "noon".
- * Prefer the app's effective user timezone (used for "today" semantics across the app).
- * Fall back to device timezone only when the app timezone is the non-IANA placeholder 'local'.
- */
-function resolveNoonGateTimeZone(notificationTimeZone: string): string {
-  if (notificationTimeZone && notificationTimeZone !== 'local') return notificationTimeZone
-  return getDeviceTimeZone()
-}
 
 /** Race a promise against a timeout to avoid hanging tick loops */
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -94,19 +80,6 @@ function markNotified(dedupeKey: string, sessionDedupe: Set<string>): void {
   } catch {
     // ignore
   }
-}
-
-/** Build a stable YYYY-MM-DD key in the active user time zone for per-day dedupe. */
-function getDayKeyInTimeZone(timeZone: string): string {
-  return DateTime.now().setZone(timeZone).toFormat('yyyy-LL-dd')
-}
-
-/** Noon gate: only allow the briefing notification in the first few minutes after 12pm local time. */
-function isWithinMorningBriefingNoonWindow(timeZone: string): boolean {
-  const nowZ = DateTime.now().setZone(timeZone)
-  const noon = nowZ.set({ hour: 12, minute: 0, second: 0, millisecond: 0 })
-  const elapsedMs = nowZ.toMillis() - noon.toMillis()
-  return elapsedMs >= 0 && elapsedMs <= MORNING_BRIEFING_NOON_WINDOW_MS
 }
 
 /**

@@ -404,7 +404,8 @@ export function formatDueDateOnly(
   if (dueDate == null || dueDate === '') return null
   if (isTodayInZone(dueDate, timeZone)) return getDueDayOnlyLabel(dueDate, 'Today', timeZone)
   if (isTomorrowInZone(dueDate, timeZone)) return getDueDayOnlyLabel(dueDate, 'Tomorrow', timeZone)
-  return formatDateShort(dueDate, timeZone)
+  /* Upcoming dates: weekday abbrev within 7 days (matches formatStartDueDisplay / lineup cards) */
+  return formatDateWithOptionalTime(dueDate, timeZone)
 }
 
 /**

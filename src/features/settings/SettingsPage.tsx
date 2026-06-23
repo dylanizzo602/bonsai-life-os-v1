@@ -3,7 +3,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useAccountSettings } from './hooks/useAccountSettings'
-import { useGoogleCalendarConnection } from './hooks/useGoogleCalendarConnection'
 import { useNotificationSettings } from './hooks/useNotificationSettings'
 import { useTaskImportExport } from './hooks/useTaskImportExport'
 import { requestNotificationPermission, registerServiceWorker } from '../../lib/notifications/pushClient'
@@ -45,14 +44,6 @@ export function SettingsPage() {
     saveProfile,
     saveEmail,
   } = useAccountSettings(user)
-
-  const {
-    loading: googleCalendarLoading,
-    connected: googleCalendarConnected,
-    message: googleCalendarMessage,
-    startConnect: startGoogleCalendarConnect,
-    disconnect: disconnectGoogleCalendar,
-  } = useGoogleCalendarConnection()
 
   const {
     loading: loadingNotifications,
@@ -300,14 +291,7 @@ export function SettingsPage() {
           onSave={() => void handleSaveProfileSection()}
         />
 
-        <IntegrationsSettingsSection
-          connected={googleCalendarConnected}
-          loading={googleCalendarLoading}
-          message={googleCalendarMessage}
-          disabled={disabled}
-          onConnect={() => void startGoogleCalendarConnect()}
-          onDisconnect={() => void disconnectGoogleCalendar()}
-        />
+        <IntegrationsSettingsSection />
 
         <BillingSettingsSection />
 

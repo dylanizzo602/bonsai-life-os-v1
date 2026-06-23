@@ -11,6 +11,7 @@ import { CompletedGoalsForest } from './CompletedGoalsForest'
 import { GoalDrawer } from './GoalDrawer'
 import { AddEditGoalModal } from './AddEditGoalModal'
 import type { Goal } from './types'
+import { consumeSearchOpenIntent } from '../search/searchOpenIntent'
 
 /**
  * Goals page component.
@@ -21,7 +22,12 @@ export function GoalsPage() {
   /* Data + modal state: list goals, optional detail view, create/edit modal */
   const { goals, loading, error, createGoal, createGoalWithSetup, updateGoal, refetch, patchGoal } = useGoals()
   const { milestonesByGoal, taskTreesByMilestoneId, progressByGoalId } = useGoalMilestoneProgress(goals)
-  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null)
+  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(() => {
+    const intent = consumeSearchOpenIntent()
+    if (intent?.kind === 'goal') return intent.id
+    if (intent?.kind === 'milestone') return intent.goalId
+    return null
+  })
   const [modalOpen, setModalOpen] = useState(false)
 
   /* Split goals into active, inactive, and completed sections */

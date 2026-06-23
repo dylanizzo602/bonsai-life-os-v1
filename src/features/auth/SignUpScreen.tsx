@@ -218,11 +218,15 @@ export function SignUpScreen({
             </div>
             <button
               type="button"
-              className="border-outline-variant/40 bg-surface-container-low hover:bg-surface-container flex w-full items-center justify-center gap-2 rounded-lg border py-3 transition-colors duration-200"
-              aria-label="Sign up with Google (not yet available)"
+              disabled
+              className="border-outline-variant/40 bg-surface-container-low/50 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border py-3 opacity-60 grayscale"
+              aria-label="Sign up with Google — coming soon"
             >
               <GoogleIcon />
               <span className="text-on-surface text-sm font-medium">Google</span>
+              <span className="rounded bg-outline-variant/30 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-outline">
+                Coming Soon
+              </span>
             </button>
           </div>
         </div>

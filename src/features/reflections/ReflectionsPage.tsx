@@ -10,6 +10,7 @@ import { JournalEntryEditor } from './components/JournalEntryEditor'
 import { WeeklyEntryView } from './components/WeeklyEntryView'
 import { useReflections } from './hooks/useReflections'
 import { useBriefingStatus } from './hooks/useBriefingStatus'
+import { peekSearchOpenIntent, clearSearchOpenIntent } from '../search/searchOpenIntent'
 
 interface ReflectionsPageProps {
   /** Open morning briefing; pass true to continue today's session from the greeting */
@@ -75,6 +76,29 @@ export function ReflectionsPage({ onOpenMorningBriefing }: ReflectionsPageProps)
       setDetailLoading(false)
     }
   }, [])
+
+  /* Global search: open reflection entry from search result */
+  useEffect(() => {
+    const intent = peekSearchOpenIntent()
+    if (intent?.kind !== 'reflection') return
+
+    const existing = entries.find((e) => e.id === intent.id)
+    if (existing) {
+      clearSearchOpenIntent()
+      void openEntry(existing)
+      return
+    }
+
+    let cancelled = false
+    void getReflectionEntry(intent.id).then((entry) => {
+      if (cancelled || !entry) return
+      clearSearchOpenIntent()
+      void openEntry(entry)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [entries, openEntry])
 
   const handleBackToList = useCallback(() => {
     setSelectedEntry(null)

@@ -205,6 +205,7 @@ export function HabitModalForm({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Morning Meditation"
+                autoFocus
                 className="w-full border-b-2 border-surface-container-highest bg-transparent px-0 py-3 text-body font-medium text-on-surface outline-none transition-all placeholder:text-outline-variant focus:border-primary focus:ring-0"
               />
             </div>

@@ -2,9 +2,17 @@
 
 import type { ReactNode } from 'react'
 import { SearchPanelBody } from './SearchPanelBody'
+import type { SearchQuickActionId, SearchResult } from '../types'
 
 interface DesktopSearchPanelProps {
   className?: string
+  query: string
+  results: SearchResult[]
+  loading?: boolean
+  error?: string | null
+  highlightedIndex: number
+  onQuickAction: (id: SearchQuickActionId) => void
+  onSelectResult: (result: SearchResult) => void
 }
 
 /** Keyboard hint chip for search footer */
@@ -17,9 +25,18 @@ function Kbd({ children }: { children: ReactNode }) {
 }
 
 /**
- * Search results popover (placeholder content): quick actions, tasks, notes, keyboard hints.
+ * Search results popover: quick actions, live results, keyboard hints.
  */
-export function DesktopSearchPanel({ className = '' }: DesktopSearchPanelProps) {
+export function DesktopSearchPanel({
+  className = '',
+  query,
+  results,
+  loading,
+  error,
+  highlightedIndex,
+  onQuickAction,
+  onSelectResult,
+}: DesktopSearchPanelProps) {
   return (
     <div
       className={`flex max-h-[min(600px,calc(100vh-8rem))] flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest ambient-shadow ${className}`.trim()}
@@ -27,7 +44,15 @@ export function DesktopSearchPanel({ className = '' }: DesktopSearchPanelProps) 
       aria-label="Search"
     >
       <div className="bonsai-scrollbar flex-1 overflow-y-auto p-2">
-        <SearchPanelBody />
+        <SearchPanelBody
+          query={query}
+          results={results}
+          loading={loading}
+          error={error}
+          highlightedIndex={highlightedIndex}
+          onQuickAction={onQuickAction}
+          onSelectResult={onSelectResult}
+        />
       </div>
 
       <footer className="flex shrink-0 items-center justify-between border-t border-outline-variant/30 bg-surface-container-low/50 px-4 py-3">

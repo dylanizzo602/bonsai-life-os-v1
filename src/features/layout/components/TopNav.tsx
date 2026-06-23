@@ -120,7 +120,7 @@ export function TopNav({
       <div className="flex items-center gap-2 text-primary md:gap-4">
         {/* Desktop: expanding search; mobile/tablet: placeholder until dedicated design */}
         <div className="relative hidden h-10 w-10 shrink-0 lg:block">
-          <DesktopSearch onOpenChange={setIsDesktopSearchOpen} />
+          <DesktopSearch onOpenChange={setIsDesktopSearchOpen} onNavigate={onNavigate} />
         </div>
         <button
           type="button"
@@ -133,6 +133,7 @@ export function TopNav({
         <NotificationBellButton
           className={utilityButtonClass}
           onGoToTasks={() => onNavigate('tasks')}
+          onGoToBriefings={() => onNavigate('briefings')}
         >
           <BellIcon className="h-6 w-6" />
         </NotificationBellButton>

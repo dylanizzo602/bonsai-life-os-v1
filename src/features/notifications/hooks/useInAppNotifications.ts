@@ -1,4 +1,4 @@
-/* useInAppNotifications: Habit reminders in the notification bell (DB-backed per-day instances) */
+/* useInAppNotifications: In-app notification bell feed (habits, tasks, morning briefing) */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -12,6 +12,7 @@ import { useUserTimeZone } from '../../settings/useUserTimeZone'
 import { formatStartDueDisplay } from '../../tasks/utils/date'
 import type { HabitWithStreaks } from '../../habits/types'
 import type { Task } from '../../tasks/types'
+import { getHasCompletedMorningBriefingToday } from '../../../lib/supabase/reflections'
 import {
   dismissHabitReminderByOccurrence,
   dismissHabitReminderNotification,
@@ -25,8 +26,17 @@ import {
   loadDismissedHabitReminderKeys,
   saveDismissedHabitReminderKeys,
 } from '../dismissedHabitNotifications'
+import {
+  dismissMorningBriefingToday,
+  isMorningBriefingDismissedToday,
+  loadDismissedTaskNotificationKeys,
+  saveDismissedTaskNotificationKeys,
+} from '../dismissedInAppNotifications'
+import { buildMorningBriefingNotificationRow } from '../utils/inAppBriefingNotification'
+import { buildTaskNotificationRows } from '../utils/inAppTaskNotifications'
 
 export type InAppHabitReminderRow = {
+  kind: 'habit'
   notificationId: string
   habit: HabitWithStreaks
   task: Task
@@ -35,8 +45,32 @@ export type InAppHabitReminderRow = {
   rowKey: string
 }
 
+export type InAppTaskOverdueNotification = {
+  kind: 'task_overdue'
+  task: Task
+  rowKey: string
+}
+
+export type InAppTaskDueSoonNotification = {
+  kind: 'task_due_soon'
+  task: Task
+  rowKey: string
+}
+
+export type InAppMorningBriefingNotification = {
+  kind: 'morning_briefing'
+  rowKey: string
+  dayKey: string
+}
+
+export type InAppNotificationItem =
+  | InAppHabitReminderRow
+  | InAppTaskOverdueNotification
+  | InAppTaskDueSoonNotification
+  | InAppMorningBriefingNotification
+
 /**
- * In-app notification feed: pending habit reminder instances with dismiss + habit actions.
+ * In-app notification feed: habit reminders, overdue/due-soon tasks, and missed morning briefing.
  */
 export function useInAppNotifications() {
   const timeZone = useUserTimeZone()
@@ -53,6 +87,13 @@ export function useInAppNotifications() {
   const [loading, setLoading] = useState(true)
   const [actionInFlightIds, setActionInFlightIds] = useState<Set<string>>(new Set())
   const [localDismissMigrated, setLocalDismissMigrated] = useState(false)
+  const [completedMorningBriefingToday, setCompletedMorningBriefingToday] = useState<
+    boolean | null
+  >(null)
+  const [briefingDismissedToday, setBriefingDismissedToday] = useState(false)
+  const [dismissedTaskKeys, setDismissedTaskKeys] = useState<Set<string>>(() =>
+    loadDismissedTaskNotificationKeys(),
+  )
 
   const eligibleHabits = useMemo(
     () => habitsWithStreaks.filter((h) => isHabitEligibleForTodoReminder(h)),
@@ -68,6 +109,18 @@ export function useInAppNotifications() {
     }
     return map
   }, [tasks])
+
+  /* Load briefing completion and shared dismiss state when timezone changes */
+  useEffect(() => {
+    let cancelled = false
+    getHasCompletedMorningBriefingToday(timeZone).then((completed) => {
+      if (!cancelled) setCompletedMorningBriefingToday(completed)
+    })
+    setBriefingDismissedToday(isMorningBriefingDismissedToday(timeZone))
+    return () => {
+      cancelled = true
+    }
+  }, [timeZone])
 
   /* One-time migration: push legacy localStorage dismiss keys to Supabase */
   useEffect(() => {
@@ -106,13 +159,18 @@ export function useInAppNotifications() {
     if (!localDismissMigrated) return
     setLoading(true)
     try {
-      await ensurePendingHabitReminderNotifications({
-        habits: eligibleHabits,
-        tasksByHabitId,
-        entriesByHabit,
-        timeZone,
-        todayYMD,
-      })
+      const [completed] = await Promise.all([
+        getHasCompletedMorningBriefingToday(timeZone),
+        ensurePendingHabitReminderNotifications({
+          habits: eligibleHabits,
+          tasksByHabitId,
+          entriesByHabit,
+          timeZone,
+          todayYMD,
+        }),
+      ])
+      setCompletedMorningBriefingToday(completed)
+      setBriefingDismissedToday(isMorningBriefingDismissedToday(timeZone))
       const rows = await getPendingHabitReminderNotifications()
       setPendingNotifications(rows)
     } catch (err) {
@@ -134,7 +192,7 @@ export function useInAppNotifications() {
     void refreshNotifications()
   }, [refreshNotifications])
 
-  const visibleReminders = useMemo((): InAppHabitReminderRow[] => {
+  const habitRows = useMemo((): InAppHabitReminderRow[] => {
     const rows: InAppHabitReminderRow[] = []
 
     for (const notification of pendingNotifications) {
@@ -144,6 +202,7 @@ export function useInAppNotifications() {
 
       const occurrenceDate = notification.occurrence_date
       rows.push({
+        kind: 'habit',
         notificationId: notification.id,
         habit,
         task,
@@ -160,16 +219,66 @@ export function useInAppNotifications() {
     })
   }, [pendingNotifications, habitsWithStreaks, tasksByHabitId])
 
-  const unreadCount = visibleReminders.length
+  const taskRows = useMemo(
+    () => buildTaskNotificationRows(tasks, timeZone, dismissedTaskKeys),
+    [tasks, timeZone, dismissedTaskKeys],
+  )
 
-  const dismissReminder = useCallback(
+  const briefingRow = useMemo(
+    () =>
+      buildMorningBriefingNotificationRow({
+        timeZone,
+        completedToday: completedMorningBriefingToday,
+        dismissedToday: briefingDismissedToday,
+      }),
+    [timeZone, completedMorningBriefingToday, briefingDismissedToday],
+  )
+
+  /* Merge and sort: briefing → overdue → due soon → habits */
+  const visibleNotifications = useMemo((): InAppNotificationItem[] => {
+    const items: InAppNotificationItem[] = []
+    if (briefingRow) items.push(briefingRow)
+    for (const row of taskRows) {
+      if (row.kind === 'task_overdue') {
+        items.push({ kind: 'task_overdue', task: row.task, rowKey: row.rowKey })
+      } else {
+        items.push({ kind: 'task_due_soon', task: row.task, rowKey: row.rowKey })
+      }
+    }
+    items.push(...habitRows)
+    return items
+  }, [briefingRow, taskRows, habitRows])
+
+  /** @deprecated Use visibleNotifications */
+  const visibleReminders = habitRows
+
+  const unreadCount = visibleNotifications.length
+
+  const dismissNotification = useCallback(
     async (rowKey: string) => {
-      const row = visibleReminders.find((r) => r.rowKey === rowKey)
-      if (!row) return
+      const item = visibleNotifications.find((n) => n.rowKey === rowKey)
+      if (!item) return
+
       setActionInFlightIds((prev) => new Set(prev).add(rowKey))
       try {
-        await dismissHabitReminderNotification(row.notificationId)
-        setPendingNotifications((prev) => prev.filter((n) => n.id !== row.notificationId))
+        if (item.kind === 'habit') {
+          await dismissHabitReminderNotification(item.notificationId)
+          setPendingNotifications((prev) => prev.filter((n) => n.id !== item.notificationId))
+          return
+        }
+
+        if (item.kind === 'morning_briefing') {
+          dismissMorningBriefingToday(timeZone)
+          setBriefingDismissedToday(true)
+          return
+        }
+
+        setDismissedTaskKeys((prev) => {
+          const next = new Set(prev)
+          next.add(rowKey)
+          saveDismissedTaskNotificationKeys(next)
+          return next
+        })
       } finally {
         setActionInFlightIds((prev) => {
           const next = new Set(prev)
@@ -178,16 +287,31 @@ export function useInAppNotifications() {
         })
       }
     },
-    [visibleReminders],
+    [visibleNotifications, timeZone],
   )
 
+  const dismissReminder = dismissNotification
+
   const dismissAll = useCallback(async () => {
-    const rows = [...visibleReminders]
-    for (const row of rows) {
-      await dismissHabitReminderNotification(row.notificationId)
+    for (const item of visibleNotifications) {
+      if (item.kind === 'habit') {
+        await dismissHabitReminderNotification(item.notificationId)
+      } else if (item.kind === 'morning_briefing') {
+        dismissMorningBriefingToday(timeZone)
+      }
     }
+
+    const nextTaskKeys = new Set(dismissedTaskKeys)
+    for (const item of visibleNotifications) {
+      if (item.kind === 'task_overdue' || item.kind === 'task_due_soon') {
+        nextTaskKeys.add(item.rowKey)
+      }
+    }
+    saveDismissedTaskNotificationKeys(nextTaskKeys)
+    setDismissedTaskKeys(nextTaskKeys)
+    setBriefingDismissedToday(true)
     setPendingNotifications([])
-  }, [visibleReminders])
+  }, [visibleNotifications, dismissedTaskKeys, timeZone])
 
   const refetch = useCallback(async () => {
     await Promise.all([refetchHabits(), refetchTasks()])
@@ -222,25 +346,39 @@ export function useInAppNotifications() {
     [setHabitEntry, refetchHabits, refetchTasks],
   )
 
-  const getReminderBody = useCallback(
-    (row: InAppHabitReminderRow) => {
-      const { habit, remindAt } = row
-      const dueLabel = formatStartDueDisplay(undefined, remindAt, timeZone) ?? 'Due now'
-      return `${habitReminderTargetLabel(habit)} · ${dueLabel}`
+  const getNotificationBody = useCallback(
+    (item: InAppNotificationItem) => {
+      if (item.kind === 'habit') {
+        const dueLabel = formatStartDueDisplay(undefined, item.remindAt, timeZone) ?? 'Due now'
+        return `${habitReminderTargetLabel(item.habit)} · ${dueLabel}`
+      }
+      if (item.kind === 'task_overdue' || item.kind === 'task_due_soon') {
+        return formatStartDueDisplay(item.task.start_date, item.task.due_date, timeZone) ?? 'Due'
+      }
+      return 'Finish your briefing for today.'
     },
     [timeZone],
   )
 
+  const getReminderBody = useCallback(
+    (row: InAppHabitReminderRow) => getNotificationBody(row),
+    [getNotificationBody],
+  )
+
   return {
+    visibleNotifications,
+    /** @deprecated Use visibleNotifications */
     visibleReminders,
     unreadCount,
     loading,
+    dismissNotification,
     dismissReminder,
-    /** @deprecated Use dismissReminder(rowKey) */
-    dismissHabit: dismissReminder,
+    /** @deprecated Use dismissNotification(rowKey) */
+    dismissHabit: dismissNotification,
     dismissAll,
     runHabitAction,
     actionInFlightIds,
+    getNotificationBody,
     getReminderBody,
     refetch,
   }

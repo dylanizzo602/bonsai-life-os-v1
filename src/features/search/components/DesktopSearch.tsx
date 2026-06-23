@@ -1,7 +1,9 @@
-/* DesktopSearch: Expanding search bar + results popover (lg+ only; design placeholder) */
+/* DesktopSearch: Expanding search bar + results popover (lg+ only) */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MaterialIcon } from '../../../components/MaterialIcon'
+import type { NavigationSection } from '../../layout/hooks/useNavigation'
+import { useSearchPanel } from '../hooks/useSearchPanel'
 import { DesktopSearchPanel } from './DesktopSearchPanel'
 
 const EXPANDED_WIDTH = 'min(36rem, calc(100vw - 12rem))'
@@ -10,13 +12,13 @@ const EXPAND_MS = 300
 interface DesktopSearchProps {
   /** Called when open state changes (e.g. hide center nav while expanded) */
   onOpenChange?: (open: boolean) => void
+  onNavigate: (section: NavigationSection) => void
 }
 
 /**
  * Desktop header search: icon morphs into inline field, then results panel fades in.
- * No search logic yet — placeholder UI only.
  */
-export function DesktopSearch({ onOpenChange }: DesktopSearchProps) {
+export function DesktopSearch({ onOpenChange, onNavigate }: DesktopSearchProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [isOpen, setIsOpen] = useState(false)
@@ -32,6 +34,27 @@ export function DesktopSearch({ onOpenChange }: DesktopSearchProps) {
     },
     [onOpenChange],
   )
+
+  const {
+    query,
+    setQuery,
+    results,
+    loading,
+    error,
+    highlightedIndex,
+    handleQuickAction,
+    handleSelectResult,
+    reset,
+  } = useSearchPanel({
+    isOpen,
+    onNavigate,
+    onClose: () => setOpen(false),
+  })
+
+  const handleClose = useCallback(() => {
+    reset()
+    setOpen(false)
+  }, [reset, setOpen])
 
   /* Open: focus input after width transition; reveal panel shortly after */
   useEffect(() => {
@@ -57,24 +80,24 @@ export function DesktopSearch({ onOpenChange }: DesktopSearchProps) {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        setOpen(false)
+        handleClose()
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [isOpen, setOpen])
+  }, [isOpen, handleClose])
 
   /* Close on click outside */
   useEffect(() => {
     if (!isOpen) return
     const onPointerDown = (e: PointerEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false)
+        handleClose()
       }
     }
     document.addEventListener('pointerdown', onPointerDown)
     return () => document.removeEventListener('pointerdown', onPointerDown)
-  }, [isOpen, setOpen])
+  }, [isOpen, handleClose])
 
   return (
     <div ref={rootRef} className="absolute right-0 top-1/2 z-[60] -translate-y-1/2">
@@ -90,7 +113,7 @@ export function DesktopSearch({ onOpenChange }: DesktopSearchProps) {
               : 'border-transparent bg-transparent'
           }`}
         >
-          {/* Single search glyph — animates center (closed) → inset left (open); avoids double icon */}
+          {/* Single search glyph — animates center (closed) → inset left (open) */}
           <MaterialIcon
             name="search"
             className={`pointer-events-none absolute top-1/2 z-10 -translate-y-1/2 text-primary transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
@@ -113,7 +136,8 @@ export function DesktopSearch({ onOpenChange }: DesktopSearchProps) {
             <input
               ref={inputRef}
               type="text"
-              readOnly
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
               placeholder="Search anything..."
               aria-label="Search"
               aria-expanded={showPanel}
@@ -131,9 +155,16 @@ export function DesktopSearch({ onOpenChange }: DesktopSearchProps) {
         style={{ width: EXPANDED_WIDTH }}
         aria-hidden={!showPanel}
       >
-        <DesktopSearchPanel />
+        <DesktopSearchPanel
+          query={query}
+          results={results}
+          loading={loading}
+          error={error}
+          highlightedIndex={highlightedIndex}
+          onQuickAction={handleQuickAction}
+          onSelectResult={handleSelectResult}
+        />
       </div>
     </div>
   )
 }
-

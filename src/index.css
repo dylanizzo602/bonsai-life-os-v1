@@ -51,6 +51,7 @@
   --color-primary: #516051;
   --color-on-primary: #ffffff;
   --color-primary-container: #6a7869;
+  --color-on-primary-container: #ffffff;
   --color-primary-fixed: #d7e7d4;
   --color-surface-variant: #e1e3e1;
   --color-surface-container-high: #e7e8e6;
@@ -169,6 +170,15 @@ body {
   }
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+  /* Primary surfaces: always use on-primary text (text-secondary role color is blue) */
+  .bg-primary.text-on-primary,
+  .bg-primary.text-white,
+  .bg-primary-container.text-on-primary,
+  .bg-primary-container.text-white,
+  .bg-bonsai-sage-600.text-white,
+  .bg-bonsai-sage-700.text-white {
+    color: var(--color-on-primary);
   }
   /* Habit table: hover overlay only shows on completed cells */
   td[data-status="completed"]:hover .completed-hover-overlay {

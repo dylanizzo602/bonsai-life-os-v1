@@ -31,11 +31,13 @@ interface ModalProps {
   bodyClassName?: string
   /** Optional extra classes for the footer wrapper */
   footerClassName?: string
+  /** When false, clicking the backdrop does not close the modal (ESC and close button still work) */
+  closeOnBackdropClick?: boolean
 }
 
 /**
  * Reusable modal component with backdrop and close functionality.
- * Supports ESC key to close and click outside to close; optionally disables internal body scrolling so height fits content.
+ * Supports ESC key to close; optionally closes on backdrop click; optionally disables internal body scrolling so height fits content.
  */
 export function Modal({
   isOpen,
@@ -52,6 +54,7 @@ export function Modal({
   headerClassName = '',
   bodyClassName = '',
   footerClassName = '',
+  closeOnBackdropClick = true,
 }: ModalProps) {
   /* Close modal on ESC key press */
   useEffect(() => {
@@ -74,12 +77,15 @@ export function Modal({
 
   if (!isOpen) return null
 
+  /* Backdrop click: only close when enabled (task modals keep ESC + close button only). */
+  const handleBackdropClick = closeOnBackdropClick ? onClose : undefined
+
   /* Bare mode: only backdrop + children (no outer card). Child is the only visible box. */
   if (noCard) {
     return (
       <div
         className="fixed inset-0 z-50 flex items-center justify-center bg-bonsai-slate-900/30 p-4 md:p-6"
-        onClick={onClose}
+        onClick={handleBackdropClick}
       >
         <div onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl flex justify-center">
           {children}
@@ -109,7 +115,7 @@ export function Modal({
     : `flex-1 min-h-0 overflow-y-auto ${fullScreenOnMobile ? 'p-0 md:p-5 lg:p-6' : 'p-4 md:p-5 lg:p-6'}`
 
   return (
-    <div className={`${containerClass} ${effectiveOverlayClassName}`} onClick={onClose}>
+    <div className={`${containerClass} ${effectiveOverlayClassName}`} onClick={handleBackdropClick}>
       <div className={`${cardClass} ${cardClassName}`} onClick={(e) => e.stopPropagation()}>
         {/* Header: custom header overrides default title/close layout */}
         {header != null ? (

@@ -821,8 +821,9 @@ export function AddEditTaskModal({
   /* Desktop right-click in edit modal: custom menu, not browser default */
   const handleEditModalContextMenu = (e: MouseEvent) => {
     if (!task || !isEditMode || !isDesktopContextMenuViewport()) return
-    /* Ignore events from nested subtask edit modal so delete targets the subtask, not the parent */
-    if ((e.target as HTMLElement).closest('.subtask-edit-modal')) return
+    /* Ignore nested subtask UI so delete targets the subtask, not the parent task */
+    const target = e.target as HTMLElement
+    if (target.closest('.subtask-edit-modal') || target.closest('.compact-task-item')) return
     e.preventDefault()
     e.stopPropagation()
     openTaskOptionsMenuAt(e.clientX, e.clientY)
@@ -908,6 +909,7 @@ export function AddEditTaskModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
+      closeOnBackdropClick={false}
       header={modalHeader}
       fullScreenOnMobile
       /* Overlay + card: match provided modal shell (blur backdrop + max width + rounded) */

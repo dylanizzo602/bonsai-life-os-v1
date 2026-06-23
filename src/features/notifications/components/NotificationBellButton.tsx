@@ -9,16 +9,18 @@ interface NotificationBellButtonProps {
   children: ReactNode
   ariaLabel?: string
   onGoToTasks?: () => void
+  onGoToBriefings?: () => void
 }
 
 /**
- * Notifications bell: shows badge when habit reminders are pending; opens popover.
+ * Notifications bell: badge count for all in-app notifications; opens popover.
  */
 export function NotificationBellButton({
   className,
   children,
   ariaLabel = 'Notifications',
   onGoToTasks,
+  onGoToBriefings,
 }: NotificationBellButtonProps) {
   const buttonRef = useRef<HTMLButtonElement>(null)
   const [isOpen, setIsOpen] = useState(false)
@@ -62,6 +64,7 @@ export function NotificationBellButton({
         triggerRef={buttonRef}
         notifications={notifications}
         onGoToTasks={onGoToTasks}
+        onGoToBriefings={onGoToBriefings}
       />
     </div>
   )

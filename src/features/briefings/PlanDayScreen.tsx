@@ -6,15 +6,11 @@ import { BacklogAddPanel } from './components/BacklogAddPanel'
 import { BriefingLineupTaskRow } from './components/BriefingLineupTaskRow'
 import { BriefingShell, BriefingScreenHeading } from './components/BriefingShell'
 import type { Task } from '../tasks/types'
-import type { CalendarAgendaEvent } from './types'
 
 interface PlanDayScreenProps {
   lineupTasks: Task[]
   backlogCandidates: Task[]
   goalsById: Record<string, string>
-  calendarEvents: CalendarAgendaEvent[]
-  calendarLoading: boolean
-  calendarError: string | null
   onAddToLineUp: (taskId: string) => void
   onEditTask: (task: Task) => void
   onToggleComplete: (taskId: string) => void
@@ -28,9 +24,6 @@ export function PlanDayScreen({
   lineupTasks,
   backlogCandidates,
   goalsById,
-  calendarEvents,
-  calendarLoading,
-  calendarError,
   onAddToLineUp,
   onEditTask,
   onToggleComplete,
@@ -48,9 +41,10 @@ export function PlanDayScreen({
       <div className="grid grid-cols-1 gap-12 md:grid-cols-12">
         <section className="md:col-span-5">
           <AgendaTimeline
-            events={calendarEvents}
-            loading={calendarLoading}
-            error={calendarError}
+            events={[]}
+            loading={false}
+            error={null}
+            comingSoon
           />
         </section>
 

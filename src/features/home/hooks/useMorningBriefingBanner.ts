@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { getHasCompletedMorningBriefingToday } from '../../../lib/supabase/reflections'
-import { getTodayYMD } from '../../../lib/todaysLineup'
+import {
+  dismissMorningBriefingToday,
+  isMorningBriefingDismissedToday,
+} from '../../notifications/dismissedInAppNotifications'
 import { useUserTimeZone } from '../../settings/useUserTimeZone'
-
-const DISMISS_KEY_PREFIX = 'bonsai-dismissed-morning-briefing-'
 
 /**
  * Returns whether to show the morning briefing banner, and a dismiss handler.
@@ -23,27 +24,16 @@ export function useMorningBriefingBanner() {
     getHasCompletedMorningBriefingToday(timeZone).then((completed) => {
       if (!cancelled) setCompletedToday(completed)
     })
-    const today = getTodayYMD()
-    const key = DISMISS_KEY_PREFIX + today
-    try {
-      setDismissedToday(localStorage.getItem(key) === '1')
-    } catch {
-      setDismissedToday(false)
-    }
+    setDismissedToday(isMorningBriefingDismissedToday(timeZone))
     return () => {
       cancelled = true
     }
   }, [timeZone])
 
   const dismiss = useCallback(() => {
-    const today = getTodayYMD()
-    try {
-      localStorage.setItem(DISMISS_KEY_PREFIX + today, '1')
-    } catch {
-      // ignore
-    }
+    dismissMorningBriefingToday(timeZone)
     setDismissedToday(true)
-  }, [])
+  }, [timeZone])
 
   const showBanner = completedToday === false && !dismissedToday
   const needsMorningBriefing = completedToday === false

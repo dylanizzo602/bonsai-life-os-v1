@@ -1,4 +1,4 @@
-/* IntegrationsSettingsSection: Google Calendar connect and coming-soon calendars */
+/* IntegrationsSettingsSection: Calendar integrations (coming soon) */
 
 import type { ReactNode } from 'react'
 import { GoogleIcon } from '../../auth/components/GoogleIcon'
@@ -23,67 +23,20 @@ function IntegrationLogoBox({
   )
 }
 
-export interface IntegrationsSettingsSectionProps {
-  connected: boolean
-  loading: boolean
-  message: string | null
-  disabled: boolean
-  onConnect: () => void
-  onDisconnect: () => void
-}
-
 /**
- * Account integrations: Google OAuth calendar plus placeholder rows.
+ * Account integrations: calendar providers (all coming soon).
  */
-export function IntegrationsSettingsSection({
-  connected,
-  loading,
-  message,
-  disabled,
-  onConnect,
-  onDisconnect,
-}: IntegrationsSettingsSectionProps) {
+export function IntegrationsSettingsSection() {
   return (
     <section>
       <SettingsSectionHeader icon="hub" title="Account & Integrations" />
 
       <SettingsCard className="space-y-4">
-        <div className="flex flex-col items-center justify-between gap-4 rounded-lg border border-outline-variant/10 bg-surface-container-low p-6 sm:flex-row">
-          <div className="flex items-center gap-4">
-            <IntegrationLogoBox>
-              <GoogleIcon />
-            </IntegrationLogoBox>
-            <div>
-              <h3 className="text-body font-semibold text-on-surface">Google Calendar</h3>
-              <p className="text-secondary text-on-surface-variant">
-                {connected
-                  ? 'Connected — agenda appears in your morning briefing.'
-                  : 'Sync your daily tasks with your calendar.'}
-              </p>
-              {message ? <p className="text-secondary mt-1 text-on-surface-variant">{message}</p> : null}
-            </div>
-          </div>
-          {connected ? (
-            <button
-              type="button"
-              onClick={() => void onDisconnect()}
-              disabled={disabled || loading}
-              className="rounded-lg border border-outline px-6 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container disabled:opacity-50"
-            >
-              {loading ? 'Disconnecting…' : 'Disconnect'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => void onConnect()}
-              disabled={disabled || loading}
-              className="rounded-lg bg-primary px-6 py-2 text-sm font-semibold text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {loading ? 'Connecting…' : 'Connect'}
-            </button>
-          )}
-        </div>
-
+        <ComingSoonIntegration
+          title="Google Calendar"
+          description="Sync your daily tasks with your calendar."
+          icon={<GoogleIcon />}
+        />
         <ComingSoonIntegration
           title="Outlook Calendar"
           description="Connect your Outlook ecosystem."

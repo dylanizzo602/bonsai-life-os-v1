@@ -614,6 +614,7 @@ export function AddEditSubtaskModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
+      closeOnBackdropClick={false}
       header={isEditMode ? subtaskModalHeader : modalHeader}
       fullScreenOnMobile
       overlayClassName="backdrop-blur-[12px] bg-black/15 md:p-4"

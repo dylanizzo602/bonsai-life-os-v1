@@ -43,6 +43,10 @@ export function BaseLayout({ children, activeSection, onNavigate }: BaseLayoutPr
     setIsMobileSearchOpen(false)
   }
 
+  /* Site footer: hide during immersive morning briefing so it cannot overlap the progress bar */
+  const hideSiteFooter =
+    activeSection === 'briefings' || activeSection === 'briefings-preview'
+
   /* Shell: fixed top bar; footer at end of scrollable content (not viewport-pinned) */
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -60,7 +64,9 @@ export function BaseLayout({ children, activeSection, onNavigate }: BaseLayoutPr
       >
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
           <div className="p-4 md:p-6">{children}</div>
-          <AppFooter onNavigateToFeedback={() => onNavigate('feedback')} />
+          {!hideSiteFooter ? (
+            <AppFooter onNavigateToFeedback={() => onNavigate('feedback')} />
+          ) : null}
         </div>
       </main>
 
@@ -71,7 +77,7 @@ export function BaseLayout({ children, activeSection, onNavigate }: BaseLayoutPr
         onClose={handleCloseMobileMenu}
       />
 
-      <MobileSearch isOpen={isMobileSearchOpen} onClose={handleCloseMobileSearch} />
+      <MobileSearch isOpen={isMobileSearchOpen} onClose={handleCloseMobileSearch} onNavigate={onNavigate} />
     </div>
   )
 }

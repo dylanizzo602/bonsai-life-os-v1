@@ -19,13 +19,7 @@ import {
   getRandomReflectionEntryYearsAgoToday,
   getTodaysMorningBriefingEntry,
 } from '../../lib/supabase/reflections'
-import {
-  loadTodaysLineupTaskIds,
-  saveTodaysLineupTaskIds,
-  hasLineupSeedRunToday,
-  markLineupSeedRunToday,
-} from '../../lib/todaysLineup'
-import { buildTodaysLineupSeedTasks } from '../tasks/utils/partitionBonsaiTasks'
+import { useTodaysLineup } from '../tasks/hooks/useTodaysLineup'
 import type { Task } from '../tasks/types'
 import type { MorningBriefingResponses } from '../reflections/types'
 import type { ReflectionEntry } from '../reflections/types'
@@ -48,11 +42,9 @@ import { OverviewScreen } from './OverviewScreen'
 import { AddEditTaskModal } from '../tasks/AddEditTaskModal'
 import type { InboxItem } from '../home/types'
 import { useAuth } from '../auth/AuthContext'
-import { useCalendarAgenda } from './hooks/useCalendarAgenda'
-import { useGoogleCalendarEventsToday } from './hooks/useGoogleCalendarEventsToday'
 import { getDueStatus } from '../tasks/utils/date'
 import { computeBlockedTaskIds } from '../tasks/utils/dependencies'
-import { getAvailableTasksFromList } from '../tasks/utils/available'
+import { getAvailableBacklogTasks } from '../tasks/utils/partitionBonsaiTasks'
 import { isoInstantToLocalCalendarYMD } from '../../lib/localCalendarDate'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
 import {
@@ -73,8 +65,6 @@ import {
   PREVIEW_YEARS_AGO_ENTRY,
 } from './preview/briefingPreviewFixtures'
 import {
-  formatFirstMeetingSubtitle,
-  getFirstTimedEventToday,
   getPriorityTasksDueTodayCount,
 } from './utils/greetingSummary'
 import { computeYesterdayReviewStats } from './utils/yesterdayReviewStats'
@@ -186,28 +176,6 @@ export function BriefingsPage({
   const [milestonesReachedYesterday, setMilestonesReachedYesterday] = useState(0)
   const [milestonesStatsLoading, setMilestonesStatsLoading] = useState(true)
 
-  /* Today's lineup task ids (shared with Tasks section) */
-  const [lineUpTaskIds, setLineUpTaskIds] = useState<Set<string>>(new Set())
-  useEffect(() => {
-    if (previewMode) {
-      setLineUpTaskIds(new Set())
-      return
-    }
-    setLineUpTaskIds(loadTodaysLineupTaskIds())
-  }, [previewMode, stepIndex])
-
-  const addToLineUp = useCallback(
-    (id: string) => {
-      setLineUpTaskIds((prev) => {
-        const next = new Set(prev)
-        next.add(id)
-        if (!previewMode) saveTodaysLineupTaskIds(next)
-        return next
-      })
-    },
-    [previewMode],
-  )
-
   /* Tasks hook */
   const {
     tasks,
@@ -287,69 +255,35 @@ export function BriefingsPage({
 
   /* Blocked task ids for available filter */
   const [blockedTaskIds, setBlockedTaskIds] = useState<Set<string>>(new Set())
+  const [blockedTaskIdsResolved, setBlockedTaskIdsResolved] = useState(false)
   useEffect(() => {
     if (tasks.length === 0) {
       setBlockedTaskIds(new Set())
+      setBlockedTaskIdsResolved(false)
       return
     }
+
+    let cancelled = false
     const taskIds = tasks.map((t) => t.id)
     const taskLookup = Object.fromEntries(tasks.map((t) => [t.id, t]))
     getDependenciesForTaskIds(taskIds)
-      .then((deps) => setBlockedTaskIds(computeBlockedTaskIds(deps, taskLookup)))
-      .catch(() => setBlockedTaskIds(new Set()))
+      .then((deps) => {
+        if (cancelled) return
+        setBlockedTaskIds(computeBlockedTaskIds(deps, taskLookup))
+        setBlockedTaskIdsResolved(true)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setBlockedTaskIds(new Set())
+        setBlockedTaskIdsResolved(true)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [tasks])
 
-  /* Calendar agenda sources */
-  const calendarUrlsBySource = useMemo(() => {
-    const metadata = (user?.user_metadata ?? {}) as Record<string, unknown>
-    let google =
-      typeof metadata.calendar_ics_google === 'string' ? metadata.calendar_ics_google : ''
-    let microsoft =
-      typeof metadata.calendar_ics_microsoft === 'string' ? metadata.calendar_ics_microsoft : ''
-    let apple = typeof metadata.calendar_ics_apple === 'string' ? metadata.calendar_ics_apple : ''
-
-    if (typeof window !== 'undefined') {
-      if (!google) google = window.localStorage.getItem('bonsai_calendar_ics_google') ?? ''
-      if (!microsoft) microsoft = window.localStorage.getItem('bonsai_calendar_ics_microsoft') ?? ''
-      if (!apple) apple = window.localStorage.getItem('bonsai_calendar_ics_apple') ?? ''
-    }
-
-    return { google, microsoft, apple }
-  }, [user])
-
-  const {
-    loading: calendarLoading,
-    error: calendarError,
-    eventsToday: calendarEventsToday,
-    countToday: calendarEventCount,
-  } = useCalendarAgenda({ urlsBySource: calendarUrlsBySource })
-
-  const {
-    loading: googleCalendarLoading,
-    connected: googleCalendarConnected,
-    error: googleCalendarError,
-    eventsToday: googleCalendarEventsToday,
-    countToday: googleCalendarEventCount,
-  } = useGoogleCalendarEventsToday()
-
-  const effectiveCalendarLoading = googleCalendarConnected ? googleCalendarLoading : calendarLoading
-  const effectiveCalendarError = googleCalendarConnected ? googleCalendarError : calendarError
-  const effectiveCalendarEventsToday = googleCalendarConnected
-    ? googleCalendarEventsToday
-    : calendarEventsToday
-  const effectiveCalendarEventCount = googleCalendarConnected
-    ? googleCalendarEventCount
-    : calendarEventCount
-
-  const firstMeetingSubtitle = useMemo(
-    () =>
-      formatFirstMeetingSubtitle(
-        getFirstTimedEventToday(effectiveCalendarEventsToday),
-        effectiveCalendarEventsToday,
-      ),
-    [effectiveCalendarEventsToday],
-  )
-
+  /* Priority and due-today task counts for greeting widget */
   const priorityTasksDueTodayCount = useMemo(
     () => getPriorityTasksDueTodayCount(tasks, todayStart, todayEnd),
     [tasks, todayStart, todayEnd],
@@ -480,6 +414,16 @@ export function BriefingsPage({
   const currentStepId: BriefingStepId = steps[stepIndex] ?? 'greeting'
   const percentComplete = getBriefingPercentComplete(currentStepId, stepIndex, steps.length)
 
+  /* Today's lineup: shared rules + persistence with Tasks section */
+  const { lineupTasks, lineupIds, backlogPool, addToLineUp } = useTodaysLineup({
+    tasks,
+    blockedTaskIds,
+    blockedTaskIdsResolved,
+    timeZone,
+    persist: !previewMode,
+    enableSeed: !previewMode && currentStepId === 'plan',
+  })
+
   /* Preview fallbacks: show every screen even when the account has no matching data */
   const displayUndergrowthTasks =
     previewMode && undergrowthTasks.length === 0 ? PREVIEW_UNDERGROWTH_TASKS : undergrowthTasks
@@ -536,24 +480,6 @@ export function BriefingsPage({
   /** Back navigation for reflection steps (not on greeting) */
   const briefingGoBack = stepIndex > 0 ? goToPreviousStep : undefined
 
-  /* Lineup seed when entering plan step */
-  useEffect(() => {
-    if (previewMode || currentStepId !== 'plan') return
-    if (tasks.length === 0) return
-    if (hasLineupSeedRunToday()) return
-
-    const seedTasks = buildTodaysLineupSeedTasks(tasks, blockedTaskIds, timeZone, 5)
-    markLineupSeedRunToday()
-    if (seedTasks.length === 0) return
-
-    const mergedIds = new Set([
-      ...loadTodaysLineupTaskIds(),
-      ...seedTasks.map((t) => t.id),
-    ])
-    setLineUpTaskIds(mergedIds)
-    saveTodaysLineupTaskIds(mergedIds)
-  }, [blockedTaskIds, currentStepId, previewMode, tasks, timeZone])
-
   /* Fetch milestones for Sunday goal review (or preview fixtures when no goals) */
   useEffect(() => {
     if (!steps.includes('goalReview')) return
@@ -586,25 +512,11 @@ export function BriefingsPage({
     void fetchMilestones()
   }, [activeGoals, previewMode, steps])
 
-  const availableTasks = useMemo(
-    () => getAvailableTasksFromList(tasks, blockedTaskIds, timeZone),
-    [tasks, blockedTaskIds, timeZone],
-  )
-
-  const briefingAvailableTasks = useMemo(
-    () => availableTasks.filter((t) => !t.habit_id),
-    [availableTasks],
-  )
-
-  const lineupTasks = useMemo(
-    () => tasks.filter((t) => lineUpTaskIds.has(t.id) && !t.habit_id),
-    [lineUpTaskIds, tasks],
-  )
-
-  const backlogCandidates = useMemo(
-    () => briefingAvailableTasks.filter((t) => !lineUpTaskIds.has(t.id)),
-    [briefingAvailableTasks, lineUpTaskIds],
-  )
+  /* Backlog add panel: same Available backlog pool as Tasks section (not trash/unavailable) */
+  const backlogCandidates = useMemo(() => {
+    if (!blockedTaskIdsResolved) return []
+    return getAvailableBacklogTasks(backlogPool, tasks, lineupIds, blockedTaskIds, timeZone)
+  }, [backlogPool, tasks, lineupIds, blockedTaskIds, blockedTaskIdsResolved, timeZone])
 
   const goalsById = useMemo(
     () => Object.fromEntries(goals.map((g) => [g.id, g.name])),
@@ -812,6 +724,9 @@ export function BriefingsPage({
     switch (currentStepId) {
       case 'undergrowth':
       case 'inbox':
+        return (
+          <BriefingSaveContinueButton onClick={advanceStep} label="Next" />
+        )
       case 'goalReview':
         return (
           <BriefingSaveContinueButton
@@ -910,10 +825,6 @@ export function BriefingsPage({
           location={location}
           tasksDueTodayCount={tasksDueTodayCount}
           priorityTasksDueTodayCount={priorityTasksDueTodayCount}
-          calendarEventCount={effectiveCalendarEventCount}
-          calendarLoading={effectiveCalendarLoading}
-          calendarError={effectiveCalendarError}
-          firstMeetingSubtitle={firstMeetingSubtitle}
           onBegin={advanceStep}
         />
       )}
@@ -995,9 +906,6 @@ export function BriefingsPage({
           lineupTasks={lineupTasks}
           backlogCandidates={backlogCandidates}
           goalsById={goalsById}
-          calendarEvents={effectiveCalendarEventsToday}
-          calendarLoading={effectiveCalendarLoading}
-          calendarError={effectiveCalendarError}
           onAddToLineUp={addToLineUp}
           onEditTask={openEditTask}
           onToggleComplete={handleToggleTaskComplete}

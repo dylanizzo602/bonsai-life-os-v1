@@ -12,11 +12,18 @@ export function isDesktopContextMenuViewport(): boolean {
 
 /** Open task context menu only on desktop right-click; always suppress native menu on desktop */
 export function handleDesktopTaskContextMenu(
-  event: { preventDefault: () => void; clientX: number; clientY: number },
+  event: {
+    preventDefault: () => void
+    stopPropagation: () => void
+    clientX: number
+    clientY: number
+  },
   openAt: (position: { x: number; y: number }) => void,
 ): void {
   if (!isDesktopContextMenuViewport()) return
   event.preventDefault()
+  /* Stop bubbling so parent containers (e.g. edit task modal) do not open their own menu */
+  event.stopPropagation()
   openAt({ x: event.clientX, y: event.clientY })
 }
 

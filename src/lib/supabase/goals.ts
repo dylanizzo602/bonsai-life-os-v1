@@ -283,6 +283,39 @@ export async function getGoals(): Promise<Goal[]> {
   return (data ?? []) as Goal[]
 }
 
+/** Milestone with parent goal name for global search */
+export interface GoalMilestoneWithGoalName extends GoalMilestone {
+  goal_name: string
+}
+
+/**
+ * Fetch all milestones for the current user with parent goal name (for global search).
+ */
+export async function getAllMilestones(): Promise<GoalMilestoneWithGoalName[]> {
+  const goals = await getGoals()
+  if (goals.length === 0) return []
+
+  const goalIds = goals.map((g) => g.id)
+  const goalNameById = new Map(goals.map((g) => [g.id, g.name]))
+
+  const { data, error } = await supabase
+    .from('goal_milestones')
+    .select('*')
+    .in('goal_id', goalIds)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('Error fetching all milestones:', error)
+    throw error
+  }
+
+  return ((data ?? []) as GoalMilestone[]).map((m) => ({
+    ...m,
+    goal_name: goalNameById.get(m.goal_id) ?? 'Goal',
+  }))
+}
+
 /**
  * Fetch a single goal with all related data (milestones, linked habits, computed progress).
  */

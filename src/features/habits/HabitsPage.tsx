@@ -14,6 +14,7 @@ import { HabitRemindersPanel } from './components/HabitRemindersPanel'
 import { HabitSectionHeader } from './components/HabitSectionHeader'
 import type { HabitEntry, HabitWithStreaks } from './types'
 import { isHabitScheduledOnDate } from './utils/habitScheduling'
+import { peekSearchOpenIntent, clearSearchOpenIntent } from '../search/searchOpenIntent'
 
 /** Format YYYY-MM-DD for a friendly label */
 function formatSelectedDateLabel(ymd: string, todayYMD: string): string {
@@ -126,6 +127,21 @@ export function HabitsPage() {
     setModalOpen(false)
     setEditingHabit(null)
   }
+
+  /* Global search: open habit edit modal when navigated from search result */
+  useEffect(() => {
+    const intent = peekSearchOpenIntent()
+    if (intent?.kind !== 'habit') return
+    const habit = habitsWithStreaks.find((h) => h.id === intent.id)
+    if (!habit) return
+
+    clearSearchOpenIntent()
+    const frame = requestAnimationFrame(() => {
+      setEditingHabit(habit)
+      setModalOpen(true)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [habitsWithStreaks])
 
   const hasHabits = habitsWithStreaks.length > 0
 

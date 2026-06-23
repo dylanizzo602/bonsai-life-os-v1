@@ -7,6 +7,8 @@ interface AgendaTimelineProps {
   events: CalendarAgendaEvent[]
   loading: boolean
   error: string | null
+  /** When true, show a coming-soon placeholder instead of fetching events */
+  comingSoon?: boolean
 }
 
 /** Format start time for timeline label */
@@ -26,7 +28,7 @@ function isFocusBlock(event: CalendarAgendaEvent): boolean {
 /**
  * Vertical agenda timeline for the plan-day step.
  */
-export function AgendaTimeline({ events, loading, error }: AgendaTimelineProps) {
+export function AgendaTimeline({ events, loading, error, comingSoon = false }: AgendaTimelineProps) {
   const sorted = [...events].sort((a, b) => {
     if (a.isAllDay !== b.isAllDay) return a.isAllDay ? -1 : 1
     return a.start.getTime() - b.start.getTime()
@@ -41,7 +43,9 @@ export function AgendaTimeline({ events, loading, error }: AgendaTimelineProps) 
         </h2>
       </div>
 
-      {loading ? (
+      {comingSoon ? (
+        <p className="text-secondary text-on-surface-variant">Coming soon</p>
+      ) : loading ? (
         <p className="text-secondary text-on-surface-variant">Loading today&apos;s events…</p>
       ) : sorted.length === 0 ? (
         <p className="text-secondary text-on-surface-variant">No events today</p>
@@ -85,7 +89,9 @@ export function AgendaTimeline({ events, loading, error }: AgendaTimelineProps) 
         </div>
       )}
 
-      {error ? <p className="text-secondary mt-2 text-on-surface-variant">{error}</p> : null}
+      {!comingSoon && error ? (
+        <p className="text-secondary mt-2 text-on-surface-variant">{error}</p>
+      ) : null}
     </div>
   )
 }

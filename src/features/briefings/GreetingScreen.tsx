@@ -43,10 +43,6 @@ interface GreetingScreenProps {
   location?: string | null
   tasksDueTodayCount: number
   priorityTasksDueTodayCount: number
-  calendarEventCount: number
-  calendarLoading: boolean
-  calendarError: string | null
-  firstMeetingSubtitle: string
   onBegin: () => void
 }
 
@@ -58,10 +54,6 @@ export function GreetingScreen({
   location,
   tasksDueTodayCount,
   priorityTasksDueTodayCount,
-  calendarEventCount,
-  calendarLoading,
-  calendarError,
-  firstMeetingSubtitle,
   onBegin,
 }: GreetingScreenProps) {
   const name = firstName?.trim() || 'there'
@@ -105,12 +97,8 @@ export function GreetingScreen({
           title="Today's Events"
           icon="calendar_today"
           iconClassName="text-primary"
-          metric={
-            calendarLoading
-              ? '…'
-              : `${calendarEventCount} event${calendarEventCount === 1 ? '' : 's'}`
-          }
-          subtitle={calendarLoading ? 'Loading events…' : firstMeetingSubtitle}
+          metric="—"
+          subtitle="Coming soon"
         />
         <GreetingSummaryCard
           label="Tasks"
@@ -125,10 +113,6 @@ export function GreetingScreen({
           }
         />
       </div>
-
-      {calendarError ? (
-        <p className="text-secondary mb-4 text-center text-on-surface-variant">{calendarError}</p>
-      ) : null}
 
       {/* Start CTA */}
       <div className="flex flex-col items-center gap-4">

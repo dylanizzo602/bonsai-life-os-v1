@@ -166,8 +166,8 @@ export function MilestoneModalForm({
   /* Edit mode: type-specific update layout */
   if (isEditMode && milestone) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="max-h-[min(716px,60vh)] flex-1 space-y-8 overflow-y-auto px-8 pb-8">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="min-w-0 flex-1 space-y-6 overflow-x-hidden overflow-y-auto px-4 pb-6 md:space-y-8 md:px-8 md:pb-8">
           {/* Milestone name: editable for task/number, read-only for checkmark */}
           <div className="space-y-3">
             <label className="block text-xs font-bold uppercase tracking-widest text-outline">
@@ -211,13 +211,13 @@ export function MilestoneModalForm({
           )}
         </div>
 
-        <footer className="shrink-0 border-t border-outline-variant/10 bg-surface-container-low px-8 py-6">
-          <div className="flex items-center justify-end gap-4">
+        <footer className="shrink-0 border-t border-outline-variant/10 bg-surface-container-low px-4 py-4 md:px-8 md:py-6">
+          <div className="flex flex-wrap items-center justify-end gap-3 md:gap-4">
             <button
               type="button"
               onClick={onClose}
               disabled={submitting}
-              className="rounded-lg px-6 py-2.5 text-secondary font-medium text-on-surface-variant transition-colors hover:bg-surface-container"
+              className="rounded-lg px-4 py-2.5 text-secondary font-medium text-on-surface-variant transition-colors hover:bg-surface-container md:px-6"
             >
               Cancel
             </button>
@@ -225,7 +225,7 @@ export function MilestoneModalForm({
               type="button"
               onClick={() => void handleSubmit()}
               disabled={submitting || !isValid}
-              className="rounded-lg bg-primary px-8 py-2.5 text-secondary font-semibold text-on-primary shadow-sm transition-all hover:opacity-90 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-lg bg-primary px-6 py-2.5 text-body font-semibold text-on-primary shadow-sm transition-all hover:opacity-90 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 md:px-8"
             >
               {saveLabel}
             </button>
@@ -237,8 +237,8 @@ export function MilestoneModalForm({
 
   /* Create mode: original add-milestone layout */
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex-1 space-y-6 overflow-y-auto px-8 pb-8 pt-4">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="min-w-0 flex-1 space-y-6 overflow-x-hidden overflow-y-auto px-4 pb-6 pt-4 md:px-8 md:pb-8">
         <div className="space-y-2">
           <label className="block text-secondary font-semibold tracking-wide text-on-surface-variant">
             Milestone Name
@@ -265,7 +265,7 @@ export function MilestoneModalForm({
           )}
 
           {type === 'number' && (
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="space-y-2">
                 <label className="block text-secondary font-semibold text-on-surface-variant">
                   Starting
@@ -326,8 +326,8 @@ export function MilestoneModalForm({
         </div>
       </div>
 
-      <footer className="shrink-0 border-t border-outline-variant/10 bg-surface-container-low/30 px-8 py-6">
-        <div className="flex items-center justify-end gap-4">
+      <footer className="shrink-0 border-t border-outline-variant/10 bg-surface-container-low/30 px-4 py-4 md:px-8 md:py-6">
+        <div className="flex flex-wrap items-center justify-end gap-3 md:gap-4">
           <button
             type="button"
             onClick={onClose}
@@ -340,7 +340,7 @@ export function MilestoneModalForm({
             type="button"
             onClick={() => void handleSubmit()}
             disabled={submitting || !isValid}
-            className="rounded-lg bg-primary px-8 py-2.5 text-secondary font-semibold text-on-primary shadow-sm transition-all hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg bg-primary px-6 py-2.5 text-body font-semibold text-on-primary shadow-sm transition-all hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 md:px-8"
           >
             {saveLabel}
           </button>

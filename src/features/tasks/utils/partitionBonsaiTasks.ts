@@ -319,3 +319,24 @@ export function splitBacklogPoolByAvailability(
 
   return { availablePool, unavailablePool }
 }
+
+/**
+ * Tasks eligible for "Add more tasks" in briefing: same pool as the Tasks section Available backlog
+ * (excludes lineup, deleted/archived parents' subtasks, blocked, and future-start tasks).
+ */
+export function getAvailableBacklogTasks(
+  backlogPool: Task[],
+  tasks: Task[],
+  lineupIds: Set<string>,
+  blockedTaskIds: Set<string>,
+  timeZone: string,
+): Task[] {
+  const { availablePool } = splitBacklogPoolByAvailability(
+    backlogPool,
+    tasks,
+    lineupIds,
+    blockedTaskIds,
+    timeZone,
+  )
+  return availablePool
+}

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { consumeQuickAddIntent } from '../layout/quickAddIntent'
+import { peekSearchOpenIntent, clearSearchOpenIntent } from '../search/searchOpenIntent'
 import { AddEditTaskModal } from './AddEditTaskModal'
 import { TaskList } from './TaskList'
 import { TasksBonsaiView } from './components/bonsai/TasksBonsaiView'
@@ -14,6 +15,7 @@ import {
 } from './utils/taskSearch'
 import { computeBlockedTaskIds, computeBlockingTaskIds } from './utils/dependencies'
 import { useTasks } from './hooks/useTasks'
+import { useTodaysLineup } from './hooks/useTodaysLineup'
 import { useHabits } from '../habits/hooks/useHabits'
 import { getDependenciesForTaskIds } from '../../lib/supabase/tasks'
 import { useTags } from './hooks/useTags'
@@ -38,14 +40,6 @@ import {
   buildFilterSummaryChips,
   removeConditionFromRoot,
 } from './utils/filterSummary'
-import {
-  hasLineupSeedRunToday,
-  loadLineupExcludedTaskIds,
-  loadTodaysLineupTaskIds,
-  markLineupSeedRunToday,
-  saveTodaysLineupState,
-} from '../../lib/todaysLineup'
-import { buildTodaysLineupSeedTasks } from './utils/partitionBonsaiTasks'
 import { habitReminderEffectiveInstant, taskDateToComparableMs } from './utils/date'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
 
@@ -221,9 +215,6 @@ export function TasksPage() {
   /* Archive/Trash: when true, list shows only archived or only deleted tasks (no filters applied). */
   const [showArchived, setShowArchived] = useState(false)
   const [showDeleted, setShowDeleted] = useState(false)
-  /* Today's Lineup: task IDs for today (date-scoped localStorage, resets daily). */
-  const [lineUpTaskIds, setLineUpTaskIds] = useState<Set<string>>(new Set())
-  const [lineupExcludedTaskIds, setLineupExcludedTaskIds] = useState<Set<string>>(new Set())
   /* Search: query and whether the search pill is expanded. */
   const [searchQuery, setSearchQuery] = useState('')
   const [searchExpanded, setSearchExpanded] = useState(false)
@@ -236,6 +227,7 @@ export function TasksPage() {
   /* Blocked/blocking task IDs: for Available view and for Custom filter (Task dependencies). */
   const [blockedTaskIds, setBlockedTaskIds] = useState<Set<string>>(new Set())
   const [blockingTaskIds, setBlockingTaskIds] = useState<Set<string>>(new Set())
+  const [blockedTaskIdsResolved, setBlockedTaskIdsResolved] = useState(false)
 
   /* Fetch existing tag names when filter modal opens (for Tags multi-select). */
   useEffect(() => {
@@ -246,77 +238,44 @@ export function TasksPage() {
     }
   }, [filterOpen, fetchTags])
 
-  /* Load Today's Lineup from localStorage on mount; empty if stored date is not today. */
-  useEffect(() => {
-    setLineUpTaskIds(loadTodaysLineupTaskIds())
-    setLineupExcludedTaskIds(loadLineupExcludedTaskIds())
-  }, [])
-
   /* Compute blocked and blocking task IDs (for Available view and Custom dependency filters). */
   useEffect(() => {
     if (tasks.length === 0) {
       setBlockedTaskIds(new Set())
       setBlockingTaskIds(new Set())
+      setBlockedTaskIdsResolved(false)
       return
     }
+
+    let cancelled = false
     const taskIds = tasks.map((t) => t.id)
     const taskLookup = Object.fromEntries(tasks.map((t) => [t.id, t]))
     getDependenciesForTaskIds(taskIds)
       .then((deps) => {
+        if (cancelled) return
         setBlockedTaskIds(computeBlockedTaskIds(deps, taskLookup))
         setBlockingTaskIds(computeBlockingTaskIds(deps, taskLookup))
+        setBlockedTaskIdsResolved(true)
       })
       .catch(() => {
+        if (cancelled) return
         setBlockedTaskIds(new Set())
         setBlockingTaskIds(new Set())
+        setBlockedTaskIdsResolved(true)
       })
+
+    return () => {
+      cancelled = true
+    }
   }, [tasks])
 
-  /* Persist Today's Lineup to localStorage when it changes (date-scoped, resets daily). */
-  const persistLineupState = useCallback((ids: Set<string>, excluded: Set<string>) => {
-    saveTodaysLineupState(ids, excluded)
-    setLineUpTaskIds(ids)
-    setLineupExcludedTaskIds(excluded)
-  }, [])
-
-  /* Daily seed: run at most once per calendar day; merge with any manual picks already saved */
-  useEffect(() => {
-    if (tasks.length === 0) return
-    if (hasLineupSeedRunToday()) return
-
-    const seedTasks = buildTodaysLineupSeedTasks(tasks, blockedTaskIds, timeZone, 5)
-    markLineupSeedRunToday()
-
-    if (seedTasks.length === 0) return
-
-    const mergedIds = new Set([
-      ...loadTodaysLineupTaskIds(),
-      ...seedTasks.map((t) => t.id),
-    ])
-    persistLineupState(mergedIds, lineupExcludedTaskIds)
-  }, [tasks, blockedTaskIds, timeZone, lineupExcludedTaskIds, persistLineupState])
-
-  const addToLineUp = useCallback(
-    (id: string) => {
-      const nextIds = new Set(lineUpTaskIds)
-      nextIds.add(id)
-      const nextExcluded = new Set(lineupExcludedTaskIds)
-      nextExcluded.delete(id)
-      persistLineupState(nextIds, nextExcluded)
-    },
-    [lineUpTaskIds, lineupExcludedTaskIds, persistLineupState],
-  )
-
-  const removeFromLineUp = useCallback(
-    (id: string) => {
-      const nextIds = new Set(lineUpTaskIds)
-      nextIds.delete(id)
-      const nextExcluded = new Set(lineupExcludedTaskIds)
-      nextExcluded.add(id)
-      persistLineupState(nextIds, nextExcluded)
-    },
-    [lineUpTaskIds, lineupExcludedTaskIds, persistLineupState],
-  )
+  /* Today's Lineup: shared persistence + daily seed with Briefing plan step */
+  const { lineUpTaskIds, lineupExcludedTaskIds, addToLineUp, removeFromLineUp } = useTodaysLineup({
+    tasks,
+    blockedTaskIds,
+    blockedTaskIdsResolved,
+    timeZone,
+  })
 
   const filterCtx = useMemo(
     () => ({
@@ -531,6 +490,20 @@ export function TasksPage() {
     setEditTask(task)
     setIsModalOpen(true)
   }
+
+  /* Global search: open task edit modal when navigated from search result */
+  useEffect(() => {
+    const intent = peekSearchOpenIntent()
+    if (intent?.kind !== 'task') return
+    const task = tasks.find((t) => t.id === intent.id)
+    if (!task) return
+
+    clearSearchOpenIntent()
+    const frame = requestAnimationFrame(() => {
+      openEdit(task)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [tasks])
 
   const closeModal = () => {
     setIsModalOpen(false)

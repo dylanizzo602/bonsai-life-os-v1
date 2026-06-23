@@ -34,7 +34,7 @@ export function BriefingMilestoneRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-4 rounded-lg border border-transparent bg-surface-container-low p-5 text-left transition-all hover:border-outline-variant/30"
+      className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-transparent bg-surface-container-low p-4 text-left transition-all hover:border-outline-variant/30 md:gap-4 md:p-5"
       aria-label={`Update milestone: ${milestone.title}`}
     >
       {isComplete ? (
@@ -46,7 +46,9 @@ export function BriefingMilestoneRow({
         />
       )}
       <div className="min-w-0 flex-1">
-        <p className="text-body font-medium text-on-surface">{milestone.title}</p>
+        <p className="text-body break-words font-medium text-on-surface [overflow-wrap:anywhere]">
+          {milestone.title}
+        </p>
         {numberProgressLabel ? (
           <p className="text-secondary mt-0.5 text-on-surface-variant">{numberProgressLabel}</p>
         ) : null}

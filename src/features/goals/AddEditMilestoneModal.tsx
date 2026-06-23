@@ -47,7 +47,7 @@ export function AddEditMilestoneModal({
   /* Header: edit mode includes subtitle; checkmark uses bordered compact header */
   const header = isEditMode ? (
     isCheckmarkEdit ? (
-      <header className="flex items-center justify-between border-b border-outline-variant/10 px-8 py-6">
+      <header className="flex items-center justify-between border-b border-outline-variant/10 px-4 py-4 md:px-8 md:py-6">
         <h2 className="text-body font-semibold tracking-tight text-on-surface">Update Milestone</h2>
         <button
           type="button"
@@ -59,8 +59,8 @@ export function AddEditMilestoneModal({
         </button>
       </header>
     ) : (
-      <header className="flex items-start justify-between px-8 pb-6 pt-8">
-        <div>
+      <header className="flex min-w-0 items-start justify-between gap-3 px-4 pb-4 pt-6 md:px-8 md:pb-6 md:pt-8">
+        <div className="min-w-0 flex-1">
           <h1 className="text-body font-semibold leading-none tracking-tight text-on-surface">
             Update Milestone
           </h1>
@@ -79,7 +79,7 @@ export function AddEditMilestoneModal({
       </header>
     )
   ) : (
-    <header className="flex items-center justify-between px-8 pb-4 pt-8">
+    <header className="flex items-center justify-between px-4 pb-4 pt-6 md:px-8 md:pt-8">
       <h2 className="text-body font-semibold tracking-tight text-on-surface">Add Milestone</h2>
       <button
         type="button"
@@ -102,10 +102,10 @@ export function AddEditMilestoneModal({
           ? 'bg-on-surface/40 p-4 backdrop-blur-sm'
           : 'bg-surface/70 p-4 backdrop-blur-sm md:p-6'
       }
-      cardClassName={`flex max-h-[90vh] w-full flex-col overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container-lowest ${
+      cardClassName={`flex max-h-[90vh] w-full min-w-0 flex-col overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container-lowest ${
         isEditMode
-          ? 'max-w-[560px] shadow-[0_20px_50px_rgba(81,96,81,0.12)]'
-          : 'max-w-xl shadow-[0_20px_50px_rgba(91,107,135,0.12)]'
+          ? 'max-w-[min(560px,100%)] shadow-[0_20px_50px_rgba(81,96,81,0.12)]'
+          : 'max-w-[min(36rem,100%)] shadow-[0_20px_50px_rgba(91,107,135,0.12)]'
       }`}
       bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden p-0"
       disableBodyScroll

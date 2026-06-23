@@ -1,6 +1,7 @@
 /* Notes page: Library/detail container with hierarchical pages per document */
 import { useState, useCallback, useEffect } from 'react'
 import { consumeQuickAddIntent } from '../layout/quickAddIntent'
+import { peekSearchOpenIntent, clearSearchOpenIntent } from '../search/searchOpenIntent'
 import { useNotes } from './hooks/useNotes'
 import { useNoteFolders } from './hooks/useNoteFolders'
 import { useNotePages } from './hooks/useNotePages'
@@ -88,6 +89,40 @@ export function NotesPage() {
   useEffect(() => {
     if (consumeQuickAddIntent() === 'note') void handleNewNote()
   }, [handleNewNote])
+
+  /* Global search: open note or filter folder from search result */
+  useEffect(() => {
+    const intent = peekSearchOpenIntent()
+    if (!intent) return
+
+    if (intent.kind === 'note_folder') {
+      clearSearchOpenIntent()
+      const frame = requestAnimationFrame(() => {
+        setSelectedFolderId(intent.id)
+        setSelectedNoteId(null)
+        setSelectedPageId(null)
+      })
+      return () => cancelAnimationFrame(frame)
+    }
+
+    if (intent.kind === 'note') {
+      if (loading) return
+      const noteExists = notes.some((n) => n.id === intent.id)
+      if (!noteExists) {
+        clearSearchOpenIntent()
+        return
+      }
+
+      clearSearchOpenIntent()
+      const notePages = pagesByNoteId[intent.id]
+      const pageId = intent.pageId ?? getDefaultSelectedPageId(notePages ?? []) ?? null
+      const frame = requestAnimationFrame(() => {
+        setSelectedNoteId(intent.id)
+        setSelectedPageId(pageId)
+      })
+      return () => cancelAnimationFrame(frame)
+    }
+  }, [notes, pagesByNoteId, loading])
 
   const handleNoteClick = useCallback((id: string) => {
     setSelectedNoteId(id)

@@ -1,6 +1,6 @@
 /* quickAddIntent: Cross-page quick-add triggers from mobile nav */
 
-export type QuickAddIntent = 'task' | 'note' | 'inbox'
+export type QuickAddIntent = 'task' | 'note' | 'inbox' | 'habit'
 
 const STORAGE_KEY = 'bonsai_quick_add_intent'
 
@@ -15,6 +15,6 @@ export function consumeQuickAddIntent(): QuickAddIntent | null {
   if (typeof window === 'undefined') return null
   const value = sessionStorage.getItem(STORAGE_KEY)
   sessionStorage.removeItem(STORAGE_KEY)
-  if (value === 'task' || value === 'note' || value === 'inbox') return value
+  if (value === 'task' || value === 'note' || value === 'inbox' || value === 'habit') return value
   return null
 }

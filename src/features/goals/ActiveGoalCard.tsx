@@ -63,35 +63,39 @@ export function ActiveGoalCard({
       className="group flex h-full w-full flex-col rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-6 text-left transition-all duration-300 hover:shadow-lg md:p-8"
       aria-label={`View goal: ${goal.name}, ${progressRounded}% progress`}
     >
-      {/* Top row: icon, optional category, and percent badge */}
-      <div className="mb-6 flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+      {/* Top row: compact icon + title/category aligned with percent badge */}
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <div
-            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg transition-colors ${accentClasses.iconTile} ${accentClasses.iconTileHover}`}
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${accentClasses.iconTile} ${accentClasses.iconTileHover}`}
           >
-            <MaterialIcon name={iconName} className="text-[24px]" />
+            <MaterialIcon name={iconName} className="text-[18px]" />
           </div>
-          {goal.category ? (
-            <span className="text-xs font-bold uppercase tracking-wider text-outline">
-              {getGoalCategoryLabel(goal.category)}
-            </span>
-          ) : null}
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-semibold leading-tight text-on-surface md:text-base">
+              {goal.name}
+            </h3>
+            {goal.category ? (
+              <span className="block truncate text-[10px] font-bold uppercase tracking-wider text-outline md:text-xs">
+                {getGoalCategoryLabel(goal.category)}
+              </span>
+            ) : null}
+          </div>
         </div>
         <span
-          className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${accentClasses.badge}`}
+          className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider md:px-3 md:py-1 md:text-xs ${accentClasses.badge}`}
         >
           {progressRounded}% Done
         </span>
       </div>
 
-      {/* Title and description */}
-      <h3 className="mb-2 text-body font-semibold text-on-surface">{goal.name}</h3>
+      {/* Description */}
       {showDescription ? (
-        <p className="mb-8 line-clamp-3 flex-grow text-secondary text-on-surface-variant">
+        <p className="mb-6 line-clamp-3 flex-grow text-secondary text-on-surface-variant md:mb-8">
           {descriptionPreview}
         </p>
       ) : (
-        <div className="mb-8 flex-grow" />
+        <div className="mb-6 flex-grow md:mb-8" />
       )}
 
       {/* Progress bar footer */}
