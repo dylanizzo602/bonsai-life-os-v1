@@ -10,6 +10,7 @@ import {
   type HabitOccurrenceEntry,
   type HabitOccurrenceSource,
 } from '../_shared/habitReminderOccurrences.ts'
+import { isVacationModeActive } from '../_shared/vacationMode.ts'
 
 type NotificationType =
   | 'task_overdue'
@@ -838,6 +839,8 @@ serve(async (req) => {
       const authUser = authUsersById[userId] ?? null
       const tz = getUserTimeZone(authUser)
       const todayYMD = getLocalDayKey(tz)
+      if (isVacationModeActive(authUser?.user_metadata ?? null, todayYMD)) continue
+
       const missed = listMissedHabitOccurrences({
         habit,
         task: linkedTask,

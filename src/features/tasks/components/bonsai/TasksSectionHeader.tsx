@@ -99,9 +99,6 @@ export function TasksSectionHeader({
       <div className="mb-8 flex items-start justify-between md:hidden">
         <div>
           <h1 className="text-page-title font-semibold tracking-tight text-on-surface">Tasks</h1>
-          <p className="text-secondary mt-1 text-on-surface-variant/70">
-            Focus on what matters today.
-          </p>
         </div>
         {!searchExpanded ? actionButtons : null}
       </div>

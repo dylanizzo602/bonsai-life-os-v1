@@ -19,6 +19,7 @@ import { ProfileSettingsSection } from './sections/ProfileSettingsSection'
 import { IntegrationsSettingsSection } from './sections/IntegrationsSettingsSection'
 import { BillingSettingsSection } from './sections/BillingSettingsSection'
 import { BriefingSettingsSection } from './sections/BriefingSettingsSection'
+import { HabitsSettingsSection } from './sections/HabitsSettingsSection'
 import { NotificationsSettingsSection } from './sections/NotificationsSettingsSection'
 import { DataManagementSettingsSection } from './sections/DataManagementSettingsSection'
 import { DevSettingsSection } from './sections/DevSettingsSection'
@@ -296,6 +297,8 @@ export function SettingsPage() {
         <BillingSettingsSection />
 
         <BriefingSettingsSection />
+
+        <HabitsSettingsSection />
 
         <NotificationsSettingsSection
           loading={loadingNotifications}

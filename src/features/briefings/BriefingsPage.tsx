@@ -47,6 +47,7 @@ import { computeBlockedTaskIds } from '../tasks/utils/dependencies'
 import { getAvailableBacklogTasks } from '../tasks/utils/partitionBonsaiTasks'
 import { isoInstantToLocalCalendarYMD } from '../../lib/localCalendarDate'
 import { useUserTimeZone } from '../settings/useUserTimeZone'
+import { useVacationMode } from '../settings/useVacationMode'
 import {
   buildBriefingSteps,
   buildPreviewBriefingSteps,
@@ -93,6 +94,7 @@ export function BriefingsPage({
 }: BriefingsPageProps) {
   /* User time zone: due dates and briefing completion align with Settings */
   const timeZone = useUserTimeZone()
+  const { isActive: vacationModeActive } = useVacationMode()
   const { user } = useAuth()
 
   /* Profile fields for personalized greeting */
@@ -850,6 +852,7 @@ export function BriefingsPage({
           onToggleComplete={handleToggleTaskComplete}
           onHabitTargetComplete={async (habit, task, remindAt) => {
             if (previewMode && isPreviewFixtureId(habit.id)) return
+            if (vacationModeActive) return
             const occurrenceDate =
               isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
             await setHabitEntry(habit.id, occurrenceDate, 'completed')
@@ -858,6 +861,7 @@ export function BriefingsPage({
           }}
           onHabitMinimum={async (habit, task, remindAt) => {
             if (previewMode && isPreviewFixtureId(habit.id)) return
+            if (vacationModeActive) return
             const occurrenceDate =
               isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
             await setHabitEntry(habit.id, occurrenceDate, 'minimum')
@@ -866,12 +870,14 @@ export function BriefingsPage({
           }}
           onHabitSkip={async (habit, task, remindAt) => {
             if (previewMode && isPreviewFixtureId(habit.id)) return
+            if (vacationModeActive) return
             const occurrenceDate =
               isoInstantToLocalCalendarYMD(remindAt ?? task.due_date) ?? todayYMD
             await setHabitEntry(habit.id, occurrenceDate, 'skipped')
             await refetchHabits()
             await refetchTasks()
           }}
+          habitActionsDisabled={vacationModeActive}
           onContinue={advanceStep}
         />
       ) : null}

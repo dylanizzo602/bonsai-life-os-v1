@@ -13,6 +13,8 @@ export interface HabitRemindersPanelProps {
   tasks: Task[]
   todayYMD: string
   entriesByHabit: Record<string, HabitEntry[]>
+  /** When true, show paused message instead of reminder rows */
+  vacationModeActive?: boolean
 }
 
 type ReminderRowStatus = 'upcoming' | 'missed'
@@ -65,6 +67,7 @@ export function HabitRemindersPanel({
   tasks,
   todayYMD,
   entriesByHabit,
+  vacationModeActive = false,
 }: HabitRemindersPanelProps) {
   const [showAll, setShowAll] = useState(false)
 
@@ -109,6 +112,21 @@ export function HabitRemindersPanel({
   }, [habits, tasks, todayYMD, entriesByHabit])
 
   const visibleRows = showAll ? displayRows : displayRows.slice(0, 3)
+
+  if (vacationModeActive) {
+    return (
+      <section className="mt-20">
+        <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low p-6 md:p-8">
+          <div className="flex items-center gap-3">
+            <MaterialIcon name="beach_access" className="text-primary" />
+            <p className="text-body text-on-surface-variant">
+              Reminders paused during vacation mode.
+            </p>
+          </div>
+        </div>
+      </section>
+    )
+  }
 
   if (displayRows.length === 0 && remainingCount === 0) return null
 

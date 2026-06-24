@@ -15,6 +15,8 @@ export interface HabitActiveCardProps {
     status: 'completed' | 'minimum' | 'skipped' | null,
   ) => Promise<void>
   onEditHabit: (habit: HabitWithStreaks) => void
+  /** When true, Target/Min/Skip actions are disabled (vacation mode) */
+  markingDisabled?: boolean
 }
 
 /** Resolve entry status for a habit on the selected date */
@@ -38,10 +40,12 @@ export function HabitActiveCard({
   isScheduled,
   onSetEntry,
   onEditHabit,
+  markingDisabled = false,
 }: HabitActiveCardProps) {
   /* Selected-day status drives button active states */
   const status = isScheduled ? getStatusForDate(entriesByHabit, habit.id, selectedDateYMD) : null
   const hasMinimumAction = Boolean(habit.minimum_action && habit.minimum_action.trim() !== '')
+  const actionsDisabled = !isScheduled || markingDisabled
 
   return (
     <div
@@ -78,7 +82,7 @@ export function HabitActiveCard({
       <div className={`grid gap-2 ${hasMinimumAction ? 'grid-cols-3' : 'grid-cols-2'}`}>
         <button
           type="button"
-          disabled={!isScheduled}
+          disabled={actionsDisabled}
           onClick={() =>
             void onSetEntry(
               habit.id,
@@ -87,7 +91,7 @@ export function HabitActiveCard({
             )
           }
           className={`rounded-md border px-1 py-2 text-secondary font-bold transition-all ${
-            !isScheduled
+            actionsDisabled
               ? 'cursor-not-allowed border-outline-variant/20 text-outline'
               : status === 'completed'
                 ? 'border-primary bg-primary text-on-primary'
@@ -99,7 +103,7 @@ export function HabitActiveCard({
         {hasMinimumAction && (
           <button
             type="button"
-            disabled={!isScheduled}
+            disabled={actionsDisabled}
             onClick={() =>
               void onSetEntry(
                 habit.id,
@@ -108,7 +112,7 @@ export function HabitActiveCard({
               )
             }
             className={`rounded-md border px-1 py-2 text-secondary font-bold transition-all ${
-              !isScheduled
+              actionsDisabled
                 ? 'cursor-not-allowed border-outline-variant/20 text-outline'
                 : status === 'minimum'
                   ? 'border-secondary-container bg-secondary-container text-on-secondary-container'
@@ -120,7 +124,7 @@ export function HabitActiveCard({
         )}
         <button
           type="button"
-          disabled={!isScheduled}
+          disabled={actionsDisabled}
           onClick={() =>
             void onSetEntry(
               habit.id,
@@ -129,7 +133,7 @@ export function HabitActiveCard({
             )
           }
           className={`rounded-md border px-1 py-2 text-secondary font-bold transition-all ${
-            !isScheduled
+            actionsDisabled
               ? 'cursor-not-allowed border-outline-variant/20 text-outline'
               : status === 'skipped'
                 ? 'border-error-container bg-error-container text-on-error-container'
@@ -140,8 +144,11 @@ export function HabitActiveCard({
         </button>
       </div>
 
-      {!isScheduled && (
+      {!isScheduled && !markingDisabled && (
         <p className="mt-2 text-secondary text-on-surface-variant">Not scheduled for this day.</p>
+      )}
+      {markingDisabled && isScheduled && (
+        <p className="mt-2 text-secondary text-on-surface-variant">Paused during vacation mode.</p>
       )}
     </div>
   )

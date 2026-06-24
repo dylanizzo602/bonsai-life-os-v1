@@ -22,6 +22,8 @@ interface OverdueScreenProps {
   onHabitTargetComplete?: (habit: HabitWithStreaks, task: Task, remindAt: string | null) => void
   onHabitMinimum?: (habit: HabitWithStreaks, task: Task, remindAt: string | null) => void
   onHabitSkip?: (habit: HabitWithStreaks, task: Task, remindAt: string | null) => void
+  /** Disable habit Target/Min/Skip (e.g. vacation mode) */
+  habitActionsDisabled?: boolean
   onContinue: () => void
 }
 
@@ -37,6 +39,7 @@ export function OverdueScreen({
   onHabitTargetComplete,
   onHabitMinimum,
   onHabitSkip,
+  habitActionsDisabled = false,
   onContinue,
 }: OverdueScreenProps) {
   const timeZone = useUserTimeZone()
@@ -98,12 +101,18 @@ export function OverdueScreen({
                   Unfinished Habits
                 </h2>
               </div>
+              {habitActionsDisabled ? (
+                <p className="text-secondary mb-4 text-on-surface-variant">
+                  Habit actions are paused during vacation mode.
+                </p>
+              ) : null}
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {habits.map(({ habit, task, remindAt }) => (
                   <BriefingHabitCatchUpCard
                     key={habit.id}
                     habit={habit}
                     hasMinimumAction={Boolean(habit.minimum_action?.trim())}
+                    actionsDisabled={habitActionsDisabled}
                     onTargetComplete={() => onHabitTargetComplete?.(habit, task, remindAt)}
                     onMinimum={() => onHabitMinimum?.(habit, task, remindAt)}
                     onSkip={() => onHabitSkip?.(habit, task, remindAt)}

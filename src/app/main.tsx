@@ -5,12 +5,15 @@ import '../index.css'
 import App from './App.tsx'
 import { AuthProvider } from '../features/auth/AuthContext'
 import { UserTimeZoneProvider } from '../features/settings/UserTimeZoneProvider'
+import { VacationModeProvider } from '../features/settings/VacationModeProvider'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
       <UserTimeZoneProvider>
-        <App />
+        <VacationModeProvider>
+          <App />
+        </VacationModeProvider>
       </UserTimeZoneProvider>
     </AuthProvider>
   </StrictMode>,

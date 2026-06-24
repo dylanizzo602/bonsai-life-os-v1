@@ -5,6 +5,7 @@
  * Monthly (every_x_days ~28–31): consecutive calendar months with at least one done entry. */
 
 import type { StreakEntry } from './streaks'
+import type { VacationDayPredicate } from './vacationMode'
 
 export interface HabitStreakResult {
   currentStreak: number
@@ -88,6 +89,27 @@ function isDone(status: 'completed' | 'skipped' | 'minimum' | undefined): boolea
   return status === 'completed' || status === 'minimum'
 }
 
+/** Step back one day, skipping vacation-neutral days when predicate is provided */
+function prevStreakDay(ymd: string, isVacationDay?: VacationDayPredicate): string {
+  let d = addDays(ymd, -1)
+  while (isVacationDay?.(d)) {
+    d = addDays(d, -1)
+  }
+  return d
+}
+
+/** True when every day in YYYY-MM intersects the vacation range */
+function monthIntersectsVacation(ym: string, isVacationDay?: VacationDayPredicate): boolean {
+  if (!isVacationDay) return false
+  const [y, m] = ym.split('-').map(Number)
+  const lastDay = new Date(y ?? 2000, m ?? 1, 0).getDate()
+  for (let day = 1; day <= lastDay; day++) {
+    const ymd = `${ym}-${String(day).padStart(2, '0')}`
+    if (isVacationDay(ymd)) return true
+  }
+  return false
+}
+
 /** every_x_days with interval ~one month (e.g. 30-day “monthly” habits like Follow budget). */
 export function isMonthlyIntervalHabit(frequency: string, frequencyTarget: number | null): boolean {
   return (
@@ -126,6 +148,7 @@ function monthsWithDone(entries: StreakEntry[]): Set<string> {
 export function getStreaksMonthlyIntervalHabit(
   entries: StreakEntry[],
   todayYMD: string,
+  isVacationDay?: VacationDayPredicate,
 ): HabitStreakResult {
   const doneMonths = monthsWithDone(entries)
   if (doneMonths.size === 0) {
@@ -133,15 +156,23 @@ export function getStreaksMonthlyIntervalHabit(
   }
 
   let anchorMonth = monthKey(todayYMD)
-  if (!doneMonths.has(anchorMonth)) {
+  if (!doneMonths.has(anchorMonth) && !monthIntersectsVacation(anchorMonth, isVacationDay)) {
     anchorMonth = prevMonthKey(anchorMonth)
   }
 
   let current = 0
   let ym = anchorMonth
-  while (doneMonths.has(ym)) {
-    current++
-    ym = prevMonthKey(ym)
+  while (true) {
+    if (doneMonths.has(ym)) {
+      current++
+      ym = prevMonthKey(ym)
+      continue
+    }
+    if (monthIntersectsVacation(ym, isVacationDay)) {
+      ym = prevMonthKey(ym)
+      continue
+    }
+    break
   }
 
   /* Longest: scan all done months in order */
@@ -166,20 +197,29 @@ export function getStreaksMonthlyIntervalHabit(
 export function getCurrentStreakDatesMonthlyIntervalHabit(
   entries: StreakEntry[],
   todayYMD: string,
+  isVacationDay?: VacationDayPredicate,
 ): string[] {
   const doneMonths = monthsWithDone(entries)
   if (doneMonths.size === 0) return []
 
   let anchorMonth = monthKey(todayYMD)
-  if (!doneMonths.has(anchorMonth)) {
+  if (!doneMonths.has(anchorMonth) && !monthIntersectsVacation(anchorMonth, isVacationDay)) {
     anchorMonth = prevMonthKey(anchorMonth)
   }
 
   const streakMonths = new Set<string>()
   let ym = anchorMonth
-  while (doneMonths.has(ym)) {
-    streakMonths.add(ym)
-    ym = prevMonthKey(ym)
+  while (true) {
+    if (doneMonths.has(ym)) {
+      streakMonths.add(ym)
+      ym = prevMonthKey(ym)
+      continue
+    }
+    if (monthIntersectsVacation(ym, isVacationDay)) {
+      ym = prevMonthKey(ym)
+      continue
+    }
+    break
   }
 
   return entries
@@ -199,29 +239,42 @@ function toMap(entries: StreakEntry[]): Map<string, 'completed' | 'skipped' | 'm
  * Current streak (days): walk backward from anchor; count consecutive days with completed|minimum.
  * If today is skipped → 0. If today is empty → anchor yesterday so morning shows streak through yesterday.
  */
-export function getStreaksDaily(entries: StreakEntry[], todayYMD: string): HabitStreakResult {
+export function getStreaksDaily(
+  entries: StreakEntry[],
+  todayYMD: string,
+  isVacationDay?: VacationDayPredicate,
+): HabitStreakResult {
   const map = toMap(entries)
   const todayS = map.get(todayYMD)
-  if (todayS === 'skipped') {
-    return { currentStreak: 0, longestStreak: longestStreakDaily(map, todayYMD) }
+  if (todayS === 'skipped' && !isVacationDay?.(todayYMD)) {
+    return { currentStreak: 0, longestStreak: longestStreakDaily(map, todayYMD, isVacationDay) }
   }
   let anchor = todayYMD
   if (!isDone(todayS)) {
-    anchor = addDays(todayYMD, -1)
+    anchor = prevStreakDay(todayYMD, isVacationDay)
   }
   let current = 0
   let d = anchor
-  while (isDone(map.get(d))) {
-    current++
-    d = addDays(d, -1)
+  while (true) {
+    if (isVacationDay?.(d)) {
+      d = addDays(d, -1)
+      continue
+    }
+    if (isDone(map.get(d))) {
+      current++
+      d = addDays(d, -1)
+      continue
+    }
+    break
   }
-  return { currentStreak: current, longestStreak: longestStreakDaily(map, todayYMD) }
+  return { currentStreak: current, longestStreak: longestStreakDaily(map, todayYMD, isVacationDay) }
 }
 
 /** Longest run of consecutive calendar days where each day is done (scan min..max date span) */
 function longestStreakDaily(
   map: Map<string, 'completed' | 'skipped' | 'minimum'>,
   todayYMD: string,
+  isVacationDay?: VacationDayPredicate,
 ): number {
   const keys = [...map.keys()]
   if (keys.length === 0) return 0
@@ -232,6 +285,10 @@ function longestStreakDaily(
   let run = 0
   let d = minD
   while (d <= maxD) {
+    if (isVacationDay?.(d)) {
+      d = addDays(d, 1)
+      continue
+    }
     if (isDone(map.get(d))) {
       run++
       if (run > best) best = run
@@ -244,19 +301,31 @@ function longestStreakDaily(
 }
 
 /** Dates in the current daily streak (oldest first), for calendar shading */
-export function getCurrentStreakDatesDaily(entries: StreakEntry[], todayYMD: string): string[] {
+export function getCurrentStreakDatesDaily(
+  entries: StreakEntry[],
+  todayYMD: string,
+  isVacationDay?: VacationDayPredicate,
+): string[] {
   const map = toMap(entries)
   const todayS = map.get(todayYMD)
-  if (todayS === 'skipped') return []
+  if (todayS === 'skipped' && !isVacationDay?.(todayYMD)) return []
   let anchor = todayYMD
   if (!isDone(todayS)) {
-    anchor = addDays(todayYMD, -1)
+    anchor = prevStreakDay(todayYMD, isVacationDay)
   }
   const dates: string[] = []
   let d = anchor
-  while (isDone(map.get(d))) {
-    dates.push(d)
-    d = addDays(d, -1)
+  while (true) {
+    if (isVacationDay?.(d)) {
+      d = addDays(d, -1)
+      continue
+    }
+    if (isDone(map.get(d))) {
+      dates.push(d)
+      d = addDays(d, -1)
+      continue
+    }
+    break
   }
   return dates.sort()
 }
@@ -266,10 +335,12 @@ function isWeekComplete(
   weekStart: string,
   map: Map<string, 'completed' | 'skipped' | 'minimum'>,
   weekDayBitmask: number,
+  isVacationDay?: VacationDayPredicate,
 ): boolean {
   for (let i = 0; i < 7; i++) {
     if ((weekDayBitmask & (1 << i)) === 0) continue
     const date = addDays(weekStart, i)
+    if (isVacationDay?.(date)) continue
     if (!isDone(map.get(date))) return false
   }
   return true
@@ -283,15 +354,16 @@ export function getStreaksWeekly(
   entries: StreakEntry[],
   todayYMD: string,
   weekDayBitmask: number,
+  isVacationDay?: VacationDayPredicate,
 ): HabitStreakResult {
   const map = toMap(entries)
   const weekStartToday = getWeekStart(todayYMD)
   let w = weekStartToday
-  if (!isWeekComplete(w, map, weekDayBitmask)) {
+  if (!isWeekComplete(w, map, weekDayBitmask, isVacationDay)) {
     w = addDays(w, -7)
   }
   let current = 0
-  while (isWeekComplete(w, map, weekDayBitmask)) {
+  while (isWeekComplete(w, map, weekDayBitmask, isVacationDay)) {
     current++
     w = addDays(w, -7)
   }
@@ -309,7 +381,7 @@ export function getStreaksWeekly(
   let longest = 0
   let run = 0
   while (ws <= endWs) {
-    if (isWeekComplete(ws, map, weekDayBitmask)) {
+    if (isWeekComplete(ws, map, weekDayBitmask, isVacationDay)) {
       run++
       if (run > longest) longest = run
     } else {
@@ -325,18 +397,20 @@ export function getCurrentStreakDatesWeekly(
   entries: StreakEntry[],
   todayYMD: string,
   weekDayBitmask: number,
+  isVacationDay?: VacationDayPredicate,
 ): string[] {
   /* Streak window: include selected weekdays within each fully-complete week of the current weekly streak. */
   const map = toMap(entries)
   let w = getWeekStart(todayYMD)
-  if (!isWeekComplete(w, map, weekDayBitmask)) {
+  if (!isWeekComplete(w, map, weekDayBitmask, isVacationDay)) {
     w = addDays(w, -7)
   }
   const dates: string[] = []
-  while (isWeekComplete(w, map, weekDayBitmask)) {
+  while (isWeekComplete(w, map, weekDayBitmask, isVacationDay)) {
     for (let i = 0; i < 7; i++) {
       if ((weekDayBitmask & (1 << i)) === 0) continue
-      dates.push(addDays(w, i))
+      const date = addDays(w, i)
+      if (!isVacationDay?.(date)) dates.push(date)
     }
     w = addDays(w, -7)
   }
@@ -386,6 +460,7 @@ export function getStreaksMonthly(
   todayYMD: string,
   monthlyInterval: number,
   monthlyDay: number,
+  isVacationDay?: VacationDayPredicate,
 ): HabitStreakResult {
   const map = toMap(entries)
   const interval = Math.max(1, Math.trunc(monthlyInterval || 1))
@@ -396,22 +471,34 @@ export function getStreaksMonthly(
   let anchorDue = dueThisMonth <= todayYMD ? dueThisMonth : monthDueYMDFor(addMonths(todayMonthStart, -interval), day)
 
   const todayStatus = map.get(dueThisMonth)
-  if (dueThisMonth === todayYMD && todayStatus === 'skipped') {
-    return { currentStreak: 0, longestStreak: longestStreakMonthly(map, todayYMD, interval, day) }
+  if (dueThisMonth === todayYMD && todayStatus === 'skipped' && !isVacationDay?.(dueThisMonth)) {
+    return { currentStreak: 0, longestStreak: longestStreakMonthly(map, todayYMD, interval, day, isVacationDay) }
   }
-  if (dueThisMonth === todayYMD && !isDone(todayStatus)) {
+  if (dueThisMonth === todayYMD && !isDone(todayStatus) && !isVacationDay?.(dueThisMonth)) {
     anchorDue = monthDueYMDFor(addMonths(todayMonthStart, -interval), day)
   }
 
   let current = 0
   let d = anchorDue
-  while (isDone(map.get(d))) {
-    current++
-    const prevMonthStart = addMonths(d.slice(0, 7) + '-01', -interval)
-    d = monthDueYMDFor(prevMonthStart, day)
+  while (true) {
+    if (isVacationDay?.(d)) {
+      const prevMonthStart = addMonths(d.slice(0, 7) + '-01', -interval)
+      d = monthDueYMDFor(prevMonthStart, day)
+      continue
+    }
+    if (isDone(map.get(d))) {
+      current++
+      const prevMonthStart = addMonths(d.slice(0, 7) + '-01', -interval)
+      d = monthDueYMDFor(prevMonthStart, day)
+      continue
+    }
+    break
   }
 
-  return { currentStreak: current, longestStreak: Math.max(longestStreakMonthly(map, todayYMD, interval, day), current) }
+  return {
+    currentStreak: current,
+    longestStreak: Math.max(longestStreakMonthly(map, todayYMD, interval, day, isVacationDay), current),
+  }
 }
 
 function longestStreakMonthly(
@@ -419,6 +506,7 @@ function longestStreakMonthly(
   todayYMD: string,
   intervalMonths: number,
   monthlyDay: number,
+  isVacationDay?: VacationDayPredicate,
 ): number {
   const keys = [...map.keys()]
   if (keys.length === 0) return 0
@@ -429,6 +517,7 @@ function longestStreakMonthly(
   let best = 0
   let run = 0
   for (const d of occurrences) {
+    if (isVacationDay?.(d)) continue
     if (isDone(map.get(d))) {
       run++
       if (run > best) best = run
@@ -445,6 +534,7 @@ export function getCurrentStreakDatesMonthly(
   todayYMD: string,
   monthlyInterval: number,
   monthlyDay: number,
+  isVacationDay?: VacationDayPredicate,
 ): string[] {
   const map = toMap(entries)
   const interval = Math.max(1, Math.trunc(monthlyInterval || 1))
@@ -454,19 +544,28 @@ export function getCurrentStreakDatesMonthly(
   const dueThisMonth = monthDueYMDFor(todayMonthStart, day)
 
   const todayStatus = map.get(dueThisMonth)
-  if (dueThisMonth === todayYMD && todayStatus === 'skipped') return []
+  if (dueThisMonth === todayYMD && todayStatus === 'skipped' && !isVacationDay?.(dueThisMonth)) return []
 
   let anchorDue = dueThisMonth <= todayYMD ? dueThisMonth : monthDueYMDFor(addMonths(todayMonthStart, -interval), day)
-  if (dueThisMonth === todayYMD && !isDone(todayStatus)) {
+  if (dueThisMonth === todayYMD && !isDone(todayStatus) && !isVacationDay?.(dueThisMonth)) {
     anchorDue = monthDueYMDFor(addMonths(todayMonthStart, -interval), day)
   }
 
   const dates: string[] = []
   let d = anchorDue
-  while (isDone(map.get(d))) {
-    dates.push(d)
-    const prevMonthStart = addMonths(d.slice(0, 7) + '-01', -interval)
-    d = monthDueYMDFor(prevMonthStart, day)
+  while (true) {
+    if (isVacationDay?.(d)) {
+      const prevMonthStart = addMonths(d.slice(0, 7) + '-01', -interval)
+      d = monthDueYMDFor(prevMonthStart, day)
+      continue
+    }
+    if (isDone(map.get(d))) {
+      dates.push(d)
+      const prevMonthStart = addMonths(d.slice(0, 7) + '-01', -interval)
+      d = monthDueYMDFor(prevMonthStart, day)
+      continue
+    }
+    break
   }
   return dates.sort()
 }
@@ -479,19 +578,20 @@ export function getHabitStreaks(
   frequencyTarget: number | null,
   monthlyInterval?: number | null,
   monthlyDay?: number | null,
+  isVacationDay?: VacationDayPredicate,
 ): HabitStreakResult {
   const weeklyMask = typeof frequencyTarget === 'number' ? frequencyTarget : 0
   const isWeekly = frequency === 'weekly' && weeklyMask >= 1 && weeklyMask <= 127
   if (isWeekly) {
-    return getStreaksWeekly(entries, todayYMD, weeklyMask)
+    return getStreaksWeekly(entries, todayYMD, weeklyMask, isVacationDay)
   }
   if (frequency === 'monthly') {
-    return getStreaksMonthly(entries, todayYMD, monthlyInterval ?? 1, monthlyDay ?? 1)
+    return getStreaksMonthly(entries, todayYMD, monthlyInterval ?? 1, monthlyDay ?? 1, isVacationDay)
   }
   if (isMonthlyIntervalHabit(frequency, frequencyTarget)) {
-    return getStreaksMonthlyIntervalHabit(entries, todayYMD)
+    return getStreaksMonthlyIntervalHabit(entries, todayYMD, isVacationDay)
   }
-  return getStreaksDaily(entries, todayYMD)
+  return getStreaksDaily(entries, todayYMD, isVacationDay)
 }
 
 export function getHabitCurrentStreakDates(
@@ -501,20 +601,27 @@ export function getHabitCurrentStreakDates(
   frequencyTarget: number | null,
   monthlyInterval?: number | null,
   monthlyDay?: number | null,
+  isVacationDay?: VacationDayPredicate,
 ): string[] {
   /* Calendar shading: weekly uses only fully-complete weeks; daily uses consecutive done days. */
   const weeklyMask = typeof frequencyTarget === 'number' ? frequencyTarget : 0
   const isWeekly = frequency === 'weekly' && weeklyMask >= 1 && weeklyMask <= 127
   if (isWeekly) {
-    return getCurrentStreakDatesWeekly(entries, todayYMD, weeklyMask)
+    return getCurrentStreakDatesWeekly(entries, todayYMD, weeklyMask, isVacationDay)
   }
   if (frequency === 'monthly') {
-    return getCurrentStreakDatesMonthly(entries, todayYMD, monthlyInterval ?? 1, monthlyDay ?? 1)
+    return getCurrentStreakDatesMonthly(
+      entries,
+      todayYMD,
+      monthlyInterval ?? 1,
+      monthlyDay ?? 1,
+      isVacationDay,
+    )
   }
   if (isMonthlyIntervalHabit(frequency, frequencyTarget)) {
-    return getCurrentStreakDatesMonthlyIntervalHabit(entries, todayYMD)
+    return getCurrentStreakDatesMonthlyIntervalHabit(entries, todayYMD, isVacationDay)
   }
-  return getCurrentStreakDatesDaily(entries, todayYMD)
+  return getCurrentStreakDatesDaily(entries, todayYMD, isVacationDay)
 }
 
 /**

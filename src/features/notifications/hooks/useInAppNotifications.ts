@@ -9,6 +9,7 @@ import { isHabitEligibleForTodoReminder } from '../../habits/habitReminderEligib
 import { useHabits } from '../../habits/hooks/useHabits'
 import { useTasks } from '../../tasks/hooks/useTasks'
 import { useUserTimeZone } from '../../settings/useUserTimeZone'
+import { useVacationMode } from '../../settings/useVacationMode'
 import { formatStartDueDisplay } from '../../tasks/utils/date'
 import type { HabitWithStreaks } from '../../habits/types'
 import type { Task } from '../../tasks/types'
@@ -74,6 +75,7 @@ export type InAppNotificationItem =
  */
 export function useInAppNotifications() {
   const timeZone = useUserTimeZone()
+  const { isActive: vacationModeActive } = useVacationMode()
   const { tasks, refetch: refetchTasks } = useTasks()
   const {
     habitsWithStreaks,
@@ -167,6 +169,7 @@ export function useInAppNotifications() {
           entriesByHabit,
           timeZone,
           todayYMD,
+          skipHabitReminders: vacationModeActive,
         }),
       ])
       setCompletedMorningBriefingToday(completed)
@@ -186,6 +189,7 @@ export function useInAppNotifications() {
     entriesByHabit,
     timeZone,
     todayYMD,
+    vacationModeActive,
   ])
 
   useEffect(() => {
@@ -193,6 +197,7 @@ export function useInAppNotifications() {
   }, [refreshNotifications])
 
   const habitRows = useMemo((): InAppHabitReminderRow[] => {
+    if (vacationModeActive) return []
     const rows: InAppHabitReminderRow[] = []
 
     for (const notification of pendingNotifications) {
@@ -217,7 +222,7 @@ export function useInAppNotifications() {
       const bMs = b.remindAt ? new Date(b.remindAt).getTime() : 0
       return aMs - bMs
     })
-  }, [pendingNotifications, habitsWithStreaks, tasksByHabitId])
+  }, [pendingNotifications, habitsWithStreaks, tasksByHabitId, vacationModeActive])
 
   const taskRows = useMemo(
     () => buildTaskNotificationRows(tasks, timeZone, dismissedTaskKeys),
@@ -324,6 +329,7 @@ export function useInAppNotifications() {
       row: InAppHabitReminderRow,
       status: 'completed' | 'minimum' | 'skipped',
     ) => {
+      if (vacationModeActive) return
       setActionInFlightIds((prev) => new Set(prev).add(rowKey))
       try {
         const { habit, occurrenceDate, notificationId } = row
@@ -343,7 +349,7 @@ export function useInAppNotifications() {
         })
       }
     },
-    [setHabitEntry, refetchHabits, refetchTasks],
+    [setHabitEntry, refetchHabits, refetchTasks, vacationModeActive],
   )
 
   const getNotificationBody = useCallback(

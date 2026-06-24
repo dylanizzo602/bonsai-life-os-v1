@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../auth/AuthContext'
 import { useUserTimeZone } from '../../settings/useUserTimeZone'
+import { useVacationMode } from '../../settings/useVacationMode'
 import { getTasks } from '../../../lib/supabase/tasks'
 import { getEntriesForHabits, getHabits } from '../../../lib/supabase/habits'
 import { getHasCompletedMorningBriefingToday } from '../../../lib/supabase/reflections'
@@ -127,6 +128,7 @@ async function showLocalNotification(params: { title: string; body: string; url:
  */
 export function useLocalNotificationScheduler() {
   /* Auth: only run when signed in so queries resolve and preferences are user-scoped */
+  const { isActive: vacationModeActive } = useVacationMode()
   const { session } = useAuth()
   /* Notification timezone: use the same effective browser/device-aware zone as the rest of the app. */
   const notificationTimeZone = useUserTimeZone()
@@ -277,7 +279,7 @@ export function useLocalNotificationScheduler() {
       }
 
       /* Rule: habit reminder hits its reminder time (today only, per-habit) */
-      if (isEnabled('habit_reminder_due')) {
+      if (isEnabled('habit_reminder_due') && !vacationModeActive) {
         for (const h of habits) {
           if (!h.add_to_todos) continue
           if (isHabitOccurrenceResolved(entriesByHabit[h.id] ?? [], zonedTodayKey)) continue
@@ -341,6 +343,6 @@ export function useLocalNotificationScheduler() {
       window.clearInterval(id)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [session, prefsMap, notificationTimeZone, channel])
+  }, [session, prefsMap, notificationTimeZone, channel, vacationModeActive])
 }
 

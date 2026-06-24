@@ -47,8 +47,11 @@ export async function ensurePendingHabitReminderNotifications(params: {
   entriesByHabit: Record<string, HabitOccurrenceEntry[]>
   timeZone: string
   todayYMD: string
+  /** When true, skip backfilling habit reminder rows (vacation mode) */
+  skipHabitReminders?: boolean
 }): Promise<void> {
-  const { habits, tasksByHabitId, entriesByHabit, timeZone, todayYMD } = params
+  const { habits, tasksByHabitId, entriesByHabit, timeZone, todayYMD, skipHabitReminders } = params
+  if (skipHabitReminders) return
   const rowsToUpsert: {
     habit_id: string
     occurrence_date: string

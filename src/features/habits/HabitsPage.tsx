@@ -15,6 +15,7 @@ import { HabitSectionHeader } from './components/HabitSectionHeader'
 import type { HabitEntry, HabitWithStreaks } from './types'
 import { isHabitScheduledOnDate } from './utils/habitScheduling'
 import { peekSearchOpenIntent, clearSearchOpenIntent } from '../search/searchOpenIntent'
+import { useVacationMode } from '../settings/useVacationMode'
 
 /** Format YYYY-MM-DD for a friendly label */
 function formatSelectedDateLabel(ymd: string, todayYMD: string): string {
@@ -62,6 +63,8 @@ export function HabitsPage() {
     deleteHabit,
     setEntry,
   } = useHabits()
+
+  const { isActive: vacationModeActive, config: vacationConfig } = useVacationMode()
 
   const { tasks } = useTasks()
 
@@ -145,6 +148,14 @@ export function HabitsPage() {
 
   const hasHabits = habitsWithStreaks.length > 0
 
+  const vacationEndLabel = vacationConfig.end
+    ? new Date(vacationConfig.end + 'T12:00:00').toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : ''
+
   return (
     <div className="min-h-full w-full max-w-[1200px] mx-auto pb-16 md:pb-24">
       {/* Header: title, date nav, add habit */}
@@ -174,6 +185,25 @@ export function HabitsPage() {
           </button>
         </div>
       </header>
+
+      {vacationModeActive && (
+        <div
+          className="mb-8 rounded-xl border border-primary/30 bg-primary-container/30 px-5 py-4"
+          role="status"
+        >
+          <div className="flex items-start gap-3">
+            <MaterialIcon name="beach_access" className="mt-0.5 shrink-0 text-primary" />
+            <div>
+              <p className="text-body font-semibold text-on-surface">Vacation mode is on</p>
+              <p className="mt-1 text-secondary text-on-surface-variant">
+                {vacationEndLabel
+                  ? `Habits are paused until ${vacationEndLabel}. Your streaks are protected and reminders are off.`
+                  : 'Habits are paused. Your streaks are protected and reminders are off.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Loading / error */}
       {loading && (
@@ -226,6 +256,7 @@ export function HabitsPage() {
                 entriesByHabit={entriesByHabit}
                 selectedDateYMD={selectedDateYMD}
                 isScheduled
+                markingDisabled={vacationModeActive}
                 onSetEntry={setEntry}
                 onEditHabit={handleEditHabit}
               />
@@ -262,6 +293,7 @@ export function HabitsPage() {
                 entriesByHabit={entriesByHabit}
                 selectedDateYMD={selectedDateYMD}
                 isScheduled={false}
+                markingDisabled={vacationModeActive}
                 onSetEntry={setEntry}
                 onEditHabit={handleEditHabit}
               />
@@ -277,6 +309,7 @@ export function HabitsPage() {
           tasks={tasks}
           todayYMD={todayYMD}
           entriesByHabit={entriesByHabit}
+          vacationModeActive={vacationModeActive}
         />
       )}
 

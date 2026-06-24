@@ -14,6 +14,7 @@ import {
   countTargetVsMinimumInCurrentStreak,
   getCurrentWeekProgressDatesWeekly,
 } from '../../../lib/habitStreaks'
+import { useVacationMode } from '../../settings/useVacationMode'
 import type {
   Habit,
   HabitEntry,
@@ -79,6 +80,7 @@ function getNextStatus(
  * Exposes dateRange for the visible calendar; parent can set it (default: calendar week Sun–Sat).
  */
 export function useHabits(initialDateRange?: DateRange) {
+  const { isActive: vacationModeActive, isVacationDay } = useVacationMode()
   const [habits, setHabits] = useState<Habit[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -178,6 +180,7 @@ export function useHabits(initialDateRange?: DateRange) {
         habit.frequency_target,
         habit.monthly_interval,
         habit.monthly_day,
+        isVacationDay,
       )
 
       /* Calendar shading: streak dates are the "official" streak window (weekly = complete weeks only). */
@@ -188,6 +191,7 @@ export function useHabits(initialDateRange?: DateRange) {
         habit.frequency_target,
         habit.monthly_interval,
         habit.monthly_day,
+        isVacationDay,
       )
 
       /* Target/min counts: include current-week progress for weekly streaks so counts update per action. */
@@ -209,7 +213,7 @@ export function useHabits(initialDateRange?: DateRange) {
         currentStreakMinimumCount: minimumCount,
       }
     })
-  }, [habits, entriesByHabit, today])
+  }, [habits, entriesByHabit, today, isVacationDay])
 
   /* Entries in visible range only (for table cells) */
   const entriesInRange = useMemo((): Record<string, HabitEntry[]> => {
@@ -274,6 +278,7 @@ export function useHabits(initialDateRange?: DateRange) {
 
   /* Cycle cell: completed → minimum → skipped → empty */
   const cycleEntry = useCallback(async (habitId: string, entryDate: string) => {
+    if (vacationModeActive) return
     const entries = entriesByHabitRef.current[habitId] ?? []
     const e = entries.find((x) => x.entry_date === entryDate)
     const currentStatus: 'completed' | 'skipped' | 'minimum' | null = e ? e.status : null
@@ -306,7 +311,7 @@ export function useHabits(initialDateRange?: DateRange) {
       fetchHabitsAndEntries()
       throw err
     }
-  }, [fetchHabitsAndEntries])
+  }, [fetchHabitsAndEntries, vacationModeActive])
 
   /* Direct set for Tasks row / API */
   const setEntry = useCallback(
@@ -315,6 +320,7 @@ export function useHabits(initialDateRange?: DateRange) {
       entryDate: string,
       status: 'completed' | 'skipped' | 'minimum' | null,
     ) => {
+      if (vacationModeActive) return
       setError(null)
       setEntriesByHabit((prev) => {
         const entries = prev[habitId] ?? []
@@ -342,7 +348,7 @@ export function useHabits(initialDateRange?: DateRange) {
         throw err
       }
     },
-    [fetchHabitsAndEntries],
+    [fetchHabitsAndEntries, vacationModeActive],
   )
 
   const goToPrevWeek = useCallback(() => {
