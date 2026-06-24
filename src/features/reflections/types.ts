@@ -1,7 +1,18 @@
 /* Reflection types: TypeScript definitions for reflection entries and morning briefing responses */
 
 /** Known reflection entry types stored in reflection_entries.type */
-export type ReflectionEntryType = 'morning_briefing' | 'weekly_briefing' | 'journal'
+export type ReflectionEntryType =
+  | 'morning_briefing'
+  | 'weekly_briefing'
+  | 'journal'
+  | 'goal'
+
+/** Goal completion reflection: captured when a goal reaches 100% progress */
+export interface GoalReflectionResponses {
+  /** Source goal id for linking and deduplication */
+  goalId?: string
+  whatContributedToSuccess?: string
+}
 
 /** Journal entry: freeform rich-text body */
 export interface JournalResponses {
@@ -31,7 +42,7 @@ export interface ReflectionEntry {
   user_id: string | null
   type: string
   title: string | null
-  responses: MorningBriefingResponses | Record<string, unknown>
+  responses: MorningBriefingResponses | GoalReflectionResponses | Record<string, unknown>
   created_at: string
 }
 
@@ -40,13 +51,21 @@ export interface CreateReflectionEntryInput {
   user_id?: string | null
   type: ReflectionEntryType | string
   title?: string | null
-  responses: MorningBriefingResponses | JournalResponses | Record<string, unknown>
+  responses:
+    | MorningBriefingResponses
+    | JournalResponses
+    | GoalReflectionResponses
+    | Record<string, unknown>
 }
 
 /** Input for updating an existing reflection entry */
 export interface UpdateReflectionEntryInput {
   title?: string | null
-  responses?: MorningBriefingResponses | JournalResponses | Record<string, unknown>
+  responses?:
+    | MorningBriefingResponses
+    | JournalResponses
+    | GoalReflectionResponses
+    | Record<string, unknown>
   /** Optional entry date override (ISO timestamp) */
   created_at?: string
 }

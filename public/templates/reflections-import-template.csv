@@ -1,0 +1,5 @@
+id,type,created_at,title,memorableMoment,gratefulFor,habitsGotInTheWay,habitsDoDifferentlyToday,didEverything,whatWouldMakeEasier,weekHighlights,weekImprove,whatContributedToSuccess,goalId,body,responses_json
+,journal,2026-04-23T08:00:00Z,My journal entry,,,,,,,,,,,"<p>Freeform journal body.</p>","{""body"":""<p>Freeform journal body.</p>""}"
+,morning_briefing,2026-04-24T08:00:00Z,Morning Briefing,Yesterday's win,My family,,,,,,,,,,"{""memorableMoment"":""Yesterday's win"",""gratefulFor"":""My family""}"
+,weekly_briefing,2026-04-25T08:00:00Z,Weekly Review – Apr 25 2026,,,,,,,,,,,,"{}"
+,goal,2026-04-26T18:00:00Z,Run a marathon,,,,,,,,,Cross-training and consistency,00000000-0000-0000-0000-000000000001,,"{""goalId"":""00000000-0000-0000-0000-000000000001"",""whatContributedToSuccess"":""Cross-training and consistency""}"

@@ -6,15 +6,13 @@ import { useAccountSettings } from './hooks/useAccountSettings'
 import { useProfileAvatar } from './hooks/useProfileAvatar'
 import { useNotificationSettings } from './hooks/useNotificationSettings'
 import { useTaskImportExport } from './hooks/useTaskImportExport'
+import { useReflectionImportExport } from './hooks/useReflectionImportExport'
+import { useNoteImportExport } from './hooks/useNoteImportExport'
+import { useImportRevert } from './hooks/useImportRevert'
 import { requestNotificationPermission, registerServiceWorker } from '../../lib/notifications/pushClient'
-import { bulkInsertJournalEntriesFromCsv, getAllJournalEntriesForExport } from '../../lib/supabase/reflections'
 import { resetHabitsFreshStart } from '../../lib/supabase/habits'
 import { saveDismissedHabitReminderKeys } from '../notifications/dismissedHabitNotifications'
-import {
-  downloadCsv,
-  exportMorningBriefingEntriesToCsv,
-  parseMorningBriefingCsvFile,
-} from '../reflections/utils/morningBriefingCsv'
+import type { ImportMode } from './types/importExport'
 import { MaterialIcon } from './components'
 import { ProfileSettingsSection } from './sections/ProfileSettingsSection'
 import { IntegrationsSettingsSection } from './sections/IntegrationsSettingsSection'
@@ -65,12 +63,27 @@ export function SettingsPage() {
 
   const { exportJson: exportTasksJson, exportCsv: exportTasksCsv, parseMappingFile, importFromFile } =
     useTaskImportExport()
+  const { exportCsv: exportReflectionsCsv, importFromFile: importReflectionsFromFile } =
+    useReflectionImportExport()
+  const { exportCsv: exportNotesCsv, importFromFile: importNotesFromFile } = useNoteImportExport()
+  const {
+    batch: revertBatch,
+    loading: revertLoading,
+    reverting,
+    error: revertError,
+    refresh: refreshRevert,
+    revert: revertLastImport,
+  } = useImportRevert()
+
+  const [importMode, setImportMode] = useState<ImportMode>('create')
 
   const reflectionsFileInputRef = useRef<HTMLInputElement | null>(null)
+  const notesFileInputRef = useRef<HTMLInputElement | null>(null)
   const [reflectionsImportLoading, setReflectionsImportLoading] = useState(false)
   const [reflectionsImportSummary, setReflectionsImportSummary] = useState<{
     totalRows: number
-    validRows: number
+    createdCount: number
+    updatedCount: number
     errorCount: number
     firstErrors: string[]
   } | null>(null)
@@ -80,15 +93,25 @@ export function SettingsPage() {
   const [tasksMapping, setTasksMapping] = useState<unknown | null>(null)
   const [tasksMappingError, setTasksMappingError] = useState<string | null>(null)
   const [tasksImportLoading, setTasksImportLoading] = useState(false)
+  const [notesImportLoading, setNotesImportLoading] = useState(false)
+  const [notesImportSummary, setNotesImportSummary] = useState<{
+    totalRows: number
+    createdCount: number
+    updatedCount: number
+    errorCount: number
+    firstErrors: string[]
+  } | null>(null)
   const [tasksImportSummary, setTasksImportSummary] = useState<{
     totalRows: number
     createdTasks: number
+    updatedTasks: number
     createdChecklists: number
     createdChecklistItems: number
     createdDependencies: number
     createdTags: number
     errorCount: number
     firstErrors: string[]
+    warnings: string[]
   } | null>(null)
 
   const [habitsResetLoading, setHabitsResetLoading] = useState(false)
@@ -101,7 +124,6 @@ export function SettingsPage() {
 
   const disabled = !user
 
-  /* Save profile + email from profile card */
   const handleSaveProfileSection = async () => {
     clearStatus()
     await saveProfile()
@@ -126,16 +148,53 @@ export function SettingsPage() {
     setNotificationPermission(next)
   }
 
-  const handleExportReflectionsCsv = useCallback(async () => {
-    try {
-      clearStatus()
-      const all = await getAllJournalEntriesForExport()
-      const csvText = exportMorningBriefingEntriesToCsv(all)
-      downloadCsv('reflections-journal-export.csv', csvText)
-    } catch (err) {
-      console.error('Error exporting reflections CSV:', err)
-    }
-  }, [clearStatus])
+  const handleImportTasksFile = useCallback(
+    async (file: File) => {
+      try {
+        clearStatus()
+        setTasksImportLoading(true)
+        setTasksImportSummary(null)
+        const res = await importFromFile(file, {
+          mapping: tasksMapping as never,
+          mode: importMode,
+        })
+        const errors = [
+          ...(res.summary.errors ?? []),
+          ...(res.summary.warnings ?? []),
+        ].filter(Boolean)
+        setTasksImportSummary({
+          totalRows: res.summary.totalRows,
+          createdTasks: res.summary.createdTasks,
+          updatedTasks: res.summary.updatedTasks,
+          createdChecklists: res.summary.createdChecklists,
+          createdChecklistItems: res.summary.createdChecklistItems,
+          createdDependencies: res.summary.createdDependencies,
+          createdTags: res.summary.createdTags,
+          errorCount: errors.length,
+          firstErrors: errors.slice(0, 5),
+          warnings: res.summary.warnings,
+        })
+        await refreshRevert()
+      } catch (err) {
+        console.error('Error importing tasks file:', err)
+        setTasksImportSummary({
+          totalRows: 0,
+          createdTasks: 0,
+          updatedTasks: 0,
+          createdChecklists: 0,
+          createdChecklistItems: 0,
+          createdDependencies: 0,
+          createdTags: 0,
+          errorCount: 1,
+          firstErrors: [err instanceof Error ? err.message : 'Unknown error importing tasks.'],
+          warnings: [],
+        })
+      } finally {
+        setTasksImportLoading(false)
+      }
+    },
+    [clearStatus, importFromFile, importMode, refreshRevert, tasksMapping],
+  )
 
   const handleImportReflectionsCsvFile = useCallback(
     async (file: File) => {
@@ -143,32 +202,74 @@ export function SettingsPage() {
         clearStatus()
         setReflectionsImportLoading(true)
         setReflectionsImportSummary(null)
-        const { rows, errors, totalRows } = await parseMorningBriefingCsvFile(file)
-        const firstErrors = errors
-          .slice(0, 5)
-          .map((e) => (e.rowNumber ? `Row ${e.rowNumber}: ${e.message}` : e.message))
+        const summary = await importReflectionsFromFile(file, importMode)
         setReflectionsImportSummary({
-          totalRows,
-          validRows: rows.length,
-          errorCount: errors.length,
-          firstErrors,
+          totalRows: summary.totalRows,
+          createdCount: summary.createdCount,
+          updatedCount: summary.updatedCount,
+          errorCount: summary.errorCount,
+          firstErrors: summary.errors.slice(0, 5),
         })
-        if (errors.length > 0 || rows.length === 0) return
-        await bulkInsertJournalEntriesFromCsv(
-          rows.map((r) => ({
-            title: r.title,
-            responses: r.responses,
-            created_at: r.created_at,
-          })),
-        )
+        await refreshRevert()
       } catch (err) {
         console.error('Error importing reflections CSV:', err)
+        setReflectionsImportSummary({
+          totalRows: 0,
+          createdCount: 0,
+          updatedCount: 0,
+          errorCount: 1,
+          firstErrors: [err instanceof Error ? err.message : 'Unknown error importing reflections.'],
+        })
       } finally {
         setReflectionsImportLoading(false)
       }
     },
-    [clearStatus],
+    [clearStatus, importMode, importReflectionsFromFile, refreshRevert],
   )
+
+  const handleImportNotesFile = useCallback(
+    async (file: File) => {
+      try {
+        clearStatus()
+        setNotesImportLoading(true)
+        setNotesImportSummary(null)
+        const summary = await importNotesFromFile(file, importMode)
+        setNotesImportSummary({
+          totalRows: summary.totalRows,
+          createdCount: summary.createdCount,
+          updatedCount: summary.updatedCount,
+          errorCount: summary.errorCount,
+          firstErrors: summary.errors.slice(0, 5),
+        })
+        await refreshRevert()
+      } catch (err) {
+        console.error('Error importing notes CSV:', err)
+        setNotesImportSummary({
+          totalRows: 0,
+          createdCount: 0,
+          updatedCount: 0,
+          errorCount: 1,
+          firstErrors: [err instanceof Error ? err.message : 'Unknown error importing notes.'],
+        })
+      } finally {
+        setNotesImportLoading(false)
+      }
+    },
+    [clearStatus, importMode, importNotesFromFile, refreshRevert],
+  )
+
+  const handleRevertLastImport = useCallback(async () => {
+    const confirmed = window.confirm(
+      'This will undo your most recent import. You cannot undo this revert.',
+    )
+    if (!confirmed) return
+    try {
+      clearStatus()
+      await revertLastImport()
+    } catch (err) {
+      console.error('Error reverting import:', err)
+    }
+  }, [clearStatus, revertLastImport])
 
   const handleExportTasksJson = useCallback(async () => {
     try {
@@ -188,6 +289,24 @@ export function SettingsPage() {
     }
   }, [clearStatus, exportTasksCsv])
 
+  const handleExportReflectionsCsv = useCallback(async () => {
+    try {
+      clearStatus()
+      await exportReflectionsCsv()
+    } catch (err) {
+      console.error('Error exporting reflections CSV:', err)
+    }
+  }, [clearStatus, exportReflectionsCsv])
+
+  const handleExportNotesCsv = useCallback(async () => {
+    try {
+      clearStatus()
+      await exportNotesCsv()
+    } catch (err) {
+      console.error('Error exporting notes CSV:', err)
+    }
+  }, [clearStatus, exportNotesCsv])
+
   const handleLoadTasksMappingFile = useCallback(
     async (file: File) => {
       setTasksMappingError(null)
@@ -201,43 +320,6 @@ export function SettingsPage() {
       setTasksMappingError(null)
     },
     [parseMappingFile],
-  )
-
-  const handleImportTasksFile = useCallback(
-    async (file: File) => {
-      try {
-        clearStatus()
-        setTasksImportLoading(true)
-        setTasksImportSummary(null)
-        const res = await importFromFile(file, tasksMapping as never)
-        const errors = (res.summary.errors ?? []).filter(Boolean)
-        setTasksImportSummary({
-          totalRows: res.summary.totalRows,
-          createdTasks: res.summary.createdTasks,
-          createdChecklists: res.summary.createdChecklists,
-          createdChecklistItems: res.summary.createdChecklistItems,
-          createdDependencies: res.summary.createdDependencies,
-          createdTags: res.summary.createdTags,
-          errorCount: errors.length,
-          firstErrors: errors.slice(0, 5),
-        })
-      } catch (err) {
-        console.error('Error importing tasks file:', err)
-        setTasksImportSummary({
-          totalRows: 0,
-          createdTasks: 0,
-          createdChecklists: 0,
-          createdChecklistItems: 0,
-          createdDependencies: 0,
-          createdTags: 0,
-          errorCount: 1,
-          firstErrors: [err instanceof Error ? err.message : 'Unknown error importing tasks.'],
-        })
-      } finally {
-        setTasksImportLoading(false)
-      }
-    },
-    [clearStatus, importFromFile, tasksMapping],
   )
 
   const handleResetHabitsFreshStart = useCallback(async () => {
@@ -267,7 +349,6 @@ export function SettingsPage() {
 
   return (
     <div className="mx-auto min-h-full w-full max-w-[800px]">
-      {/* Page header */}
       <header className="mb-12">
         <h1 className="text-page-title mb-2 font-semibold tracking-[-0.02em] text-on-surface">Settings</h1>
         <p className="text-body font-normal text-on-surface-variant">
@@ -275,7 +356,6 @@ export function SettingsPage() {
         </p>
       </header>
 
-      {/* Global status messages */}
       {(error || success) && (
         <div
           className="mb-8 rounded-xl border border-outline-variant/20 bg-surface-container-low px-4 py-3"
@@ -305,11 +385,8 @@ export function SettingsPage() {
         />
 
         <IntegrationsSettingsSection />
-
         <BillingSettingsSection />
-
         <BriefingSettingsSection />
-
         <HabitsSettingsSection />
 
         <NotificationsSettingsSection
@@ -328,19 +405,28 @@ export function SettingsPage() {
           tasksFileInputRef={tasksFileInputRef}
           tasksMappingFileInputRef={tasksMappingFileInputRef}
           reflectionsFileInputRef={reflectionsFileInputRef}
+          notesFileInputRef={notesFileInputRef}
+          importMode={importMode}
+          onImportModeChange={setImportMode}
           tasksImportLoading={tasksImportLoading}
           reflectionsImportLoading={reflectionsImportLoading}
+          notesImportLoading={notesImportLoading}
           habitsResetLoading={habitsResetLoading}
           habitsResetMessage={habitsResetMessage}
           tasksMappingError={tasksMappingError}
           tasksMappingLoaded={Boolean(tasksMapping)}
+          revertBatch={revertBatch}
+          revertLoading={revertLoading}
+          reverting={reverting}
+          revertError={revertError}
+          onRevertLastImport={() => void handleRevertLastImport()}
           tasksImportSummary={
             tasksImportSummary
               ? {
                   totalRows: tasksImportSummary.totalRows,
                   errorCount: tasksImportSummary.errorCount,
                   firstErrors: tasksImportSummary.firstErrors,
-                  detailLine: `Rows: ${tasksImportSummary.totalRows} • Tasks: ${tasksImportSummary.createdTasks} • Tags: ${tasksImportSummary.createdTags}${tasksImportSummary.errorCount > 0 ? ` • Errors: ${tasksImportSummary.errorCount}` : ''}`,
+                  detailLine: `Rows: ${tasksImportSummary.totalRows} • Created: ${tasksImportSummary.createdTasks} • Updated: ${tasksImportSummary.updatedTasks} • Tags: ${tasksImportSummary.createdTags}${tasksImportSummary.errorCount > 0 ? ` • Issues: ${tasksImportSummary.errorCount}` : ''}`,
                 }
               : null
           }
@@ -350,22 +436,33 @@ export function SettingsPage() {
                   totalRows: reflectionsImportSummary.totalRows,
                   errorCount: reflectionsImportSummary.errorCount,
                   firstErrors: reflectionsImportSummary.firstErrors,
-                  detailLine: `Rows: ${reflectionsImportSummary.totalRows} • Valid: ${reflectionsImportSummary.validRows}${reflectionsImportSummary.errorCount > 0 ? ` • Errors: ${reflectionsImportSummary.errorCount}` : ''}`,
+                  detailLine: `Rows: ${reflectionsImportSummary.totalRows} • Created: ${reflectionsImportSummary.createdCount} • Updated: ${reflectionsImportSummary.updatedCount}${reflectionsImportSummary.errorCount > 0 ? ` • Issues: ${reflectionsImportSummary.errorCount}` : ''}`,
+                }
+              : null
+          }
+          notesImportSummary={
+            notesImportSummary
+              ? {
+                  totalRows: notesImportSummary.totalRows,
+                  errorCount: notesImportSummary.errorCount,
+                  firstErrors: notesImportSummary.firstErrors,
+                  detailLine: `Rows: ${notesImportSummary.totalRows} • Created: ${notesImportSummary.createdCount} • Updated: ${notesImportSummary.updatedCount}${notesImportSummary.errorCount > 0 ? ` • Issues: ${notesImportSummary.errorCount}` : ''}`,
                 }
               : null
           }
           onExportTasksJson={() => void handleExportTasksJson()}
           onExportTasksCsv={() => void handleExportTasksCsv()}
           onExportReflectionsCsv={() => void handleExportReflectionsCsv()}
+          onExportNotesCsv={() => void handleExportNotesCsv()}
           onTasksFileChange={(f) => void handleImportTasksFile(f)}
           onTasksMappingFileChange={(f) => void handleLoadTasksMappingFile(f)}
           onReflectionsFileChange={(f) => void handleImportReflectionsCsvFile(f)}
+          onNotesFileChange={(f) => void handleImportNotesFile(f)}
           onResetHabitsFreshStart={() => void handleResetHabitsFreshStart()}
         />
 
         <DevSettingsSection />
 
-        {/* Sign out */}
         <section className="pb-8">
           <div className="flex items-center justify-between rounded-xl border border-outline-variant/10 bg-surface-container-low/50 p-8">
             <div className="flex items-center gap-3">
@@ -383,7 +480,6 @@ export function SettingsPage() {
           </div>
         </section>
       </div>
-
     </div>
   )
 }

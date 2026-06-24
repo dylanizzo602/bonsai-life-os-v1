@@ -9,6 +9,7 @@ import type {
 
 /* CSV schema: stable headers for the tasks import template */
 export const TASKS_CSV_HEADERS = [
+  'id',
   'external_id',
   'parent_external_id',
   'title',
@@ -20,8 +21,15 @@ export const TASKS_CSV_HEADERS = [
   'category',
   'time_estimate',
   'recurrence_pattern',
+  'completed_at',
+  'created_at',
+  'updated_at',
+  'goal_title',
+  'habit_name',
+  'milestone_links_json',
   'attachments_json',
   'tags_csv',
+  'tags_json',
   'checklists_json',
   'dependencies_json',
   'extra_json',
@@ -50,9 +58,17 @@ export type CanonicalDependencies = {
   blocking: Array<{ blocked_external_id: string }>
 }
 
+/* Portable milestone link for goal_milestone_tasks junction */
+export type CanonicalMilestoneLink = {
+  goal_title: string
+  milestone_title: string
+  sort_order?: number
+}
+
 /* Canonical checklist payload: portable without DB foreign keys */
 export type CanonicalChecklist = {
   title: string
+  sort_order?: number
   items: Array<{ title: string; completed: boolean; sort_order?: number }>
 }
 
@@ -61,6 +77,8 @@ export type CanonicalTag = { name: string; color?: TagColorId }
 
 /* Canonical task record used by import/export and mapping */
 export interface CanonicalTaskRecord {
+  /** DB UUID for merge-mode restore; optional on import */
+  id?: string | null
   external_id: string
   parent_external_id: string | null
   title: string
@@ -72,6 +90,12 @@ export interface CanonicalTaskRecord {
   category: string | null
   time_estimate: number | null
   recurrence_pattern: string | null
+  completed_at: string | null
+  created_at: string | null
+  updated_at: string | null
+  goal_title: string | null
+  habit_name: string | null
+  milestone_links: CanonicalMilestoneLink[]
   attachments: TaskAttachment[]
   tags: CanonicalTag[]
   checklists: CanonicalChecklist[]
@@ -193,6 +217,39 @@ function coerceCanonicalRecord(
   const recurrenceRaw = pickMappedValue(input, 'recurrence_pattern', mapping)
   const recurrence_pattern = normalizeCell(recurrenceRaw) ? normalizeCell(recurrenceRaw) : null
 
+  const idRaw = pickMappedValue(input, 'id', mapping)
+  const id = normalizeCell(idRaw) ? normalizeCell(idRaw) : null
+
+  const completedAtRaw = pickMappedValue(input, 'completed_at', mapping)
+  const completed_at = normalizeCell(completedAtRaw) ? normalizeCell(completedAtRaw) : null
+
+  const createdAtRaw = pickMappedValue(input, 'created_at', mapping)
+  const created_at = normalizeCell(createdAtRaw) ? normalizeCell(createdAtRaw) : null
+
+  const updatedAtRaw = pickMappedValue(input, 'updated_at', mapping)
+  const updated_at = normalizeCell(updatedAtRaw) ? normalizeCell(updatedAtRaw) : null
+
+  const goalTitleRaw = pickMappedValue(input, 'goal_title', mapping)
+  const goal_title = normalizeCell(goalTitleRaw) ? normalizeCell(goalTitleRaw) : null
+
+  const habitNameRaw = pickMappedValue(input, 'habit_name', mapping)
+  const habit_name = normalizeCell(habitNameRaw) ? normalizeCell(habitNameRaw) : null
+
+  const milestoneLinksValue =
+    pickMappedValue(input, 'milestone_links', mapping) ??
+    pickMappedValue(input, 'milestone_links_json', mapping)
+  const milestoneLinksArray = parseJsonArray(milestoneLinksValue)
+  const milestone_links: CanonicalMilestoneLink[] = milestoneLinksArray
+    .map((m) =>
+      m && typeof m === 'object' && !Array.isArray(m)
+        ? (m as CanonicalMilestoneLink)
+        : null,
+    )
+    .filter(
+      (m): m is CanonicalMilestoneLink =>
+        Boolean(m && typeof m.goal_title === 'string' && typeof m.milestone_title === 'string'),
+    )
+
   /* Nested fields: accept canonical objects or JSON-string columns (CSV) */
   const attachmentsValue = pickMappedValue(input, 'attachments', mapping) ?? pickMappedValue(input, 'attachments_json', mapping)
   const attachmentsArray = parseJsonArray(attachmentsValue)
@@ -200,17 +257,35 @@ function coerceCanonicalRecord(
     .map((a) => (a && typeof a === 'object' && !Array.isArray(a) ? (a as TaskAttachment) : null))
     .filter((a): a is TaskAttachment => Boolean(a && typeof a.url === 'string' && a.url))
 
-  const tagsValue = pickMappedValue(input, 'tags', mapping)
+  const tagsValue =
+    pickMappedValue(input, 'tags_json', mapping) ??
+    pickMappedValue(input, 'tags', mapping)
   const tags_csvValue = pickMappedValue(input, 'tags_csv', mapping)
-  const tags: CanonicalTag[] = Array.isArray(tagsValue)
-    ? (tagsValue as unknown[]).map((t) => (t && typeof t === 'object' && !Array.isArray(t) ? (t as CanonicalTag) : null)).filter((t): t is CanonicalTag => Boolean(t && t.name))
-    : normalizeCell(tags_csvValue)
-      ? normalizeCell(tags_csvValue)
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean)
-          .map((name) => ({ name }))
-      : []
+  const tags: CanonicalTag[] = (() => {
+    const fromJson = parseJsonArray(tagsValue)
+    if (fromJson.length > 0) {
+      return fromJson
+        .map((t) =>
+          t && typeof t === 'object' && !Array.isArray(t) ? (t as CanonicalTag) : null,
+        )
+        .filter((t): t is CanonicalTag => Boolean(t && t.name))
+    }
+    if (Array.isArray(tagsValue)) {
+      return (tagsValue as unknown[])
+        .map((t) =>
+          t && typeof t === 'object' && !Array.isArray(t) ? (t as CanonicalTag) : null,
+        )
+        .filter((t): t is CanonicalTag => Boolean(t && t.name))
+    }
+    if (normalizeCell(tags_csvValue)) {
+      return normalizeCell(tags_csvValue)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((name) => ({ name }))
+    }
+    return []
+  })()
 
   const checklistsValue = pickMappedValue(input, 'checklists', mapping) ?? pickMappedValue(input, 'checklists_json', mapping)
   const checklistsArray = parseJsonArray(checklistsValue)
@@ -243,6 +318,7 @@ function coerceCanonicalRecord(
   }
 
   return {
+    id,
     external_id,
     parent_external_id,
     title,
@@ -254,6 +330,12 @@ function coerceCanonicalRecord(
     category,
     time_estimate,
     recurrence_pattern,
+    completed_at,
+    created_at,
+    updated_at,
+    goal_title,
+    habit_name,
+    milestone_links,
     attachments,
     tags,
     checklists,
@@ -334,6 +416,26 @@ export async function parseTasksCsvFile(
   return { records, errors, totalRows: data.length }
 }
 
+/** Validate unique external_id values within a batch */
+export function validateUniqueExternalIds(
+  records: CanonicalTaskRecord[],
+): TaskImportParseError[] {
+  const seen = new Map<string, number>()
+  const errors: TaskImportParseError[] = []
+  for (let i = 0; i < records.length; i++) {
+    const ext = records[i].external_id
+    const prev = seen.get(ext)
+    if (prev != null) {
+      errors.push({
+        message: `Duplicate external_id "${ext}" (rows ${prev + 1} and ${i + 1})`,
+      })
+    } else {
+      seen.set(ext, i)
+    }
+  }
+  return errors
+}
+
 /**
  * Parse tasks from a JSON file into canonical records.
  * Supports the canonical export shape `{ tasks: [...] }` or an array of objects (with mapping).
@@ -400,6 +502,7 @@ export async function parseTasksJsonFile(
 export function exportTasksToCsv(records: CanonicalTaskRecord[]): string {
   /* Flatten: map canonical record to CSV row shape */
   const rows = records.map((r) => ({
+    id: r.id ?? '',
     external_id: r.external_id,
     parent_external_id: r.parent_external_id ?? '',
     title: r.title,
@@ -411,8 +514,15 @@ export function exportTasksToCsv(records: CanonicalTaskRecord[]): string {
     category: r.category ?? '',
     time_estimate: r.time_estimate ?? '',
     recurrence_pattern: r.recurrence_pattern ?? '',
+    completed_at: r.completed_at ?? '',
+    created_at: r.created_at ?? '',
+    updated_at: r.updated_at ?? '',
+    goal_title: r.goal_title ?? '',
+    habit_name: r.habit_name ?? '',
+    milestone_links_json: JSON.stringify(r.milestone_links ?? []),
     attachments_json: JSON.stringify(r.attachments ?? []),
     tags_csv: (r.tags ?? []).map((t) => t.name).filter(Boolean).join(','),
+    tags_json: JSON.stringify(r.tags ?? []),
     checklists_json: JSON.stringify(r.checklists ?? []),
     dependencies_json: JSON.stringify(r.dependencies ?? { blocked_by: [], blocking: [] }),
     extra_json: JSON.stringify(r.extra ?? {}),

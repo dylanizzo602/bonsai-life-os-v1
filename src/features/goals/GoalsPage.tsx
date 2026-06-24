@@ -5,6 +5,7 @@ import { MaterialIcon } from '../../components/MaterialIcon'
 import { GoalsIcon } from '../../components/icons'
 import { useGoals } from './hooks/useGoals'
 import { useGoalMilestoneProgress } from './hooks/useGoalMilestoneProgress'
+import { useGoalCompletionReflection } from './hooks/useGoalCompletionReflection'
 import { ActiveGoalCard } from './ActiveGoalCard'
 import { InactiveGoalRow } from './InactiveGoalRow'
 import { CompletedGoalsForest } from './CompletedGoalsForest'
@@ -22,6 +23,7 @@ export function GoalsPage() {
   /* Data + modal state: list goals, optional detail view, create/edit modal */
   const { goals, loading, error, createGoal, createGoalWithSetup, updateGoal, refetch, patchGoal } = useGoals()
   const { milestonesByGoal, taskTreesByMilestoneId, progressByGoalId } = useGoalMilestoneProgress(goals)
+  const { considerPrompting, modal: goalReflectionModal } = useGoalCompletionReflection()
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(() => {
     const intent = consumeSearchOpenIntent()
     if (intent?.kind === 'goal') return intent.id
@@ -217,8 +219,13 @@ export function GoalsPage() {
           onClose={handleCloseDrawer}
           onDeleted={refetch}
           onGoalUpdated={patchGoal}
+          onGoalProgressChange={(goal, previousProgress, nextProgress) => {
+            void considerPrompting(goal, previousProgress, nextProgress)
+          }}
         />
       )}
+
+      {goalReflectionModal}
     </div>
   )
 }

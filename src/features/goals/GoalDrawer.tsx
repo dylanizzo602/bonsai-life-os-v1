@@ -2,7 +2,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useGoal } from './hooks/useGoals'
 import { useTasks } from '../tasks/hooks/useTasks'
-import { getTaskTreesByMilestoneId } from '../../lib/supabase/goals'
+import { getTaskTreesByMilestoneId, getGoal } from '../../lib/supabase/goals'
 import { AddEditTaskModal } from '../tasks/AddEditTaskModal'
 import { GoalDrawerHeader } from './components/drawer/GoalDrawerHeader'
 import { GoalDrawerMetadataBar } from './components/drawer/GoalDrawerMetadataBar'
@@ -20,12 +20,24 @@ export interface GoalDrawerProps {
   onDeleted?: () => void
   /** Sync goal field edits back to the goals list (e.g. icon, name) */
   onGoalUpdated?: (goal: Goal) => void
+  /** Called when progress crosses from below 100% to complete */
+  onGoalProgressChange?: (
+    goal: Pick<Goal, 'id' | 'name'>,
+    previousProgress: number,
+    nextProgress: number,
+  ) => void
 }
 
 /**
  * Material goal detail drawer: backdrop + slide-in panel with editable fields.
  */
-export function GoalDrawer({ goalId, onClose, onDeleted, onGoalUpdated }: GoalDrawerProps) {
+export function GoalDrawer({
+  goalId,
+  onClose,
+  onDeleted,
+  onGoalUpdated,
+  onGoalProgressChange,
+}: GoalDrawerProps) {
   const {
     goal,
     loading,
@@ -107,6 +119,41 @@ export function GoalDrawer({ goalId, onClose, onDeleted, onGoalUpdated }: GoalDr
     [updateGoal, onGoalUpdated],
   )
 
+  /* Notify parent when progress may have crossed 100% after a mutation */
+  const notifyProgressChange = useCallback(
+    async (previousProgress: number) => {
+      if (!onGoalProgressChange) return
+      const fresh = await getGoal(goalId)
+      if (!fresh) return
+      onGoalProgressChange(
+        { id: fresh.id, name: fresh.name },
+        previousProgress,
+        fresh.computed_progress,
+      )
+    },
+    [goalId, onGoalProgressChange],
+  )
+
+  const wrappedUpdateMilestone = useCallback(
+    async (id: string, input: Parameters<typeof updateMilestone>[1]) => {
+      const previousProgress = goal?.computed_progress ?? 0
+      const result = await updateMilestone(id, input)
+      await notifyProgressChange(previousProgress)
+      return result
+    },
+    [goal?.computed_progress, updateMilestone, notifyProgressChange],
+  )
+
+  const wrappedCreateMilestone = useCallback(
+    async (input: Parameters<typeof createMilestone>[0]) => {
+      const previousProgress = goal?.computed_progress ?? 0
+      const result = await createMilestone(input)
+      await notifyProgressChange(previousProgress)
+      return result
+    },
+    [goal?.computed_progress, createMilestone, notifyProgressChange],
+  )
+
   const syncMilestoneForTask = useCallback(
     async (taskId: string, completed: boolean) => {
       if (!goal) return
@@ -122,22 +169,26 @@ export function GoalDrawer({ goalId, onClose, onDeleted, onGoalUpdated }: GoalDr
 
   const wrappedUpdateTask = useCallback(
     async (id: string, input: Parameters<typeof updateTask>[1]) => {
+      const previousProgress = goal?.computed_progress ?? 0
       const t = await updateTask(id, input)
       await syncMilestoneForTask(id, t.status === 'completed')
       await recalculateProgress()
+      await notifyProgressChange(previousProgress)
       return t
     },
-    [updateTask, syncMilestoneForTask, recalculateProgress],
+    [goal?.computed_progress, updateTask, syncMilestoneForTask, recalculateProgress, notifyProgressChange],
   )
 
   const wrappedToggleComplete = useCallback(
     async (id: string, completed: boolean) => {
+      const previousProgress = goal?.computed_progress ?? 0
       const t = await toggleComplete(id, completed)
       await syncMilestoneForTask(id, completed)
       await recalculateProgress()
+      await notifyProgressChange(previousProgress)
       return t
     },
-    [toggleComplete, syncMilestoneForTask, recalculateProgress],
+    [goal?.computed_progress, toggleComplete, syncMilestoneForTask, recalculateProgress, notifyProgressChange],
   )
 
   const handleDelete = async () => {
@@ -200,8 +251,8 @@ export function GoalDrawer({ goalId, onClose, onDeleted, onGoalUpdated }: GoalDr
                   goalId={goal.id}
                   milestones={goal.milestones}
                   taskTreesByMilestoneId={taskTreesByMilestoneId}
-                  onCreateMilestone={createMilestone}
-                  onUpdateMilestone={updateMilestone}
+                  onCreateMilestone={wrappedCreateMilestone}
+                  onUpdateMilestone={wrappedUpdateMilestone}
                   getTasks={async () => {
                     const tasks = await getTasks()
                     return tasks.map((t) => ({ id: t.id, title: t.title }))

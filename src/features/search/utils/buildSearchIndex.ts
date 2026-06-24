@@ -27,6 +27,12 @@ export interface SearchIndexData {
 function getReflectionSearchText(entry: ReflectionEntry): string {
   const responses = entry.responses
   if (!responses || typeof responses !== 'object') return ''
+
+  if (entry.type === 'goal') {
+    const success = (responses as { whatContributedToSuccess?: string }).whatContributedToSuccess
+    return typeof success === 'string' ? stripHtmlPreview(success) : ''
+  }
+
   const body = (responses as { body?: string }).body
   return typeof body === 'string' ? stripHtmlPreview(body) : ''
 }
@@ -40,6 +46,8 @@ function getReflectionTypeLabel(type: string): string {
       return 'Weekly briefing'
     case 'journal':
       return 'Journal'
+    case 'goal':
+      return 'Goal reflection'
     default:
       return 'Reflection'
   }

@@ -1047,3 +1047,98 @@ async function addHistoryEntry(
     /* Don't throw - history is non-critical */
   }
 }
+
+/** Milestone link row for task CSV export */
+export interface TaskMilestoneLinkExport {
+  task_id: string
+  goal_title: string
+  milestone_title: string
+  sort_order: number
+}
+
+/**
+ * Fetch goal/milestone titles for task ids linked via goal_milestone_tasks.
+ */
+export async function getMilestoneLinksForTaskIds(
+  taskIds: string[],
+): Promise<TaskMilestoneLinkExport[]> {
+  if (taskIds.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('goal_milestone_tasks')
+    .select('task_id, milestone_id, sort_order')
+    .in('task_id', taskIds)
+
+  if (error) {
+    console.error('Error fetching milestone links for tasks:', error)
+    throw error
+  }
+
+  const rows = (data ?? []) as Array<{
+    task_id: string
+    milestone_id: string
+    sort_order: number
+  }>
+  if (rows.length === 0) return []
+
+  const allMilestones = await getAllMilestones()
+  const milestoneById = new Map(
+    allMilestones.map((m) => [
+      m.id,
+      { goal_title: m.goal_name, milestone_title: m.title },
+    ]),
+  )
+
+  return rows
+    .map((row) => {
+      const meta = milestoneById.get(row.milestone_id)
+      if (!meta) return null
+      return {
+        task_id: row.task_id,
+        goal_title: meta.goal_title,
+        milestone_title: meta.milestone_title,
+        sort_order: row.sort_order ?? 0,
+      }
+    })
+    .filter((r): r is TaskMilestoneLinkExport => r != null)
+}
+
+/**
+ * Link a task to a milestone junction row (import).
+ */
+export async function addTaskToMilestone(
+  milestoneId: string,
+  taskId: string,
+  sortOrder = 0,
+): Promise<void> {
+  const { error } = await supabase.from('goal_milestone_tasks').insert({
+    milestone_id: milestoneId,
+    task_id: taskId,
+    sort_order: sortOrder,
+  })
+
+  if (error) {
+    console.error('Error linking task to milestone:', error)
+    throw error
+  }
+}
+
+/**
+ * Resolve milestone id by goal title + milestone title (case-insensitive trim).
+ */
+export async function findMilestoneIdByTitles(
+  goalTitle: string,
+  milestoneTitle: string,
+): Promise<string | null> {
+  const goals = await getGoals()
+  const goal = goals.find(
+    (g) => g.name.trim().toLowerCase() === goalTitle.trim().toLowerCase(),
+  )
+  if (!goal) return null
+
+  const milestones = await getMilestonesForGoal(goal.id)
+  const milestone = milestones.find(
+    (m) => m.title.trim().toLowerCase() === milestoneTitle.trim().toLowerCase(),
+  )
+  return milestone?.id ?? null
+}

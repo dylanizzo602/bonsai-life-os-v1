@@ -1,6 +1,6 @@
 /* Notes data access layer: Supabase CRUD for note documents */
 import { supabase } from './client'
-import { createNotePage } from './notePages'
+import { createNotePage, getPagesForNote, updateNotePage } from './notePages'
 import type { Note, CreateNoteInput, UpdateNoteInput } from '../../features/notes/types'
 
 const NOTE_SELECT =
@@ -131,4 +131,143 @@ export async function deleteNote(id: string): Promise<void> {
     console.error('Error deleting note:', error)
     throw error
   }
+}
+
+export interface NoteExportBundle {
+  note: Note
+  page_title: string
+  content: string
+}
+
+/**
+ * Fetch all notes with primary page content for CSV export.
+ */
+export async function getAllNotesForExport(): Promise<NoteExportBundle[]> {
+  const notes = await getNotes()
+  const bundles: NoteExportBundle[] = []
+
+  for (const note of notes) {
+    const pages = await getPagesForNote(note.id)
+    const primary =
+      pages
+        .filter((p) => p.parent_page_id === null)
+        .sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))[0] ??
+      pages[0]
+
+    bundles.push({
+      note,
+      page_title: primary?.title ?? 'Untitled',
+      content: primary?.content ?? '',
+    })
+  }
+
+  return bundles
+}
+
+export interface NoteCsvImportRow {
+  id?: string | null
+  title: string
+  page_title: string
+  content: string
+  cover_image_url?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface NoteImportResult {
+  createdNoteIds: string[]
+  updatedSnapshots: Array<{
+    noteId: string
+    title: string
+    pageId: string
+    pageTitle: string
+    content: string
+    cover_image_url: string | null
+    cover_storage_path: string | null
+    created_at: string
+    updated_at: string
+  }>
+}
+
+/**
+ * Import notes from CSV rows with optional merge-by-id.
+ */
+export async function bulkImportNotesFromCsv(
+  rows: NoteCsvImportRow[],
+  mode: 'create' | 'merge',
+): Promise<NoteImportResult> {
+  const result: NoteImportResult = { createdNoteIds: [], updatedSnapshots: [] }
+
+  for (const r of rows) {
+    if (mode === 'merge' && r.id?.trim()) {
+      const existing = await getNote(r.id.trim())
+      if (existing) {
+        const pages = await getPagesForNote(existing.id)
+        const primary =
+          pages
+            .filter((p) => p.parent_page_id === null)
+            .sort((a, b) => a.sort_order - b.sort_order)[0] ?? pages[0]
+
+        if (primary) {
+          result.updatedSnapshots.push({
+            noteId: existing.id,
+            title: existing.title,
+            pageId: primary.id,
+            pageTitle: primary.title,
+            content: primary.content,
+            cover_image_url: existing.cover_image_url,
+            cover_storage_path: existing.cover_storage_path,
+            created_at: existing.created_at,
+            updated_at: existing.updated_at,
+          })
+        }
+
+        await updateNote(existing.id, {
+          title: r.title,
+          cover_image_url: r.cover_image_url ?? existing.cover_image_url,
+        })
+
+        if (primary) {
+          await updateNotePage(primary.id, {
+            title: r.page_title,
+            content: r.content,
+          })
+        }
+
+        if (r.created_at || r.updated_at) {
+          const payload: Record<string, string> = {}
+          if (r.created_at) payload.created_at = r.created_at
+          if (r.updated_at) payload.updated_at = r.updated_at
+          if (Object.keys(payload).length > 0) {
+            await supabase.from('notes').update(payload).eq('id', existing.id)
+          }
+        }
+        continue
+      }
+    }
+
+    const note = await createNote({ title: r.title, firstPageTitle: r.page_title })
+    result.createdNoteIds.push(note.id)
+
+    const pages = await getPagesForNote(note.id)
+    const primary = pages.find((p) => p.parent_page_id === null) ?? pages[0]
+    if (primary && r.content) {
+      await updateNotePage(primary.id, { content: r.content })
+    }
+
+    if (r.cover_image_url) {
+      await updateNote(note.id, { cover_image_url: r.cover_image_url })
+    }
+
+    if (r.created_at || r.updated_at) {
+      const payload: Record<string, string> = {}
+      if (r.created_at) payload.created_at = r.created_at
+      if (r.updated_at) payload.updated_at = r.updated_at
+      if (Object.keys(payload).length > 0) {
+        await supabase.from('notes').update(payload).eq('id', note.id)
+      }
+    }
+  }
+
+  return result
 }

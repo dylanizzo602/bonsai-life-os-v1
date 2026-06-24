@@ -13,6 +13,12 @@
       "category": "Personal",
       "time_estimate": 90,
       "recurrence_pattern": null,
+      "completed_at": null,
+      "created_at": null,
+      "updated_at": null,
+      "goal_title": null,
+      "habit_name": null,
+      "milestone_links": [],
       "attachments": [
         {
           "url": "https://example.com/spec.pdf",

@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { getReflectionEntry } from '../../lib/supabase/reflections'
-import type { ReflectionEntry, MorningBriefingResponses } from './types'
+import { GoalReflectionEntryView } from './components/GoalReflectionEntryView'
+import type { ReflectionEntry, MorningBriefingResponses, GoalReflectionResponses } from './types'
 import { ReflectionEntryView } from './ReflectionEntryView'
 import { BriefingsSection } from './components/BriefingsSection'
 import { RecentEntriesSection } from './components/RecentEntriesSection'
@@ -173,6 +174,19 @@ export function ReflectionsPage({ onOpenMorningBriefing }: ReflectionsPageProps)
       return (
         <div className="min-h-full">
           <WeeklyEntryView entry={selectedEntry} onBack={handleBackToList} />
+        </div>
+      )
+    }
+
+    if (selectedEntry.type === 'goal') {
+      return (
+        <div className="min-h-full">
+          <GoalReflectionEntryView
+            title={selectedEntry.title}
+            responses={selectedEntry.responses as GoalReflectionResponses}
+            backLabel="Back to list"
+            onBack={handleBackToList}
+          />
         </div>
       )
     }

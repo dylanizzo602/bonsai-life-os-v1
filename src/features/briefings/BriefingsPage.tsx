@@ -6,6 +6,7 @@ import { useTasks } from '../tasks/hooks/useTasks'
 import { useHabits } from '../habits/hooks/useHabits'
 import { useInbox } from '../home/hooks/useInbox'
 import { useGoals } from '../goals/hooks/useGoals'
+import { useGoalCompletionReflection } from '../goals/hooks/useGoalCompletionReflection'
 import { getDependenciesForTaskIds } from '../../lib/supabase/tasks'
 import {
   getMilestonesForGoal,
@@ -208,6 +209,7 @@ export function BriefingsPage({
 
   /* Goals hook (Sunday goal review) */
   const { goals, loading: goalsLoading, refetch: refetchGoals } = useGoals()
+  const { considerPrompting, modal: goalReflectionModal } = useGoalCompletionReflection()
   const [milestonesByGoal, setMilestonesByGoal] = useState<Record<string, GoalMilestone[]>>({})
   const [taskTreesByMilestoneId, setTaskTreesByMilestoneId] = useState<Record<string, Task[]>>({})
   /** Carousel index for Sunday goal review (footer shows Next until the last goal) */
@@ -594,13 +596,22 @@ export function BriefingsPage({
 
   /* Goal milestone handlers for Sunday review */
   const refreshGoalMilestones = useCallback(async (goalId: string) => {
+    const goalBefore = goals.find((g) => g.id === goalId)
+    const previousProgress = goalBefore?.progress ?? 0
     const milestones = await getMilestonesForGoal(goalId)
     setMilestonesByGoal((prev) => ({ ...prev, [goalId]: milestones }))
     const trees = await getTaskTreesByMilestoneId(milestones)
     setTaskTreesByMilestoneId((prev) => ({ ...prev, ...trees }))
-    await calculateGoalProgress(goalId)
+    const newProgress = await calculateGoalProgress(goalId)
     await refetchGoals()
-  }, [refetchGoals])
+    if (goalBefore) {
+      await considerPrompting(
+        { id: goalId, name: goalBefore.name },
+        previousProgress,
+        newProgress,
+      )
+    }
+  }, [goals, refetchGoals, considerPrompting])
 
   const handleBriefingUpdateMilestone = useCallback(
     async (milestoneId: string, input: UpdateMilestoneInput) => {
@@ -1000,6 +1011,7 @@ export function BriefingsPage({
         onAddDependency={onAddDependency}
         onRemoveDependency={onRemoveDependency}
       />
+      {goalReflectionModal}
     </div>
   )
 }

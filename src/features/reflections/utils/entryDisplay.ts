@@ -1,12 +1,13 @@
 /* Entry display helpers: type labels, badge styles, excerpts, and date formatting for reflection list UI */
 
-import type { ReflectionEntry, MorningBriefingResponses, JournalResponses } from '../types'
+import type { ReflectionEntry, MorningBriefingResponses, JournalResponses, GoalReflectionResponses } from '../types'
 
 /** All reflection entry types shown in filter UI */
 export const REFLECTION_ENTRY_TYPES = [
   'morning_briefing',
   'journal',
   'weekly_briefing',
+  'goal',
 ] as const
 
 /** Human-readable label for a reflection entry type */
@@ -18,6 +19,8 @@ export function getEntryTypeLabel(type: string): string {
       return 'Journal'
     case 'weekly_briefing':
       return 'Weekly Review'
+    case 'goal':
+      return 'Goal'
     default:
       return type
   }
@@ -32,6 +35,8 @@ export function getEntryTypeBadgeClass(type: string): string {
       return 'bg-surface-container-high text-on-surface-variant'
     case 'weekly_briefing':
       return 'bg-secondary-fixed text-on-secondary-fixed-variant'
+    case 'goal':
+      return 'bg-bonsai-sage-100 text-bonsai-sage-800'
     default:
       return 'bg-surface-container-high text-on-surface-variant'
   }
@@ -61,6 +66,13 @@ export function getEntryExcerpt(entry: ReflectionEntry): string {
     return entry.title
       ? truncateText(`Weekly review completed: ${entry.title}`)
       : 'Weekly review completed.'
+  }
+
+  if (entry.type === 'goal') {
+    const responses = entry.responses as GoalReflectionResponses
+    const plain = stripHtmlToPlainText(responses.whatContributedToSuccess ?? '')
+    if (plain) return truncateText(plain)
+    return entry.title ? truncateText(`Goal completed: ${entry.title}`) : 'Goal completed.'
   }
 
   /* Morning briefing: first non-empty answer */
@@ -94,5 +106,6 @@ export function getEntryDisplayTitle(entry: ReflectionEntry): string {
   if (entry.title?.trim()) return entry.title.trim()
   if (entry.type === 'morning_briefing') return 'Morning Briefing'
   if (entry.type === 'weekly_briefing') return 'Weekly Review'
+  if (entry.type === 'goal') return entry.title?.trim() || 'Goal Reflection'
   return 'Untitled'
 }

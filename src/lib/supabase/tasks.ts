@@ -294,14 +294,19 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
   if (input.attachments !== undefined) updateData.attachments = input.attachments
   if (input.status !== undefined) {
     updateData.status = input.status
-    /* Keep completed_at in sync: only completed status has completed_at set */
-    updateData.completed_at = input.status === 'completed' ? new Date().toISOString() : null
+    /* Keep completed_at in sync unless caller sets completed_at explicitly */
+    if (input.completed_at === undefined) {
+      updateData.completed_at =
+        input.status === 'completed' ? new Date().toISOString() : null
+    }
   }
   if (input.category !== undefined) updateData.category = input.category
   if (input.goal_id !== undefined) updateData.goal_id = input.goal_id
+  if (input.habit_id !== undefined) updateData.habit_id = input.habit_id
   if (input.recurrence_pattern !== undefined)
     updateData.recurrence_pattern = input.recurrence_pattern
   if (input.parent_id !== undefined) updateData.parent_id = input.parent_id
+  if (input.completed_at !== undefined) updateData.completed_at = input.completed_at
 
   const { data, error } = await supabase
     .from('tasks')
@@ -337,6 +342,27 @@ export async function deleteTask(id: string): Promise<void> {
     console.error('Error deleting task:', error)
     throw error
   }
+  })
+}
+
+/**
+ * Set created_at / updated_at on a task (CSV import round-trip).
+ */
+export async function setTaskImportTimestamps(
+  id: string,
+  timestamps: { created_at?: string | null; updated_at?: string | null },
+): Promise<void> {
+  return withTasksCacheInvalidation(async () => {
+    const updateData: Record<string, string> = {}
+    if (timestamps.created_at) updateData.created_at = timestamps.created_at
+    if (timestamps.updated_at) updateData.updated_at = timestamps.updated_at
+    if (Object.keys(updateData).length === 0) return
+
+    const { error } = await supabase.from('tasks').update(updateData).eq('id', id)
+    if (error) {
+      console.error('Error setting task import timestamps:', error)
+      throw error
+    }
   })
 }
 

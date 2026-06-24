@@ -230,7 +230,7 @@ export async function getReflectionEntriesPage(options?: {
   const types =
     options?.types && options.types.length > 0
       ? options.types
-      : ['morning_briefing', 'weekly_briefing', 'journal']
+      : ['morning_briefing', 'weekly_briefing', 'journal', 'goal']
 
   /* Base query: filtered reflection types, newest first */
   let query = supabase
@@ -257,11 +257,28 @@ export async function getReflectionEntriesPage(options?: {
 }
 
 /**
- * Fetch all journal entries for the current user (for CSV export).
- * Uses pagination to avoid limits for large histories.
+ * True when a goal completion reflection already exists for the given goal.
  */
-export async function getAllJournalEntriesForExport(): Promise<ReflectionEntry[]> {
-  /* Pagination settings: fetch in chunks so exports can scale */
+export async function hasGoalReflectionForGoal(goalId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('reflection_entries')
+    .select('id')
+    .eq('type', 'goal')
+    .eq('responses->>goalId', goalId)
+    .limit(1)
+
+  if (error) {
+    console.error('Error checking goal reflection:', error)
+    throw error
+  }
+
+  return (data?.length ?? 0) > 0
+}
+
+/**
+ * Fetch all reflection entries for the current user (for CSV export).
+ */
+export async function getAllReflectionEntriesForExport(): Promise<ReflectionEntry[]> {
   const pageSize = 500
   let from = 0
   let all: ReflectionEntry[] = []
@@ -272,12 +289,11 @@ export async function getAllJournalEntriesForExport(): Promise<ReflectionEntry[]
     const { data, error } = await supabase
       .from('reflection_entries')
       .select('*')
-      .eq('type', 'journal')
       .order('created_at', { ascending: true })
       .range(from, to)
 
     if (error) {
-      console.error('Error fetching journal entries for export:', error)
+      console.error('Error fetching reflection entries for export:', error)
       throw error
     }
 
@@ -290,9 +306,89 @@ export async function getAllJournalEntriesForExport(): Promise<ReflectionEntry[]
   return all
 }
 
-/** @deprecated Use getAllJournalEntriesForExport */
+/**
+ * Fetch all journal entries for the current user (for CSV export).
+ * @deprecated Use getAllReflectionEntriesForExport
+ */
+export async function getAllJournalEntriesForExport(): Promise<ReflectionEntry[]> {
+  const all = await getAllReflectionEntriesForExport()
+  return all.filter((e) => e.type === 'journal')
+}
+
+/** @deprecated Use getAllReflectionEntriesForExport */
 export async function getAllMorningBriefingEntries(): Promise<ReflectionEntry[]> {
   return getAllJournalEntriesForExport()
+}
+
+export interface ReflectionCsvImportRow {
+  id?: string | null
+  type: string
+  title: string | null
+  responses: Record<string, unknown>
+  created_at?: string | null
+}
+
+export interface ReflectionImportResult {
+  createdIds: string[]
+  updatedSnapshots: Array<{
+    id: string
+    type: string
+    title: string | null
+    responses: Record<string, unknown>
+    created_at: string
+  }>
+}
+
+/**
+ * Bulk import reflection entries from CSV with optional merge-by-id.
+ */
+export async function bulkImportReflectionEntries(
+  rows: ReflectionCsvImportRow[],
+  mode: 'create' | 'merge',
+): Promise<ReflectionImportResult> {
+  const result: ReflectionImportResult = { createdIds: [], updatedSnapshots: [] }
+
+  for (const r of rows) {
+
+    if (mode === 'merge' && r.id?.trim()) {
+      const existing = await getReflectionEntry(r.id.trim())
+      if (existing) {
+        result.updatedSnapshots.push({
+          id: existing.id,
+          type: existing.type,
+          title: existing.title,
+          responses: (existing.responses ?? {}) as Record<string, unknown>,
+          created_at: existing.created_at,
+        })
+        await updateReflectionEntry(existing.id, {
+          title: r.title,
+          responses: r.responses,
+          created_at: r.created_at ?? undefined,
+        })
+        continue
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('reflection_entries')
+      .insert({
+        type: r.type,
+        title: r.title ?? null,
+        responses: r.responses ?? {},
+        ...(r.created_at ? { created_at: r.created_at } : {}),
+      })
+      .select('id')
+      .single()
+
+    if (error) {
+      console.error('Error inserting reflection entry from CSV:', error)
+      throw error
+    }
+
+    if (data?.id) result.createdIds.push(data.id as string)
+  }
+
+  return result
 }
 
 /**

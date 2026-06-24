@@ -2,6 +2,8 @@
 
 import type { ReactNode, RefObject } from 'react'
 import { MaterialIcon, SettingsCard, SettingsSectionHeader } from '../components'
+import type { ImportMode } from '../types/importExport'
+import type { LastImportRevertBatch } from '../../../lib/supabase/importRevert'
 
 export interface ImportSummary {
   totalRows: number
@@ -14,56 +16,129 @@ export interface DataManagementSettingsSectionProps {
   tasksFileInputRef: RefObject<HTMLInputElement | null>
   tasksMappingFileInputRef: RefObject<HTMLInputElement | null>
   reflectionsFileInputRef: RefObject<HTMLInputElement | null>
+  notesFileInputRef: RefObject<HTMLInputElement | null>
+  importMode: ImportMode
+  onImportModeChange: (mode: ImportMode) => void
   tasksImportLoading: boolean
   reflectionsImportLoading: boolean
+  notesImportLoading: boolean
   habitsResetLoading: boolean
   habitsResetMessage: string | null
   tasksMappingError: string | null
   tasksMappingLoaded: boolean
   tasksImportSummary: ImportSummary | null
   reflectionsImportSummary: ImportSummary | null
+  notesImportSummary: ImportSummary | null
+  revertBatch: LastImportRevertBatch | null
+  revertLoading: boolean
+  reverting: boolean
+  revertError: string | null
+  onRevertLastImport: () => void
   onExportTasksJson: () => void
   onExportTasksCsv: () => void
   onExportReflectionsCsv: () => void
+  onExportNotesCsv: () => void
   onTasksFileChange: (file: File) => void
   onTasksMappingFileChange: (file: File) => void
   onReflectionsFileChange: (file: File) => void
+  onNotesFileChange: (file: File) => void
   onResetHabitsFreshStart: () => void
 }
 
 /**
- * Data import/export for tasks and reflections plus danger zone placeholders.
+ * Data import/export for tasks, reflections, and notes plus danger zone.
  */
 export function DataManagementSettingsSection({
   tasksFileInputRef,
   tasksMappingFileInputRef,
   reflectionsFileInputRef,
+  notesFileInputRef,
+  importMode,
+  onImportModeChange,
   tasksImportLoading,
   reflectionsImportLoading,
+  notesImportLoading,
   habitsResetLoading,
   habitsResetMessage,
   tasksMappingError,
   tasksMappingLoaded,
   tasksImportSummary,
   reflectionsImportSummary,
+  notesImportSummary,
+  revertBatch,
+  revertLoading,
+  reverting,
+  revertError,
+  onRevertLastImport,
   onExportTasksJson,
   onExportTasksCsv,
   onExportReflectionsCsv,
+  onExportNotesCsv,
   onTasksFileChange,
   onTasksMappingFileChange,
   onReflectionsFileChange,
+  onNotesFileChange,
   onResetHabitsFreshStart,
 }: DataManagementSettingsSectionProps) {
+  const anyImportLoading = tasksImportLoading || reflectionsImportLoading || notesImportLoading
+
+  const revertLabel = (() => {
+    if (revertLoading) return 'Loading…'
+    if (!revertBatch) return 'Revert last import'
+    const { entity_type, summary, imported_at } = revertBatch
+    const entity =
+      entity_type === 'tasks'
+        ? 'Tasks'
+        : entity_type === 'reflections'
+          ? 'Reflections'
+          : 'Notes'
+    const when = new Date(imported_at).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+    return `Revert last import (${entity} · ${summary.createdCount} created · ${summary.updatedCount} updated · ${when})`
+  })()
+
   return (
     <section>
       <SettingsSectionHeader icon="database" title="Data Management" />
 
       <div className="space-y-6">
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        {/* Global import mode + revert */}
+        <SettingsCard className="p-6">
+          <h3 className="text-body mb-2 font-semibold text-on-surface">Import options</h3>
+          <p className="text-secondary mb-4 text-on-surface-variant">
+            Default imports create new records. Merge updates rows when the CSV{' '}
+            <span className="font-mono text-xs">id</span> column matches an existing record.
+            Only the most recent import can be reverted.
+          </p>
+          <label className="text-secondary mb-4 flex cursor-pointer items-center gap-2 text-on-surface-variant">
+            <input
+              type="checkbox"
+              checked={importMode === 'merge'}
+              onChange={(e) => onImportModeChange(e.target.checked ? 'merge' : 'create')}
+              className="h-4 w-4 rounded border-outline-variant text-primary focus:ring-primary"
+            />
+            Merge existing records by ID
+          </label>
+          <button
+            type="button"
+            onClick={onRevertLastImport}
+            disabled={!revertBatch || revertLoading || reverting || anyImportLoading}
+            className="text-secondary text-xs font-bold uppercase tracking-wider text-primary hover:underline disabled:opacity-50"
+          >
+            {reverting ? 'Reverting…' : revertLabel}
+          </button>
+          {revertError ? <p className="text-secondary mt-2 text-error">{revertError}</p> : null}
+        </SettingsCard>
+
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           <DataCard
             title="Tasks"
             icon="import_export"
-            description="Transfer your task list in JSON or CSV format."
+            description="Full task export: subtasks, tags, checklists, dependencies, goals, and habits."
             templateHref="/templates/tasks-import-template.csv"
             onImport={() => tasksFileInputRef.current?.click()}
             onExportJson={onExportTasksJson}
@@ -86,13 +161,24 @@ export function DataManagementSettingsSection({
           <DataCard
             title="Reflections"
             icon="auto_stories"
-            description="Securely download or upload your journal history."
-            templateHref="/templates/reflections-morning-briefing-template.csv"
+            description="Journal, daily briefing, weekly review, and goal completion reflections."
+            templateHref="/templates/reflections-import-template.csv"
             onImport={() => reflectionsFileInputRef.current?.click()}
             onExportCsv={onExportReflectionsCsv}
             importLabel={reflectionsImportLoading ? 'Importing…' : 'Import'}
             importDisabled={reflectionsImportLoading}
             summary={reflectionsImportSummary}
+          />
+          <DataCard
+            title="Notes"
+            icon="description"
+            description="Main note title and primary page content only (no folders or extra tabs)."
+            templateHref="/templates/notes-import-template.csv"
+            onImport={() => notesFileInputRef.current?.click()}
+            onExportCsv={onExportNotesCsv}
+            importLabel={notesImportLoading ? 'Importing…' : 'Import'}
+            importDisabled={notesImportLoading}
+            summary={notesImportSummary}
           />
         </div>
 
@@ -127,6 +213,17 @@ export function DataManagementSettingsSection({
             const f = e.target.files?.[0] ?? null
             e.target.value = ''
             if (f) onReflectionsFileChange(f)
+          }}
+        />
+        <input
+          ref={notesFileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0] ?? null
+            e.target.value = ''
+            if (f) onNotesFileChange(f)
           }}
         />
 
@@ -215,7 +312,7 @@ function DataCard({
   mappingLoaded?: boolean
 }) {
   return (
-    <SettingsCard className="group transition-colors hover:border-primary/40 p-6">
+    <SettingsCard className="group p-6 transition-colors hover:border-primary/40">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-body font-semibold text-on-surface">{title}</h3>
         <MaterialIcon

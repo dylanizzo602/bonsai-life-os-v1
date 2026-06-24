@@ -114,7 +114,10 @@ export interface UpdateTaskInput {
   status?: TaskStatus
   category?: string | null
   goal_id?: string | null
+  habit_id?: string | null
   recurrence_pattern?: string | null
+  /** Explicit completion timestamp (import round-trip); use with status completed */
+  completed_at?: string | null
   /** Parent task id for subtasks; null to unlink and make task top-level */
   parent_id?: string | null
 }
