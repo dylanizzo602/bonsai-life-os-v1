@@ -1,14 +1,16 @@
 /* NotesDocView: Document view with page tabs sidebar and per-page rich text editor */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, type MutableRefObject } from 'react'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
 import { MaterialIcon } from '../../components/MaterialIcon'
-import { RichTextEditor } from './RichTextEditor'
+import { RichTextEditor, type RichTextEditorSaveStatus } from './RichTextEditor'
 import { DocumentTabsSidebar } from './components/DocumentTabsSidebar'
 import { NoteCoverUploadModal } from './components/NoteCoverUploadModal'
-import { ChevronLeftIcon } from '../../components/icons'
+import { NoteDocumentHeader } from './components/NoteDocumentHeader'
+import { formatLastEditedLabel } from '../reflections/utils/formatRelativeTime'
+import { buildDraftFromPages } from './utils/noteTemplateData'
 import type { Note, NoteFolder, NotePage, NotePageTreeNode } from './types'
-
+import type { NoteTemplateDraft } from './utils/noteTemplateData'
 interface NotesDocViewProps {
   /** Current note document */
   note: Note
@@ -30,6 +32,10 @@ interface NotesDocViewProps {
   onUploadCover: (noteId: string, file: File) => Promise<unknown>
   onRemoveCover: (noteId: string) => Promise<unknown>
   pageError: string | null
+  /** Open note templates modal from document view */
+  onOpenTemplates?: () => void
+  /** Parent reads current draft snapshot for template save */
+  templateDraftGetterRef?: MutableRefObject<(() => NoteTemplateDraft) | null>
 }
 
 /**
@@ -55,23 +61,75 @@ export function NotesDocView({
   onUploadCover,
   onRemoveCover,
   pageError,
+  onOpenTemplates,
+  templateDraftGetterRef,
 }: NotesDocViewProps) {
   const selectedPage = pages.find((p) => p.id === selectedPageId)
+  const editorHtmlGetterRef = useRef<(() => string) | null>(null)
 
   /* Document title edit state */
   const [docTitle, setDocTitle] = useState(note.title)
   const [pageTitle, setPageTitle] = useState(selectedPage?.title ?? '')
+  const [saveStatus, setSaveStatus] = useState<RichTextEditorSaveStatus>('saved')
+  const [lastEditedMs, setLastEditedMs] = useState(() =>
+    selectedPage ? new Date(selectedPage.updated_at).getTime() : Date.now(),
+  )
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [coverModalOpen, setCoverModalOpen] = useState(false)
   const [localPageError, setLocalPageError] = useState<string | null>(null)
+
+  const lastEditedLabel = useMemo(() => formatLastEditedLabel(lastEditedMs), [lastEditedMs])
 
   useEffect(() => {
     setDocTitle(note.title)
   }, [note.id, note.title])
 
   useEffect(() => {
-    if (selectedPage) setPageTitle(selectedPage.title)
-  }, [selectedPage?.id, selectedPage?.title])
+    if (selectedPage) {
+      setPageTitle(selectedPage.title)
+      setLastEditedMs(new Date(selectedPage.updated_at).getTime())
+      setSaveStatus('saved')
+    }
+  }, [selectedPage?.id, selectedPage?.title, selectedPage?.updated_at])
+
+  /* Register draft getter so parent can snapshot unsaved editor state */
+  useEffect(() => {
+    if (!templateDraftGetterRef) return
+    templateDraftGetterRef.current = () =>
+      buildDraftFromPages(pages, {
+        documentTitle: docTitle,
+        selectedPageId,
+        selectedPageTitle: pageTitle,
+        selectedPageContent:
+          editorHtmlGetterRef.current?.() ?? selectedPage?.content ?? '',
+      })
+    return () => {
+      templateDraftGetterRef.current = null
+    }
+  }, [
+    templateDraftGetterRef,
+    pages,
+    docTitle,
+    selectedPageId,
+    pageTitle,
+    selectedPage?.content,
+  ])
+
+  /* Persist helper: show saving indicator then update last-edited timestamp */
+  const persistPage = useCallback(
+    async (input: { title?: string; content?: string }) => {
+      if (!selectedPage) return
+      setSaveStatus('saving')
+      try {
+        await onUpdatePage(selectedPage.id, input)
+        setSaveStatus('saved')
+        setLastEditedMs(Date.now())
+      } catch {
+        setSaveStatus('idle')
+      }
+    },
+    [selectedPage, onUpdatePage],
+  )
 
   const handleDocTitleBlur = useCallback(() => {
     if (docTitle === note.title) return
@@ -80,15 +138,21 @@ export function NotesDocView({
 
   const handlePageTitleBlur = useCallback(() => {
     if (!selectedPage || pageTitle === selectedPage.title) return
-    void onUpdatePage(selectedPage.id, { title: pageTitle.trim() || 'Untitled' })
-  }, [selectedPage, pageTitle, onUpdatePage])
+    const trimmed = pageTitle.trim() || 'Untitled'
+    void persistPage({ title: trimmed })
+    /* Single-page notes: keep library title in sync with the page title */
+    if (pages.length === 1 && trimmed !== note.title) {
+      void onUpdateNote(note.id, { title: trimmed })
+      setDocTitle(trimmed)
+    }
+  }, [selectedPage, pageTitle, persistPage, pages.length, note.id, note.title, onUpdateNote])
 
   const handleContentBlur = useCallback(
     (html: string) => {
       if (!selectedPage || html === selectedPage.content) return
-      void onUpdatePage(selectedPage.id, { content: html })
+      void persistPage({ content: html })
     },
-    [selectedPage, onUpdatePage],
+    [selectedPage, persistPage],
   )
 
   const handleConfirmDelete = useCallback(async () => {
@@ -108,17 +172,6 @@ export function NotesDocView({
     },
     [onDeletePage],
   )
-
-  const formatLastUpdated = (dateString: string) => {
-    const d = new Date(dateString)
-    return d.toLocaleString('en-US', {
-      month: 'numeric',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    })
-  }
 
   const displayError = pageError || localPageError
 
@@ -143,118 +196,108 @@ export function NotesDocView({
         }}
       />
 
-      <main className="min-w-0 flex-1 p-4 pb-28 md:p-6 lg:pb-6">
-        <Button variant="ghost" onClick={onBack} className="mb-4 -ml-1">
-          <ChevronLeftIcon className="mr-1 h-5 w-5" />
-          Back to library
-        </Button>
-
-        {/* Document title (library name) */}
-        <input
-          type="text"
-          value={docTitle}
-          onChange={(e) => setDocTitle(e.target.value)}
-          onBlur={handleDocTitleBlur}
-          spellCheck
-          className="mb-4 w-full border-0 bg-transparent text-secondary font-semibold text-on-surface-variant focus:outline-none focus:ring-0"
-          placeholder="Document title"
-          aria-label="Document title"
-        />
-
-        {note.cover_image_url ? (
-          <div className="relative mb-6 overflow-hidden rounded-xl">
-            <img src={note.cover_image_url} alt="" className="h-48 w-full object-cover" />
-            <div className="absolute bottom-3 right-3 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setCoverModalOpen(true)}
-                className="rounded-lg bg-surface-container-lowest/90 px-3 py-1.5 text-secondary font-medium text-on-surface shadow-sm"
-              >
-                Change cover
-              </button>
-              <button
-                type="button"
-                onClick={() => void onRemoveCover(note.id)}
-                className="rounded-lg bg-surface-container-lowest/90 px-3 py-1.5 text-secondary font-medium text-error shadow-sm"
-              >
-                Remove
-              </button>
-            </div>
+      <main className="min-w-0 flex-1 overflow-y-auto bg-surface-container-low/20">
+        <div className="mx-auto flex w-full max-w-[850px] flex-col px-4 pb-24 md:px-8">
+          {/* Back navigation */}
+          <div className="mt-6 md:mt-8">
+            <button
+              type="button"
+              onClick={onBack}
+              className="group -ml-3 flex items-center gap-2 rounded-lg px-3 py-1.5 text-primary transition-colors hover:bg-primary-fixed/30"
+            >
+              <MaterialIcon name="arrow_back" className="text-lg" />
+              <span className="text-sm font-semibold">Back to library</span>
+            </button>
           </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setCoverModalOpen(true)}
-            className="mb-6 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-outline-variant/40 bg-surface-container-low py-4 text-secondary text-on-surface-variant hover:border-primary/30"
-          >
-            <MaterialIcon name="image" />
-            Add cover image
-          </button>
-        )}
 
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <label htmlFor="note-folder" className="text-secondary text-on-surface-variant">
-            Folder
-          </label>
-          <select
-            id="note-folder"
-            value={note.folder_id ?? ''}
-            onChange={(e) => {
-              void onMoveToFolder(note.id, e.target.value || null)
-            }}
-            className="rounded-lg border border-outline-variant/30 bg-surface-container-lowest px-3 py-1.5 text-secondary text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
-          >
-            <option value="">Uncategorized</option>
-            {folders.map((folder) => (
-              <option key={folder.id} value={folder.id}>
-                {folder.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {displayError && (
-          <p className="mb-4 text-secondary text-error" role="alert">
-            {displayError}
-          </p>
-        )}
-
-        {pagesLoading && (
-          <p className="text-body text-on-surface-variant py-8">Loading pages…</p>
-        )}
-
-        {!pagesLoading && selectedPage && (
-          <>
-            <input
-              type="text"
-              value={pageTitle}
-              onChange={(e) => setPageTitle(e.target.value)}
-              onBlur={handlePageTitleBlur}
-              spellCheck
-              className="mb-1 w-full border-0 bg-transparent text-page-title font-bold text-bonsai-brown-700 focus:outline-none focus:ring-0"
-              placeholder="Untitled"
-              aria-label="Page title"
+          {/* Compact document header: cover, folder, notebook title */}
+          <div className="mt-6">
+            <NoteDocumentHeader
+              note={note}
+              folders={folders}
+              showNotebookTitle={pages.length > 1}
+              notebookTitle={docTitle}
+              onNotebookTitleChange={setDocTitle}
+              onNotebookTitleBlur={handleDocTitleBlur}
+              onMoveToFolder={(folderId) => {
+                void onMoveToFolder(note.id, folderId)
+              }}
+              onAddCover={() => setCoverModalOpen(true)}
+              onChangeCover={() => setCoverModalOpen(true)}
+              onRemoveCover={() => void onRemoveCover(note.id)}
             />
-            <p className="text-secondary text-bonsai-slate-500 mb-4">
-              Last updated {formatLastUpdated(selectedPage.updated_at)}
+          </div>
+
+          {displayError && (
+            <p className="mt-4 text-secondary text-error" role="alert">
+              {displayError}
             </p>
-            <RichTextEditor
-              editorKey={selectedPage.id}
-              value={selectedPage.content}
-              onBlur={handleContentBlur}
-              placeholder="Start writing…"
-            />
-          </>
-        )}
+          )}
 
-        {!pagesLoading && !selectedPage && pages.length > 0 && (
-          <p className="text-body text-on-surface-variant">Select a page to edit.</p>
-        )}
+          {pagesLoading && (
+            <p className="text-body text-on-surface-variant py-8">Loading pages…</p>
+          )}
 
-        <div className="mt-6">
-          <Button variant="danger" size="sm" onClick={() => setDeleteModalOpen(true)}>
-            Delete note
-          </Button>
+          {/* Page editor: same reflection-style editor as journal entries */}
+          {!pagesLoading && selectedPage && (
+            <div className="mt-6 flex flex-col gap-6">
+              <div className="flex flex-col gap-2">
+                {/* Last-edited metadata and delete action */}
+                <div className="flex flex-wrap items-center justify-between gap-4 text-sm font-medium text-outline">
+                  <div className="flex items-center gap-1">
+                    <MaterialIcon name="history" className="text-base" />
+                    <span>{lastEditedLabel}</span>
+                  </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {onOpenTemplates && (
+                    <button
+                      type="button"
+                      onClick={onOpenTemplates}
+                      className="flex items-center gap-1.5 rounded-lg bg-surface-variant/20 px-3 py-1.5 text-secondary font-medium text-on-surface-variant transition-colors hover:text-primary"
+                    >
+                      <MaterialIcon name="content_copy" className="text-base" />
+                      Templates
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setDeleteModalOpen(true)}
+                    className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-error transition-colors hover:bg-error-container/40"
+                    aria-label="Delete note"
+                  >
+                    <MaterialIcon name="delete" className="text-base" />
+                    <span className="text-secondary font-semibold">Delete</span>
+                  </button>
+                </div>
+                </div>
+
+                <input
+                  type="text"
+                  value={pageTitle}
+                  onChange={(e) => setPageTitle(e.target.value)}
+                  onBlur={handlePageTitleBlur}
+                  spellCheck
+                  className="w-full border-0 bg-transparent text-page-title font-semibold tracking-tight text-on-surface focus:outline-none focus:ring-0"
+                  placeholder="Untitled"
+                  aria-label="Page title"
+                />
+              </div>
+
+              <RichTextEditor
+                editorKey={selectedPage.id}
+                value={selectedPage.content}
+                onBlur={handleContentBlur}
+                placeholder="Start writing…"
+                variant="reflection"
+                saveStatus={saveStatus}
+                htmlGetterRef={editorHtmlGetterRef}
+              />
+            </div>
+          )}
+
+          {!pagesLoading && !selectedPage && pages.length > 0 && (
+            <p className="mt-8 text-body text-on-surface-variant">Select a page to edit.</p>
+          )}
         </div>
       </main>
 

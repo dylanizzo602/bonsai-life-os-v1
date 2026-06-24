@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useAccountSettings } from './hooks/useAccountSettings'
+import { useProfileAvatar } from './hooks/useProfileAvatar'
 import { useNotificationSettings } from './hooks/useNotificationSettings'
 import { useTaskImportExport } from './hooks/useTaskImportExport'
 import { requestNotificationPermission, registerServiceWorker } from '../../lib/notifications/pushClient'
@@ -45,6 +46,13 @@ export function SettingsPage() {
     saveProfile,
     saveEmail,
   } = useAccountSettings(user)
+
+  const {
+    avatarUrl,
+    uploading: avatarUploading,
+    error: avatarError,
+    uploadAvatar,
+  } = useProfileAvatar(user)
 
   const {
     loading: loadingNotifications,
@@ -288,6 +296,10 @@ export function SettingsPage() {
           saving={saving}
           hasUnsavedChanges={isProfileDirty}
           disabled={disabled}
+          avatarUrl={avatarUrl}
+          avatarUploading={avatarUploading}
+          avatarError={avatarError}
+          onUploadAvatar={uploadAvatar}
           onFieldChange={setField}
           onSave={() => void handleSaveProfileSection()}
         />

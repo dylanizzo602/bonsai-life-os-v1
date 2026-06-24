@@ -11,7 +11,7 @@ interface NotesSearchBarProps {
  */
 export function NotesSearchBar({ value, onChange }: NotesSearchBarProps) {
   return (
-    <div className="flex h-12 w-full min-w-0 items-center gap-3 rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-2 md:min-w-[320px]">
+    <div className="flex h-12 w-full min-w-0 items-center gap-3 rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-2">
       <MaterialIcon name="search" className="shrink-0 text-on-surface-variant" />
       <input
         type="search"

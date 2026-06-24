@@ -295,6 +295,76 @@ export async function deleteNoteCover(storagePath: string): Promise<void> {
   }
 }
 
+const PROFILE_AVATARS_BUCKET = 'profile-avatars'
+
+export interface ProfileAvatarUpload {
+  /** Public URL for the uploaded profile photo */
+  url: string
+  /** Original filename (for display) */
+  name: string
+  /** Mime type when available */
+  type?: string
+  /** Supabase storage path (to persist in user metadata) */
+  storagePath: string
+}
+
+/**
+ * Profile avatar upload: stores under `${userId}/${safeName}`.
+ * Bucket must be public so avatars render without auth.
+ */
+export async function uploadProfileAvatar(file: File): Promise<ProfileAvatarUpload> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+
+  if (userError || !user) {
+    throw new Error('You must be signed in to upload a profile photo.')
+  }
+
+  const ext = file.name.split('.').pop() ?? ''
+  const base = file.name.slice(0, -(ext.length + (ext ? 1 : 0)))
+  const safeName = `${base}-${Date.now()}${ext ? '.' + ext : ''}`.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const path = `${user.id}/${safeName}`
+
+  const { error: uploadError } = await supabase.storage
+    .from(PROFILE_AVATARS_BUCKET)
+    .upload(path, file, { upsert: false })
+
+  if (uploadError) {
+    console.error('Error uploading profile avatar:', uploadError)
+    if (uploadError.message?.includes('Bucket not found') || uploadError.message?.includes('not found')) {
+      throw new Error(
+        `Storage bucket "${PROFILE_AVATARS_BUCKET}" not found. Run supabase db push to create it.`,
+      )
+    }
+    throw uploadError
+  }
+
+  const { data: urlData } = supabase.storage.from(PROFILE_AVATARS_BUCKET).getPublicUrl(path)
+
+  return {
+    url: urlData.publicUrl,
+    name: file.name,
+    type: file.type || undefined,
+    storagePath: path,
+  }
+}
+
+/**
+ * Delete a profile avatar file from storage by its storage path.
+ */
+export async function deleteProfileAvatar(storagePath: string): Promise<void> {
+  if (!storagePath.trim()) return
+
+  const { error } = await supabase.storage.from(PROFILE_AVATARS_BUCKET).remove([storagePath])
+
+  if (error) {
+    console.error('Error deleting profile avatar:', error)
+    throw error
+  }
+}
+
 const FEEDBACK_SCREENSHOTS_BUCKET = 'feedback-screenshots'
 
 /** Build a unique storage path for a feedback screenshot under the user's folder. */

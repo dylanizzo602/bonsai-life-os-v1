@@ -1,7 +1,7 @@
 /* RichTextEditor: TipTap-based rich text editor with toolbar; saves on blur */
 
 import { useEditor, EditorContent } from '@tiptap/react'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, type MutableRefObject } from 'react'
 import { createEditorExtensions } from './editor/createEditorExtensions'
 import { EDITOR_HEADING_BODY_PROSE_CLASS } from './editor/editorTypography'
 import { ReflectionEditorToolbar } from './editor/ReflectionEditorToolbar'
@@ -26,6 +26,8 @@ interface RichTextEditorProps {
   variant?: RichTextEditorVariant
   /** Save status shown in reflection toolbar */
   saveStatus?: RichTextEditorSaveStatus
+  /** Optional ref to read current HTML without waiting for blur */
+  htmlGetterRef?: MutableRefObject<(() => string) | null>
 }
 
 /** Quote box styling inside the editor surface */
@@ -71,6 +73,7 @@ export function RichTextEditor({
   minHeightClassName = 'min-h-[280px]',
   variant = 'default',
   saveStatus = 'saved',
+  htmlGetterRef,
 }: RichTextEditorProps) {
   const handleBlur = useCallback(
     (html: string) => {
@@ -106,6 +109,15 @@ export function RichTextEditor({
       editor.off('blur', onEditorBlur)
     }
   }, [editor, handleBlur])
+
+  /* Expose live HTML getter for template draft snapshots */
+  useEffect(() => {
+    if (!editor || !htmlGetterRef) return
+    htmlGetterRef.current = () => editor.getHTML()
+    return () => {
+      htmlGetterRef.current = null
+    }
+  }, [editor, htmlGetterRef])
 
   /* When value changes externally (e.g. note switch), sync content */
   useEffect(() => {

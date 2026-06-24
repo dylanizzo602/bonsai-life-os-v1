@@ -89,6 +89,47 @@ export async function updateAccountPassword(password: string): Promise<void> {
   }
 }
 
+interface UpdateAccountAvatarInput {
+  /** Public URL for the profile photo */
+  avatarUrl: string
+  /** Supabase storage path for cleanup on replace/remove */
+  avatarStoragePath: string
+}
+
+/**
+ * Persist profile photo URL and storage path in auth user metadata.
+ */
+export async function updateAccountAvatarMetadata(input: UpdateAccountAvatarInput): Promise<void> {
+  const { error } = await supabase.auth.updateUser({
+    data: {
+      avatar_url: input.avatarUrl,
+      avatar_storage_path: input.avatarStoragePath,
+    },
+  })
+
+  if (error) {
+    console.error('Error updating account avatar metadata:', error)
+    throw error
+  }
+}
+
+/**
+ * Clear user-uploaded profile photo metadata (OAuth picture field is untouched).
+ */
+export async function clearAccountAvatarMetadata(): Promise<void> {
+  const { error } = await supabase.auth.updateUser({
+    data: {
+      avatar_url: null,
+      avatar_storage_path: null,
+    },
+  })
+
+  if (error) {
+    console.error('Error clearing account avatar metadata:', error)
+    throw error
+  }
+}
+
 /**
  * Type guard helper: normalize unknown errors into an AuthError-like message.
  */

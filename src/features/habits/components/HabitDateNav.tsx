@@ -9,14 +9,24 @@ export interface HabitDateNavProps {
   onNext: () => void
   /** Open date picker when the label is clicked */
   onOpenDatePicker: () => void
+  /** Optional wrapper classes (e.g. flex growth on mobile) */
+  className?: string
 }
 
 /**
  * Compact date navigation for the Habits page header.
  */
-export function HabitDateNav({ label, onPrev, onNext, onOpenDatePicker }: HabitDateNavProps) {
+export function HabitDateNav({
+  label,
+  onPrev,
+  onNext,
+  onOpenDatePicker,
+  className = '',
+}: HabitDateNavProps) {
   return (
-    <div className="flex h-12 items-center gap-3 rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-2">
+    <div
+      className={`flex h-12 items-center gap-3 rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-2 ${className}`}
+    >
       <button
         type="button"
         onClick={onPrev}
@@ -28,7 +38,7 @@ export function HabitDateNav({ label, onPrev, onNext, onOpenDatePicker }: HabitD
       <button
         type="button"
         onClick={onOpenDatePicker}
-        className="min-w-[60px] text-center text-secondary font-semibold text-on-surface transition-colors hover:text-primary"
+        className="min-w-0 flex-1 truncate text-center text-secondary font-semibold text-on-surface transition-colors hover:text-primary sm:min-w-[60px] sm:flex-none"
         aria-label="Open date picker"
       >
         {label}

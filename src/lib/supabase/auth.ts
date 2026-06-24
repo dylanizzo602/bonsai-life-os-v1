@@ -7,6 +7,7 @@ import type {
   AuthResponse,
 } from '@supabase/supabase-js'
 import { supabase } from './client'
+import { clearQueryCache } from './queryCache'
 
 /* Get the current auth session (if any) */
 export async function getSession(): Promise<Session | null> {
@@ -97,6 +98,8 @@ export async function signOut(): Promise<AuthError | null> {
     console.error('Error signing out:', error)
     return error
   }
+  /* Clear read cache so the next user never sees stale data */
+  clearQueryCache()
   return null
 }
 

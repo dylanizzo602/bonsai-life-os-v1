@@ -1,6 +1,7 @@
 /* Task data access layer: Supabase queries for CRUD on tasks, checklists, and dependencies */
 import { DateTime } from 'luxon'
 import { supabase } from './client'
+import { cachedQuery, invalidateQueryCache, QUERY_CACHE_PREFIX } from './queryCache'
 import { getTagsForTask } from './tags'
 import { parseRecurrencePattern, getNextOccurrence } from '../recurrence'
 import type {
@@ -23,12 +24,36 @@ interface TaskRowWithTags {
   [key: string]: unknown
 }
 
+/** Cache key: serialized filters determine distinct task list queries */
+function buildTasksCacheKey(filters?: TaskFilters): string {
+  return `${QUERY_CACHE_PREFIX.tasks}${JSON.stringify(filters ?? {})}`
+}
+
+/** Invalidate cached task reads after any task write */
+function invalidateTasksCache(): void {
+  invalidateQueryCache(QUERY_CACHE_PREFIX.tasks)
+}
+
+/** Run a task mutation and drop stale task list cache on success */
+async function withTasksCacheInvalidation<T>(fn: () => Promise<T>): Promise<T> {
+  const result = await fn()
+  invalidateTasksCache()
+  return result
+}
+
 /**
  * Fetch all tasks with optional filters.
  * When parent_id filter is set, returns only subtasks of that parent.
  * Joins task_tags and tags to populate task.tags.
  */
 export async function getTasks(filters?: TaskFilters): Promise<Task[]> {
+  return cachedQuery(buildTasksCacheKey(filters), () => fetchTasksUncached(filters))
+}
+
+/**
+ * Uncached task list fetch (used by getTasks read-through cache).
+ */
+async function fetchTasksUncached(filters?: TaskFilters): Promise<Task[]> {
   let query = supabase
     .from('tasks')
     .select('*, task_tags(tag_id, tags(*))')
@@ -214,6 +239,7 @@ export async function getTaskByHabitId(habitId: string): Promise<Task | null> {
  * Subtasks: pass parent_id to create as child of another task.
  */
 export async function createTask(input: CreateTaskInput): Promise<Task> {
+  return withTasksCacheInvalidation(async () => {
   const insertData: Record<string, unknown> = {
     title: input.title,
     description: input.description ?? null,
@@ -249,12 +275,14 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     tags: [],
     attachments: Array.isArray(task.attachments) ? task.attachments : [],
   } as unknown as Task
+  })
 }
 
 /**
  * Update an existing task
  */
 export async function updateTask(id: string, input: UpdateTaskInput): Promise<Task> {
+  return withTasksCacheInvalidation(async () => {
   const updateData: Record<string, unknown> = {}
 
   if (input.title !== undefined) updateData.title = input.title
@@ -295,18 +323,21 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
     tags,
     attachments: Array.isArray(task.attachments) ? task.attachments : [],
   }
+  })
 }
 
 /**
  * Delete a task (cascades to subtasks, checklists, dependencies via DB constraints)
  */
 export async function deleteTask(id: string): Promise<void> {
+  return withTasksCacheInvalidation(async () => {
   const { error } = await supabase.from('tasks').delete().eq('id', id)
 
   if (error) {
     console.error('Error deleting task:', error)
     throw error
   }
+  })
 }
 
 /** Parse YYYY-MM-DD or ISO string to date-only for recurrence (timezone-safe) */
@@ -346,6 +377,7 @@ function todayLocalYMD(): string {
  * When completing a recurring task: advance dates, set status back to active, optionally reopen checklist items.
  */
 export async function toggleTaskComplete(id: string, completed: boolean): Promise<Task> {
+  return withTasksCacheInvalidation(async () => {
   if (!completed) {
     const { data, error } = await supabase
       .from('tasks')
@@ -490,6 +522,7 @@ export async function toggleTaskComplete(id: string, completed: boolean): Promis
   const updated = data as Task
   const tags = await getTagsForTask(id)
   return { ...updated, tags, attachments: Array.isArray(updated.attachments) ? updated.attachments : [] }
+  })
 }
 
 /**
@@ -561,6 +594,7 @@ export async function createSubtask(
 export async function createTaskChecklist(
   input: CreateTaskChecklistInput,
 ): Promise<TaskChecklist> {
+  return withTasksCacheInvalidation(async () => {
   const { data, error } = await supabase
     .from('task_checklists')
     .insert({
@@ -577,6 +611,7 @@ export async function createTaskChecklist(
   }
 
   return data as TaskChecklist
+  })
 }
 
 /**
@@ -586,6 +621,7 @@ export async function updateTaskChecklist(
   id: string,
   updates: { title?: string; sort_order?: number },
 ): Promise<TaskChecklist> {
+  return withTasksCacheInvalidation(async () => {
   const { data, error } = await supabase
     .from('task_checklists')
     .update(updates)
@@ -599,6 +635,7 @@ export async function updateTaskChecklist(
   }
 
   return data as TaskChecklist
+  })
 }
 
 /**
@@ -623,12 +660,14 @@ export async function getTaskChecklists(taskId: string): Promise<TaskChecklist[]
  * Delete a checklist (and, via DB constraints, its items) by id.
  */
 export async function deleteTaskChecklist(id: string): Promise<void> {
+  return withTasksCacheInvalidation(async () => {
   const { error } = await supabase.from('task_checklists').delete().eq('id', id)
 
   if (error) {
     console.error('Error deleting checklist:', error)
     throw error
   }
+  })
 }
 
 /**
@@ -685,6 +724,7 @@ export async function getChecklistSummaryForTask(
 export async function createChecklistItem(
   input: CreateChecklistItemInput,
 ): Promise<TaskChecklistItem> {
+  return withTasksCacheInvalidation(async () => {
   const { data, error } = await supabase
     .from('task_checklist_items')
     .insert({
@@ -701,6 +741,7 @@ export async function createChecklistItem(
   }
 
   return data as TaskChecklistItem
+  })
 }
 
 /**
@@ -710,6 +751,7 @@ export async function toggleChecklistItemComplete(
   id: string,
   completed: boolean,
 ): Promise<TaskChecklistItem> {
+  return withTasksCacheInvalidation(async () => {
   const { data, error } = await supabase
     .from('task_checklist_items')
     .update({ completed })
@@ -723,6 +765,7 @@ export async function toggleChecklistItemComplete(
   }
 
   return data as TaskChecklistItem
+  })
 }
 
 /**
@@ -732,6 +775,7 @@ export async function updateChecklistItem(
   id: string,
   updates: { title?: string; sort_order?: number },
 ): Promise<TaskChecklistItem> {
+  return withTasksCacheInvalidation(async () => {
   const { data, error } = await supabase
     .from('task_checklist_items')
     .update(updates)
@@ -745,18 +789,21 @@ export async function updateChecklistItem(
   }
 
   return data as TaskChecklistItem
+  })
 }
 
 /**
  * Delete a checklist item by id.
  */
 export async function deleteChecklistItem(id: string): Promise<void> {
+  return withTasksCacheInvalidation(async () => {
   const { error } = await supabase.from('task_checklist_items').delete().eq('id', id)
 
   if (error) {
     console.error('Error deleting checklist item:', error)
     throw error
   }
+  })
 }
 
 /**
@@ -765,6 +812,7 @@ export async function deleteChecklistItem(id: string): Promise<void> {
 export async function createTaskDependency(
   input: CreateTaskDependencyInput,
 ): Promise<TaskDependency> {
+  return withTasksCacheInvalidation(async () => {
   const { data, error } = await supabase
     .from('task_dependencies')
     .insert({
@@ -780,12 +828,14 @@ export async function createTaskDependency(
   }
 
   return data as TaskDependency
+  })
 }
 
 /**
  * Delete a task dependency by id
  */
 export async function deleteTaskDependency(dependencyId: string): Promise<void> {
+  return withTasksCacheInvalidation(async () => {
   const { error } = await supabase
     .from('task_dependencies')
     .delete()
@@ -795,6 +845,7 @@ export async function deleteTaskDependency(dependencyId: string): Promise<void> 
     console.error('Error deleting task dependency:', error)
     throw error
   }
+  })
 }
 
 /**

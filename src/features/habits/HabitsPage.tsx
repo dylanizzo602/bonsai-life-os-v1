@@ -168,8 +168,9 @@ export function HabitsPage() {
             Consistency is the bridge between goals and accomplishment.
           </p>
         </div>
-        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
+        <div className="flex w-full flex-row items-center gap-2 sm:w-auto sm:gap-3">
           <HabitDateNav
+            className="min-w-0 flex-1 sm:flex-none"
             label={selectedLabel}
             onPrev={() => handleChangeSelectedDate(addDays(selectedDateYMD, -1))}
             onNext={() => handleChangeSelectedDate(addDays(selectedDateYMD, 1))}
@@ -178,10 +179,10 @@ export function HabitsPage() {
           <button
             type="button"
             onClick={handleOpenCreate}
-            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-body font-semibold text-on-primary shadow-sm transition-all hover:bg-primary-container active:scale-95"
+            className="inline-flex h-12 min-w-0 flex-1 shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-3 py-3 text-body font-semibold text-on-primary shadow-sm transition-all hover:bg-primary-container active:scale-95 sm:flex-none sm:px-6"
           >
             <MaterialIcon name="add" className="text-[20px]" />
-            Add Habit
+            <span className="truncate">Add Habit</span>
           </button>
         </div>
       </header>

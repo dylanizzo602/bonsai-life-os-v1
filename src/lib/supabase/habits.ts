@@ -1,5 +1,6 @@
 /* Habit data access layer: Supabase CRUD for habits, entries, and todo reminder scheduling */
 import { supabase } from './client'
+import { cachedQuery, invalidateQueryCache, QUERY_CACHE_PREFIX } from './queryCache'
 import { upsertLinkedTaskForHabit } from '../habitLinkedTask'
 import {
   advanceTodoRemindAtIfDueOn,
@@ -35,10 +36,49 @@ function todayLocalYMD(): string {
   return `${y}-${m}-${day}`
 }
 
+/** Invalidate cached habit list and entry reads after habit writes */
+function invalidateHabitsCache(): void {
+  invalidateQueryCache(QUERY_CACHE_PREFIX.habits)
+  invalidateQueryCache(QUERY_CACHE_PREFIX.habitEntries)
+}
+
+/** Invalidate tasks cache when habit mutations sync linked reminder tasks */
+function invalidateTasksCacheFromHabits(): void {
+  invalidateQueryCache(QUERY_CACHE_PREFIX.tasks)
+}
+
+/** Run a habit mutation and drop stale habit caches on success */
+async function withHabitsCacheInvalidation<T>(
+  fn: () => Promise<T>,
+  options?: { invalidateTasks?: boolean },
+): Promise<T> {
+  const result = await fn()
+  invalidateHabitsCache()
+  if (options?.invalidateTasks) {
+    invalidateTasksCacheFromHabits()
+  }
+  return result
+}
+
+/** Cache key for habit entry range queries */
+function buildHabitEntriesCacheKey(
+  habitIds: string[],
+  dateFrom: string,
+  dateTo: string,
+): string {
+  const sortedIds = [...habitIds].sort().join(',')
+  return `${QUERY_CACHE_PREFIX.habitEntries}${sortedIds}:${dateFrom}:${dateTo}`
+}
+
 /**
  * Fetch all habits ordered by sort_order then created_at.
  */
 export async function getHabits(): Promise<Habit[]> {
+  return cachedQuery(`${QUERY_CACHE_PREFIX.habits}all`, fetchHabitsUncached)
+}
+
+/** Uncached habit list fetch */
+async function fetchHabitsUncached(): Promise<Habit[]> {
   const { data, error } = await supabase
     .from('habits')
     .select('*')
@@ -57,6 +97,7 @@ export async function getHabits(): Promise<Habit[]> {
  * Create a new habit. If add_to_todos and scheduling inputs exist, sets todo_remind_at.
  */
 export async function createHabit(input: CreateHabitInput): Promise<Habit> {
+  return withHabitsCacheInvalidation(async () => {
   const addToTodos = input.add_to_todos ?? true
   /* Reminder offsets: only meaningful when add_to_todos is enabled */
   const additionalOffsets = addToTodos
@@ -143,12 +184,14 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
     console.error('Error syncing linked task for habit:', e)
   }
   return created
+  }, { invalidateTasks: true })
 }
 
 /**
  * Update an existing habit. Recomputes todo_remind_at when add_to_todos or schedule fields change.
  */
 export async function updateHabit(id: string, input: UpdateHabitInput): Promise<Habit> {
+  return withHabitsCacheInvalidation(async () => {
   const { data: existing, error: fetchError } = await supabase
     .from('habits')
     .select('*')
@@ -256,17 +299,20 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
     console.error('Error syncing linked task for habit:', e)
   }
   return updatedHabit
+  }, { invalidateTasks: true })
 }
 
 /**
  * Delete a habit. CASCADE removes habit_entries.
  */
 export async function deleteHabit(id: string): Promise<void> {
+  return withHabitsCacheInvalidation(async () => {
   const { error } = await supabase.from('habits').delete().eq('id', id)
   if (error) {
     console.error('Error deleting habit:', error)
     throw error
   }
+  }, { invalidateTasks: true })
 }
 
 /**
@@ -277,6 +323,7 @@ export async function setEntry(
   entryDate: string,
   status: 'completed' | 'skipped' | 'minimum' | null,
 ): Promise<void> {
+  return withHabitsCacheInvalidation(async () => {
   if (status === null) {
     /* Entry delete: clear the single day status (no schedule advance). */
     const { error } = await supabase
@@ -342,6 +389,7 @@ export async function setEntry(
       console.error('Error advancing habit reminder:', err)
     }
   }
+  }, { invalidateTasks: true })
 }
 
 /**
@@ -356,6 +404,17 @@ export async function getEntriesForHabits(
     return {}
   }
 
+  return cachedQuery(buildHabitEntriesCacheKey(habitIds, dateFrom, dateTo), () =>
+    fetchEntriesForHabitsUncached(habitIds, dateFrom, dateTo),
+  )
+}
+
+/** Uncached habit entries fetch for a date range */
+async function fetchEntriesForHabitsUncached(
+  habitIds: string[],
+  dateFrom: string,
+  dateTo: string,
+): Promise<Record<string, HabitEntry[]>> {
   const { data, error } = await supabase
     .from('habit_entries')
     .select('*')
@@ -417,11 +476,15 @@ export type ResetHabitsFreshStartResult = {
  * and reschedules todo_remind_at + linked tasks from today.
  */
 export async function resetHabitsFreshStart(): Promise<ResetHabitsFreshStartResult> {
+  return withHabitsCacheInvalidation(async () => {
   const { error: rpcError } = await supabase.rpc('reset_habits_fresh_start')
   if (rpcError) {
     console.error('Error resetting habits (RPC):', rpcError)
     throw rpcError
   }
+
+  /* Drop stale lists before re-reading habits post-reset */
+  invalidateHabitsCache()
 
   const habits = await getHabits()
   const todayYmd = todayLocalYMD()
@@ -475,4 +538,5 @@ export async function resetHabitsFreshStart(): Promise<ResetHabitsFreshStartResu
   }
 
   return { habitsReset }
+  }, { invalidateTasks: true })
 }

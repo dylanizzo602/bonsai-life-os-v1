@@ -1,5 +1,6 @@
 /* Goal data access layer: Supabase CRUD for goals, milestones, habit links, and history */
 import { supabase } from './client'
+import { cachedQuery, invalidateQueryCache, QUERY_CACHE_PREFIX } from './queryCache'
 import { getTasksByIds, getTaskTreeForProgress } from './tasks'
 import type { Task } from '../../features/tasks/types'
 import type {
@@ -17,6 +18,25 @@ import {
   getNumberMilestoneProgressPercent,
   getTaskMilestoneProgressPercentFromTree,
 } from '../../features/goals/utils/milestoneProgress'
+
+/** Invalidate cached goal and milestone reads after goal writes */
+function invalidateGoalsCache(): void {
+  invalidateQueryCache(QUERY_CACHE_PREFIX.goals)
+  invalidateQueryCache(QUERY_CACHE_PREFIX.milestonesByGoals)
+}
+
+/** Run a goal mutation and drop stale goal caches on success */
+async function withGoalsCacheInvalidation<T>(fn: () => Promise<T>): Promise<T> {
+  const result = await fn()
+  invalidateGoalsCache()
+  return result
+}
+
+/** Cache key for batched milestone fetch by goal ids */
+function buildMilestonesByGoalIdsCacheKey(goalIds: string[]): string {
+  const sortedIds = [...goalIds].sort().join(',')
+  return `${QUERY_CACHE_PREFIX.milestonesByGoals}${sortedIds}`
+}
 
 /* Format a milestone numeric field for human-readable goal history lines */
 function formatMilestoneQuantity(n: number | null | undefined): string {
@@ -270,6 +290,11 @@ async function describeMilestoneChanges(
  * Returns both active and inactive goals; UI decides how to categorize.
  */
 export async function getGoals(): Promise<Goal[]> {
+  return cachedQuery(`${QUERY_CACHE_PREFIX.goals}all`, fetchGoalsUncached)
+}
+
+/** Uncached goals list fetch */
+async function fetchGoalsUncached(): Promise<Goal[]> {
   const { data, error } = await supabase
     .from('goals')
     .select('*')
@@ -452,6 +477,7 @@ async function calculateProgressFromMilestones(milestones: GoalMilestone[]): Pro
  * Create a new goal and add initial history entry.
  */
 export async function createGoal(input: CreateGoalInput): Promise<Goal> {
+  return withGoalsCacheInvalidation(async () => {
   const insertData: Record<string, unknown> = {
     name: input.name,
     description: input.description ?? null,
@@ -480,12 +506,14 @@ export async function createGoal(input: CreateGoalInput): Promise<Goal> {
   await addHistoryEntry(goal.id, 'milestone_created', 'Goal created', null)
 
   return goal
+  })
 }
 
 /**
  * Update an existing goal. Adds history entry if progress changes.
  */
 export async function updateGoal(id: string, input: UpdateGoalInput): Promise<Goal> {
+  return withGoalsCacheInvalidation(async () => {
   /* Fetch existing goal to check for progress changes */
   const { data: existing, error: fetchError } = await supabase
     .from('goals')
@@ -535,43 +563,82 @@ export async function updateGoal(id: string, input: UpdateGoalInput): Promise<Go
   }
 
   return data as Goal
+  })
 }
 
 /**
  * Delete a goal (cascades to milestones, history, and habit links).
  */
 export async function deleteGoal(id: string): Promise<void> {
+  return withGoalsCacheInvalidation(async () => {
   const { error } = await supabase.from('goals').delete().eq('id', id)
 
   if (error) {
     console.error('Error deleting goal:', error)
     throw error
   }
+  })
 }
 
 /**
  * Fetch milestones for a goal.
  */
 export async function getMilestonesForGoal(goalId: string): Promise<GoalMilestone[]> {
+  const grouped = await getMilestonesByGoalIds([goalId])
+  return grouped[goalId] ?? []
+}
+
+/**
+ * Fetch milestones for multiple goals in one query, grouped by goal_id.
+ */
+export async function getMilestonesByGoalIds(
+  goalIds: string[],
+): Promise<Record<string, GoalMilestone[]>> {
+  if (goalIds.length === 0) {
+    return {}
+  }
+
+  return cachedQuery(buildMilestonesByGoalIdsCacheKey(goalIds), () =>
+    fetchMilestonesByGoalIdsUncached(goalIds),
+  )
+}
+
+/** Uncached batched milestone fetch grouped by goal_id */
+async function fetchMilestonesByGoalIdsUncached(
+  goalIds: string[],
+): Promise<Record<string, GoalMilestone[]>> {
+  const byGoal: Record<string, GoalMilestone[]> = {}
+  for (const id of goalIds) {
+    byGoal[id] = []
+  }
+
   const { data, error } = await supabase
     .from('goal_milestones')
     .select('*')
-    .eq('goal_id', goalId)
+    .in('goal_id', goalIds)
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: true })
 
   if (error) {
-    console.error('Error fetching milestones:', error)
+    console.error('Error fetching milestones by goal ids:', error)
     throw error
   }
 
-  return (data ?? []) as GoalMilestone[]
+  for (const row of (data ?? []) as GoalMilestone[]) {
+    if (!byGoal[row.goal_id]) {
+      byGoal[row.goal_id] = []
+    }
+    byGoal[row.goal_id].push(row)
+  }
+
+  return byGoal
 }
 
 /**
  * Create a milestone and add history entry.
  */
 export async function createMilestone(input: CreateMilestoneInput): Promise<GoalMilestone> {
+  return withGoalsCacheInvalidation(async () => {
   if (input.type === 'task' && (!input.task_ids || input.task_ids.length === 0)) {
     throw new Error('Task milestones require at least one linked task')
   }
@@ -637,6 +704,7 @@ export async function createMilestone(input: CreateMilestoneInput): Promise<Goal
   await recalculateGoalProgress(input.goal_id)
 
   return milestone
+  })
 }
 
 /**
@@ -646,6 +714,7 @@ export async function updateMilestone(
   id: string,
   input: UpdateMilestoneInput,
 ): Promise<GoalMilestone> {
+  return withGoalsCacheInvalidation(async () => {
   /* Load full milestone so we can diff before/after for history */
   const { data: existing, error: fetchError } = await supabase
     .from('goal_milestones')
@@ -755,12 +824,14 @@ export async function updateMilestone(
   await recalculateGoalProgress(next.goal_id)
 
   return next
+  })
 }
 
 /**
  * Delete a milestone, add history entry, and recalculate goal progress.
  */
 export async function deleteMilestone(id: string): Promise<void> {
+  return withGoalsCacheInvalidation(async () => {
   /* Fetch full milestone for goal_id, title, and type in history */
   const { data: existing, error: fetchError } = await supabase
     .from('goal_milestones')
@@ -797,6 +868,7 @@ export async function deleteMilestone(id: string): Promise<void> {
 
   /* Recalculate and update goal progress */
   await recalculateGoalProgress(milestone.goal_id)
+  })
 }
 
 /**
@@ -822,6 +894,7 @@ export async function getLinkedGoalIdForHabit(habitId: string): Promise<string |
  * Link a habit to a goal and add history entry.
  */
 export async function linkHabitToGoal(goalId: string, habitId: string): Promise<void> {
+  return withGoalsCacheInvalidation(async () => {
   const { error } = await supabase
     .from('goal_habits')
     .insert({ goal_id: goalId, habit_id: habitId })
@@ -850,12 +923,14 @@ export async function linkHabitToGoal(goalId: string, habitId: string): Promise<
     `Habit "${habitName}" linked to goal`,
     { habit_id: habitId },
   )
+  })
 }
 
 /**
  * Unlink a habit from a goal and add history entry.
  */
 export async function unlinkHabitFromGoal(goalId: string, habitId: string): Promise<void> {
+  return withGoalsCacheInvalidation(async () => {
   /* Fetch habit name before unlinking */
   const { data: habitData } = await supabase
     .from('habits')
@@ -882,6 +957,7 @@ export async function unlinkHabitFromGoal(goalId: string, habitId: string): Prom
     `Habit "${habitName}" unlinked from goal`,
     { habit_id: habitId },
   )
+  })
 }
 
 /**

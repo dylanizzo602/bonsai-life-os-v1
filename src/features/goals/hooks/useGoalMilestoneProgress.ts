@@ -1,7 +1,7 @@
 /* useGoalMilestoneProgress: Milestones, task trees, and live goal progress for list/widget views */
 
 import { useEffect, useMemo, useState } from 'react'
-import { getMilestonesForGoal, getTaskTreesByMilestoneId } from '../../../lib/supabase/goals'
+import { getMilestonesByGoalIds, getTaskTreesByMilestoneId } from '../../../lib/supabase/goals'
 import type { Task } from '../../tasks/types'
 import type { Goal, GoalMilestone } from '../types'
 import {
@@ -31,25 +31,33 @@ export function useGoalMilestoneProgress(goals: Goal[]) {
 
     const fetchMilestones = async () => {
       setLoading(true)
-      const milestonesMap: Record<string, GoalMilestone[]> = {}
-      const mergedTrees: Record<string, Task[]> = {}
-
-      for (const goal of goals) {
-        try {
-          const milestones = await getMilestonesForGoal(goal.id)
-          milestonesMap[goal.id] = milestones
-          const trees = await getTaskTreesByMilestoneId(milestones)
-          Object.assign(mergedTrees, trees)
-        } catch (err) {
-          console.error(`Error fetching milestones for goal ${goal.id}:`, err)
-          milestonesMap[goal.id] = []
+      try {
+        const goalIds = goals.map((g) => g.id)
+        const milestonesMap = await getMilestonesByGoalIds(goalIds)
+        for (const goal of goals) {
+          if (!milestonesMap[goal.id]) {
+            milestonesMap[goal.id] = []
+          }
         }
-      }
+        const allMilestones = Object.values(milestonesMap).flat()
+        const mergedTrees = await getTaskTreesByMilestoneId(allMilestones)
 
-      if (!cancelled) {
-        setMilestonesByGoal(milestonesMap)
-        setTaskTreesByMilestoneId(mergedTrees)
-        setLoading(false)
+        if (!cancelled) {
+          setMilestonesByGoal(milestonesMap)
+          setTaskTreesByMilestoneId(mergedTrees)
+          setLoading(false)
+        }
+      } catch (err) {
+        console.error('Error fetching milestones for goals:', err)
+        if (!cancelled) {
+          const emptyMap: Record<string, GoalMilestone[]> = {}
+          for (const goal of goals) {
+            emptyMap[goal.id] = []
+          }
+          setMilestonesByGoal(emptyMap)
+          setTaskTreesByMilestoneId({})
+          setLoading(false)
+        }
       }
     }
 

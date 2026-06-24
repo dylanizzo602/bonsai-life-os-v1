@@ -1,6 +1,8 @@
-/* ProfileSettingsSection: Profile fields, avatar placeholder, password reset */
+/* ProfileSettingsSection: Profile fields, avatar upload, password reset */
 
-import { useMemo, useState } from 'react'
+import type { ChangeEvent } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import { ProfileAvatar } from '../../../components/ProfileAvatar'
 import {
   MaterialIcon,
   SettingsCard,
@@ -21,12 +23,19 @@ export interface ProfileSettingsSectionProps {
   /** When true, at least one profile field differs from the last saved values */
   hasUnsavedChanges: boolean
   disabled: boolean
+  /** Current avatar URL for display */
+  avatarUrl?: string | null
+  /** True while avatar upload is in progress */
+  avatarUploading?: boolean
+  /** Avatar-specific error message */
+  avatarError?: string | null
   onFieldChange: (field: 'firstName' | 'lastName' | 'email' | 'timeZone' | 'location', value: string) => void
   onSave: () => void
+  onUploadAvatar?: (file: File) => Promise<void>
 }
 
 /**
- * Profile info card: name, email, timezone, location, and password reset.
+ * Profile info card: name, email, timezone, location, avatar, and password reset.
  */
 export function ProfileSettingsSection({
   firstName,
@@ -37,18 +46,38 @@ export function ProfileSettingsSection({
   saving,
   hasUnsavedChanges,
   disabled,
+  avatarUrl = null,
+  avatarUploading = false,
+  avatarError = null,
   onFieldChange,
   onSave,
+  onUploadAvatar,
 }: ProfileSettingsSectionProps) {
   const [resetModalOpen, setResetModalOpen] = useState(false)
   const [passwordResetMessage, setPasswordResetMessage] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  /* Avatar initials from profile name */
+  /* Avatar initials from profile name (form state, may differ before save) */
   const initials = useMemo(() => {
     const a = (firstName.trim()[0] ?? '').toUpperCase()
     const b = (lastName.trim()[0] ?? '').toUpperCase()
     return (a + b || '?').slice(0, 2)
   }, [firstName, lastName])
+
+  /* File picker: upload selected image immediately */
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !onUploadAvatar) return
+    try {
+      await onUploadAvatar(file)
+    } catch {
+      /* Hook surfaces error via avatarError prop */
+    } finally {
+      e.target.value = ''
+    }
+  }
+
+  const avatarDisabled = disabled || avatarUploading || !onUploadAvatar
 
   return (
     <section>
@@ -56,20 +85,44 @@ export function ProfileSettingsSection({
 
       <SettingsCard>
         <div className="mb-10 flex flex-col items-start gap-8 md:flex-row">
-          {/* Avatar placeholder */}
+          {/* Avatar upload */}
           <div className="group relative shrink-0">
-            <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-high text-2xl font-semibold text-primary">
-              {initials}
+            <div className="relative">
+              <ProfileAvatar
+                avatarUrl={avatarUrl}
+                initials={initials}
+                size="lg"
+                shape="rounded"
+                className="border-outline-variant"
+              />
+              {avatarUploading ? (
+                <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-on-surface/40">
+                  <span className="text-secondary text-on-primary">Uploading…</span>
+                </div>
+              ) : null}
             </div>
             <button
               type="button"
-              disabled
-              title="Profile photo coming soon"
-              className="absolute -bottom-2 -right-2 rounded-lg bg-primary p-2 text-on-primary opacity-60 shadow-lg"
-              aria-label="Edit profile photo (coming soon)"
+              disabled={avatarDisabled}
+              title="Change profile photo"
+              onClick={() => fileInputRef.current?.click()}
+              className="absolute -bottom-2 -right-2 rounded-lg bg-primary p-2 text-on-primary shadow-lg transition-opacity hover:opacity-90 disabled:opacity-50"
+              aria-label="Change profile photo"
             >
               <MaterialIcon name="edit" className="text-sm" />
             </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="sr-only"
+              onChange={(e) => void handleFileChange(e)}
+              disabled={avatarDisabled}
+              aria-hidden
+            />
+            {avatarError ? (
+              <p className="text-secondary mt-2 max-w-[12rem] text-error">{avatarError}</p>
+            ) : null}
           </div>
 
           {/* Profile fields grid */}

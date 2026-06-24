@@ -84,3 +84,27 @@ export interface UpdateNoteFolderInput {
   name?: string
   icon_name?: string
 }
+
+/** Snapshot of one top-level page and its subpages for note templates */
+export interface NoteTemplatePageSnapshot {
+  title: string
+  content: string
+  subpages: { title: string; content: string }[]
+}
+
+/** JSONB payload stored on note_templates.data */
+export interface NoteTemplateData {
+  title: string
+  pages: NoteTemplatePageSnapshot[]
+}
+
+/** Note template row as returned from the database */
+export interface NoteTemplate {
+  id: string
+  user_id: string | null
+  name: string
+  icon: string | null
+  data: NoteTemplateData
+  created_at: string
+  updated_at: string
+}

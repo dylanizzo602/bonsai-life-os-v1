@@ -2,6 +2,7 @@
 
 import { supabase } from './client'
 import { DateTime } from 'luxon'
+import { cachedQuery, invalidateQueryCache, QUERY_CACHE_PREFIX } from './queryCache'
 import type { ReflectionEntry, CreateReflectionEntryInput, UpdateReflectionEntryInput, JournalResponses } from '../../features/reflections/types'
 
 /* Zoned day range helper: compute [startOfDay, nextDayStart) in UTC for a given IANA time zone */
@@ -11,6 +12,39 @@ function getZonedDayRangeUtc(timeZone: string, baseInstant?: DateTime): { from: 
   const from = base.startOf('day').toUTC().toISO()!
   const to = base.plus({ days: 1 }).startOf('day').toUTC().toISO()!
   return { from, to }
+}
+
+/* Closest entry helper: pick the reflection whose created_at is nearest a target local day */
+function pickClosestEntryToTargetDay(
+  entries: ReflectionEntry[],
+  targetDay: DateTime,
+): ReflectionEntry | null {
+  if (entries.length === 0) return null
+
+  const targetMs = targetDay.toUTC().toMillis()
+  let closest = entries[0]
+  let minDist = Math.abs(new Date(closest.created_at).getTime() - targetMs)
+
+  for (let i = 1; i < entries.length; i++) {
+    const dist = Math.abs(new Date(entries[i].created_at).getTime() - targetMs)
+    if (dist < minDist) {
+      minDist = dist
+      closest = entries[i]
+    }
+  }
+
+  return closest
+}
+
+/** Invalidate cached morning-briefing completion checks */
+function invalidateBriefingTodayCache(): void {
+  invalidateQueryCache(QUERY_CACHE_PREFIX.reflectionsBriefingToday)
+}
+
+/** Cache key for today's briefing completion check */
+function buildBriefingTodayCacheKey(timeZone: string): string {
+  const dayKey = DateTime.now().setZone(timeZone).toISODate() ?? 'unknown'
+  return `${QUERY_CACHE_PREFIX.reflectionsBriefingToday}${timeZone}:${dayKey}`
 }
 
 /**
@@ -32,6 +66,9 @@ export async function createReflectionEntry(
   if (error) {
     console.error('Error creating reflection entry:', error)
     throw error
+  }
+  if (input.type === 'morning_briefing') {
+    invalidateBriefingTodayCache()
   }
   return data as ReflectionEntry
 }
@@ -90,13 +127,15 @@ export async function saveOrUpdateMorningBriefingEntryForToday(
       console.error('Error updating existing morning briefing entry for today:', error)
       throw error
     }
+    invalidateBriefingTodayCache()
     return data as ReflectionEntry
   }
 
-  return createReflectionEntry({
+  const created = await createReflectionEntry({
     ...input,
     type: 'morning_briefing',
   })
+  return created
 }
 
 /**
@@ -304,6 +343,15 @@ export async function bulkInsertMorningBriefingEntries(
  */
 export async function getHasCompletedMorningBriefingToday(
   timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone,
+): Promise<boolean> {
+  return cachedQuery(buildBriefingTodayCacheKey(timeZone), () =>
+    fetchHasCompletedMorningBriefingTodayUncached(timeZone),
+  )
+}
+
+/** Uncached morning briefing completion check for today */
+async function fetchHasCompletedMorningBriefingTodayUncached(
+  timeZone: string,
 ): Promise<boolean> {
   /* Today's window: compute in the user's effective zone, query in UTC */
   const { from, to } = getZonedDayRangeUtc(timeZone)
@@ -592,54 +640,62 @@ export async function deleteReflectionEntry(id: string): Promise<void> {
 /**
  * Fetch a random reflection entry from "today" in a prior year (e.g. "3 years ago today…").
  * Searches year-by-year back from now in the user's time zone and returns one random match.
+ * Uses a ±windowDays range around each target day (same approach as getReflectionEntryOneYearAgo).
  */
 export async function getRandomReflectionEntryYearsAgoToday(options?: {
   /** IANA time zone used to define "today" (calendar day). */
   timeZone?: string
-  /** Reflection entry type to include (defaults to 'morning_briefing'). */
+  /** Single reflection entry type to include (overrides default types when set). */
   type?: string
   /** Maximum number of years to look back. */
   maxYearsBack?: number
+  /** Days before/after the target day to search for entries. */
+  windowDays?: number
 }): Promise<{ entry: ReflectionEntry; yearsAgo: number } | null> {
-  /* Inputs: default to local time zone and morning briefing entries. */
+  /* Inputs: default to local time zone, briefing + journal entries, and a 7-day window. */
   const timeZone = options?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
-  const type = options?.type ?? 'morning_briefing'
+  const types = options?.type != null ? [options.type] : ['morning_briefing', 'journal']
   const maxYearsBack = Math.max(1, options?.maxYearsBack ?? 10)
+  const windowDays = Math.max(0, options?.windowDays ?? 7)
 
   /* Target day: interpret "today" in the user's time zone. */
   const now = DateTime.now().setZone(timeZone)
 
-  /* Candidate entries: aggregate all matches across the year range. */
+  /* Candidate entries: one closest match per prior year (if any). */
   const candidates: { entry: ReflectionEntry; yearsAgo: number }[] = []
 
-  /* Query each prior year’s same calendar day. */
+  /* Query each prior year's calendar day with a tolerance window. */
   const perYearResults = await Promise.all(
     Array.from({ length: maxYearsBack }, (_, idx) => idx + 1).map(async (yearsAgo) => {
-      const day = now.minus({ years: yearsAgo })
-      const { from, to } = getZonedDayRangeUtc(timeZone, day)
+      const targetDay = now.minus({ years: yearsAgo }).startOf('day')
+      const from = targetDay.minus({ days: windowDays }).toUTC().toISO()!
+      const to = targetDay.plus({ days: windowDays + 1 }).toUTC().toISO()!
 
       const { data, error } = await supabase
         .from('reflection_entries')
         .select('*')
-        .eq('type', type)
+        .in('type', types)
         .gte('created_at', from)
         .lt('created_at', to)
         .order('created_at', { ascending: true })
 
       if (error) {
         console.error('Error fetching reflection entries years-ago-today:', error)
-        return []
+        return null
       }
 
       const entries = (data as ReflectionEntry[]) ?? []
-      return entries.map((entry) => ({ entry, yearsAgo }))
+      const closest = pickClosestEntryToTargetDay(entries, targetDay)
+      return closest ? { entry: closest, yearsAgo } : null
     }),
   )
 
-  for (const group of perYearResults) candidates.push(...group)
+  for (const match of perYearResults) {
+    if (match) candidates.push(match)
+  }
   if (candidates.length === 0) return null
 
-  /* Random selection: pick one entry uniformly at random across all candidates. */
+  /* Random selection: pick one entry uniformly at random across all year matches. */
   const pick = candidates[Math.floor(Math.random() * candidates.length)]
   return pick ?? null
 }

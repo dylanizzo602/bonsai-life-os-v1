@@ -1,6 +1,12 @@
 /* Tag data access layer: Supabase queries for tags and task-tag assignments */
 import { supabase } from './client'
+import { invalidateQueryCache, QUERY_CACHE_PREFIX } from './queryCache'
 import type { Tag, TagColorId } from '../../features/tasks/types'
+
+/** Task list cache includes embedded tags — invalidate after task-tag writes */
+function invalidateTasksCacheFromTags(): void {
+  invalidateQueryCache(QUERY_CACHE_PREFIX.tasks)
+}
 
 /**
  * Fetch all tags for the current user.
@@ -129,6 +135,7 @@ export async function addTagToTask(taskId: string, tagId: string): Promise<void>
     console.error('Error adding tag to task:', error)
     throw error
   }
+  invalidateTasksCacheFromTags()
 }
 
 /**
@@ -145,6 +152,7 @@ export async function removeTagFromTask(taskId: string, tagId: string): Promise<
     console.error('Error removing tag from task:', error)
     throw error
   }
+  invalidateTasksCacheFromTags()
 }
 
 /**
@@ -159,6 +167,7 @@ export async function deleteTagFromAllTasks(tagId: string): Promise<void> {
     console.error('Error deleting tag:', error)
     throw error
   }
+  invalidateTasksCacheFromTags()
 }
 
 /**
@@ -189,4 +198,5 @@ export async function setTagsForTask(taskId: string, tagIds: string[]): Promise<
       throw insertError
     }
   }
+  invalidateTasksCacheFromTags()
 }

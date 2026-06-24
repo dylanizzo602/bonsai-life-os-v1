@@ -1,14 +1,10 @@
 /* MobileNavAccountSection: Profile row + Settings / Log out actions for mobile nav */
 
 import { useMemo } from 'react'
+import { ProfileAvatar } from '../../../components/ProfileAvatar'
 import { MaterialIcon } from '../../../components/MaterialIcon'
 import { useAuth } from '../../auth/AuthContext'
-import {
-  getProfileAvatarUrl,
-  getProfileDisplayName,
-  getProfileInitials,
-  getSubscriptionPlanLabel,
-} from '../utils/userDisplay'
+import { getProfileDisplayName, getSubscriptionPlanLabel } from '../utils/userDisplay'
 
 interface MobileNavAccountSectionProps {
   /** Open settings (profile) and close the nav overlay */
@@ -26,11 +22,9 @@ const actionButtonClass =
 export function MobileNavAccountSection({ onOpenSettings, onClose }: MobileNavAccountSectionProps) {
   const { user, signOut } = useAuth()
 
-  /* Profile display: name, plan, avatar */
+  /* Profile display: name and plan label */
   const displayName = useMemo(() => getProfileDisplayName(user), [user])
   const planLabel = useMemo(() => getSubscriptionPlanLabel(user), [user])
-  const initials = useMemo(() => getProfileInitials(user), [user])
-  const avatarUrl = useMemo(() => getProfileAvatarUrl(user), [user])
 
   const handleLogOut = async () => {
     onClose?.()
@@ -50,16 +44,7 @@ export function MobileNavAccountSection({ onOpenSettings, onClose }: MobileNavAc
         className="mb-3 flex w-full items-center gap-3 rounded-xl px-1 py-1 text-left transition-colors hover:bg-surface-container-low"
         aria-label={`${displayName}, ${planLabel}. Open account settings`}
       >
-        <div
-          className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-outline-variant/20 bg-surface-container-high"
-          aria-hidden
-        >
-          {avatarUrl ? (
-            <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <span className="text-body font-semibold text-primary">{initials}</span>
-          )}
-        </div>
+        <ProfileAvatar user={user} size="sm" shape="circle" className="border-outline-variant/20" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-body font-bold text-on-surface">{displayName}</p>
           <p className="text-secondary text-on-surface-variant">{planLabel}</p>

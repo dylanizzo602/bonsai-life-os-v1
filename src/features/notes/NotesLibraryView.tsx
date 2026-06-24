@@ -1,8 +1,8 @@
 /* NotesLibraryView: Material-style notes library with folders, search, and grid/list */
 import { useMemo, useState } from 'react'
-import { MaterialIcon } from '../../components/MaterialIcon'
 import { NotesIcon } from '../../components/icons'
 import { NotesLibraryHeader } from './components/NotesLibraryHeader'
+import { NewNoteSplitButton } from './components/NewNoteSplitButton'
 import { FoldersSection } from './components/FoldersSection'
 import { RecentNotesSection } from './components/RecentNotesSection'
 import { NoteCoverUploadModal } from './components/NoteCoverUploadModal'
@@ -24,6 +24,7 @@ interface NotesLibraryViewProps {
   viewMode: NotesViewMode
   onViewModeChange: (mode: NotesViewMode) => void
   onNewNote: () => void
+  onCreateFromTemplate: () => void
   onNoteClick: (id: string) => void
   onCreateFolder: (input: { name: string; icon_name: string }) => Promise<unknown>
   onUpdateFolder: (id: string, input: { name: string; icon_name: string }) => Promise<unknown>
@@ -52,6 +53,7 @@ export function NotesLibraryView({
   viewMode,
   onViewModeChange,
   onNewNote,
+  onCreateFromTemplate,
   onNoteClick,
   onCreateFolder,
   onUpdateFolder,
@@ -85,6 +87,7 @@ export function NotesLibraryView({
         search={search}
         onSearchChange={onSearchChange}
         onNewNote={onNewNote}
+        onCreateFromTemplate={onCreateFromTemplate}
       />
 
       {error && (
@@ -113,14 +116,11 @@ export function NotesLibraryView({
               Create your first note to start building your library.
             </p>
             <div className="mt-8 flex justify-center">
-              <button
-                type="button"
-                onClick={onNewNote}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-body font-semibold text-on-primary transition-colors hover:bg-primary-container"
-              >
-                <MaterialIcon name="add" className="text-[20px]" />
-                New Note
-              </button>
+              <NewNoteSplitButton
+                size="empty"
+                onNewNote={onNewNote}
+                onCreateFromTemplate={onCreateFromTemplate}
+              />
             </div>
           </div>
         </div>
