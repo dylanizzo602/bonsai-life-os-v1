@@ -91,6 +91,20 @@ export async function updatePassword(
   return { error: null }
 }
 
+/* Sign in with Google OAuth (redirects the browser to Google consent) */
+export async function signInWithGoogle(): Promise<{ error: AuthError | null }> {
+  const redirectTo = `${window.location.origin}${window.location.pathname}`
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo },
+  })
+  if (error) {
+    console.error('Error signing in with Google:', error)
+    return { error }
+  }
+  return { error: null }
+}
+
 /* Sign out the current user */
 export async function signOut(): Promise<AuthError | null> {
   const { error } = await supabase.auth.signOut()

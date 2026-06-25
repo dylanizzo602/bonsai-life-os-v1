@@ -1,6 +1,6 @@
 /* Settings page: Bonsai minimalist layout for profile, integrations, notifications, and data */
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useAccountSettings } from './hooks/useAccountSettings'
 import { useProfileAvatar } from './hooks/useProfileAvatar'
@@ -121,6 +121,32 @@ export function SettingsPage() {
     if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported'
     return Notification.permission
   })
+
+  /* Google Calendar OAuth return: show banner after redirect from Google consent */
+  const [googleCalendarOauthBanner, setGoogleCalendarOauthBanner] = useState<string | null>(null)
+  const didHandleGoogleCalendarReturnRef = useRef(false)
+
+  useEffect(() => {
+    if (didHandleGoogleCalendarReturnRef.current) return
+    const params = new URLSearchParams(window.location.search)
+    const status = params.get('google_calendar')
+    if (status !== 'connected' && status !== 'error') return
+
+    didHandleGoogleCalendarReturnRef.current = true
+    setGoogleCalendarOauthBanner(
+      status === 'connected'
+        ? 'Google Calendar connected successfully.'
+        : 'Could not connect Google Calendar. Please try again.',
+    )
+
+    params.delete('google_calendar')
+    const remaining = params.toString()
+    window.history.replaceState(
+      null,
+      '',
+      window.location.pathname + (remaining ? `?${remaining}` : ''),
+    )
+  }, [])
 
   const disabled = !user
 
@@ -384,7 +410,10 @@ export function SettingsPage() {
           onSave={() => void handleSaveProfileSection()}
         />
 
-        <IntegrationsSettingsSection />
+        <IntegrationsSettingsSection
+          oauthBannerMessage={googleCalendarOauthBanner}
+          onOAuthBannerDismiss={() => setGoogleCalendarOauthBanner(null)}
+        />
         <BillingSettingsSection />
         <BriefingSettingsSection />
         <HabitsSettingsSection />

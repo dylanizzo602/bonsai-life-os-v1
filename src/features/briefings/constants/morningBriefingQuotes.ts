@@ -1,4 +1,3 @@
-/* Morning briefing inspirational quotes (expand to rotation later) */
+/* Morning briefing quotes: re-export shared daily rotation */
 
-export const DEFAULT_MORNING_BRIEFING_QUOTE =
-  'Productivity is not about doing more, but about having more of what matters.'
+export { getDailyQuote, type InspirationalQuote } from '../../../lib/inspirationalQuotes'

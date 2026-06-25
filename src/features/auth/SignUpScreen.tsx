@@ -34,7 +34,7 @@ export function SignUpScreen({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const { signUp } = useAuth()
+  const { signUp, signInWithGoogle } = useAuth()
 
   /* Sync pre-filled email when navigating from login */
   useEffect(() => {
@@ -79,6 +79,21 @@ export function SignUpScreen({
           err instanceof Error ? err.message : 'Could not create account. Please try again.'
         setError(message)
       }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  /* Google OAuth sign-up uses the same provider flow as sign-in */
+  const handleGoogleSignUp = async () => {
+    setError(null)
+    try {
+      setLoading(true)
+      await signInWithGoogle()
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Could not sign up with Google. Please try again.'
+      setError(message)
     } finally {
       setLoading(false)
     }
@@ -207,26 +222,24 @@ export function SignUpScreen({
             </button>
           </form>
 
-          {/* SSO section (not yet wired) */}
+          {/* SSO section */}
           <div className="mt-6">
             <div className="relative mb-4 flex items-center">
               <div className="border-outline-variant/30 flex-grow border-t" />
               <span className="text-on-surface-variant mx-4 flex-shrink text-xs">
-                Or sign in with
+                Or sign up with
               </span>
               <div className="border-outline-variant/30 flex-grow border-t" />
             </div>
             <button
               type="button"
-              disabled
-              className="border-outline-variant/40 bg-surface-container-low/50 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border py-3 opacity-60 grayscale"
-              aria-label="Sign up with Google — coming soon"
+              disabled={loading}
+              onClick={() => void handleGoogleSignUp()}
+              className="border-outline-variant/40 bg-surface-container-low hover:bg-surface-container flex w-full items-center justify-center gap-2 rounded-lg border py-3 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="Sign up with Google"
             >
               <GoogleIcon />
               <span className="text-on-surface text-sm font-medium">Google</span>
-              <span className="rounded bg-outline-variant/30 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-outline">
-                Coming Soon
-              </span>
             </button>
           </div>
         </div>

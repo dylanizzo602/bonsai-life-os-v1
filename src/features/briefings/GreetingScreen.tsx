@@ -1,7 +1,7 @@
 /* GreetingScreen: Morning briefing step 0 — hero, bento widgets, start CTA */
 
 import { MaterialIcon } from '../../components/MaterialIcon'
-import { DEFAULT_MORNING_BRIEFING_QUOTE } from './constants/morningBriefingQuotes'
+import { getDailyQuote } from './constants/morningBriefingQuotes'
 
 interface GreetingSummaryCardProps {
   label: string
@@ -43,6 +43,12 @@ interface GreetingScreenProps {
   location?: string | null
   tasksDueTodayCount: number
   priorityTasksDueTodayCount: number
+  /** Google Calendar connection and today's events for schedule widget */
+  calendarLoading?: boolean
+  calendarConnected?: boolean
+  calendarEventCount?: number
+  calendarSubtitle?: string
+  onConnectCalendar?: () => void
   onBegin: () => void
 }
 
@@ -54,11 +60,29 @@ export function GreetingScreen({
   location,
   tasksDueTodayCount,
   priorityTasksDueTodayCount,
+  calendarLoading = false,
+  calendarConnected = false,
+  calendarEventCount = 0,
+  calendarSubtitle = 'Connect Google Calendar in Settings',
+  onConnectCalendar,
   onBegin,
 }: GreetingScreenProps) {
   const name = firstName?.trim() || 'there'
   const locationLabel = location?.trim() || 'Add location in Settings'
   const weatherHint = location?.trim() ? 'Forecast available soon' : 'Set location for weather'
+  const dailyQuote = getDailyQuote()
+
+  /* Schedule widget: show event count when connected, otherwise prompt to connect */
+  const scheduleMetric = calendarLoading
+    ? '…'
+    : calendarConnected
+      ? `${calendarEventCount} event${calendarEventCount === 1 ? '' : 's'}`
+      : '—'
+  const scheduleSubtitle = calendarLoading
+    ? 'Loading today\'s events…'
+    : calendarConnected
+      ? calendarSubtitle
+      : 'Connect Google Calendar in Settings'
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center px-4 pb-40 pt-8 md:px-6">
@@ -78,7 +102,7 @@ export function GreetingScreen({
           Good morning, {name}.
         </h1>
         <p className="text-body mx-auto max-w-2xl italic text-on-surface-variant">
-          &ldquo;{DEFAULT_MORNING_BRIEFING_QUOTE}&rdquo;
+          &ldquo;{dailyQuote.text}&rdquo;
         </p>
       </section>
 
@@ -97,9 +121,20 @@ export function GreetingScreen({
           title="Today's Events"
           icon="calendar_today"
           iconClassName="text-primary"
-          metric="—"
-          subtitle="Coming soon"
+          metric={scheduleMetric}
+          subtitle={scheduleSubtitle}
         />
+        {!calendarLoading && !calendarConnected && onConnectCalendar ? (
+          <div className="md:col-span-3 -mt-4 text-center">
+            <button
+              type="button"
+              onClick={onConnectCalendar}
+              className="text-secondary font-medium text-primary hover:underline"
+            >
+              Connect Google Calendar
+            </button>
+          </div>
+        ) : null}
         <GreetingSummaryCard
           label="Tasks"
           title="Daily Goals"

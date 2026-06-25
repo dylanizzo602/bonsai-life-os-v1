@@ -99,10 +99,10 @@ export function useGoogleCalendarConnection(): UseGoogleCalendarConnectionReturn
       setMessage(null)
 
       const headers = await getAuthHeaders()
-      const result = await callFunction<unknown>('google-calendar-events-today', {}, headers)
+      const result = await callFunction<{ connected?: boolean }>('google-calendar-status', {}, headers)
       const error = result.error
       if (!error) {
-        setConnected(true)
+        setConnected(Boolean(result.data?.connected))
         return
       }
 

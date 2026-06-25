@@ -3,8 +3,8 @@
 import { Button } from '../../../components/Button'
 import { Modal } from '../../../components/Modal'
 import { BriefingTextarea } from '../../briefings/components/BriefingTextarea'
+import { getDailyQuote } from '../../../lib/inspirationalQuotes'
 import {
-  DEFAULT_GOAL_REFLECTION_QUOTE,
   GOAL_REFLECTION_SUCCESS_HINT,
   GOAL_REFLECTION_SUCCESS_QUESTION,
 } from '../constants/goalReflection'
@@ -33,6 +33,7 @@ export function GoalCompletionReflectionModal({
   saving = false,
 }: GoalCompletionReflectionModalProps) {
   const canSave = value.trim().length > 0 && !saving
+  const dailyQuote = getDailyQuote()
 
   return (
     <Modal
@@ -89,7 +90,7 @@ export function GoalCompletionReflectionModal({
       {/* Inspirational quote */}
       <div className="mb-10 text-center">
         <p className="text-body mx-auto max-w-lg italic text-on-surface-variant">
-          &ldquo;{DEFAULT_GOAL_REFLECTION_QUOTE}&rdquo;
+          &ldquo;{dailyQuote.text}&rdquo;
         </p>
       </div>
 

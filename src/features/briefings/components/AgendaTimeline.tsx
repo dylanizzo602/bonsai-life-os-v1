@@ -7,6 +7,10 @@ interface AgendaTimelineProps {
   events: CalendarAgendaEvent[]
   loading: boolean
   error: string | null
+  /** When true, user has not connected Google Calendar */
+  notConnected?: boolean
+  /** Navigate to settings to connect calendar */
+  onConnectClick?: () => void
   /** When true, show a coming-soon placeholder instead of fetching events */
   comingSoon?: boolean
 }
@@ -28,7 +32,14 @@ function isFocusBlock(event: CalendarAgendaEvent): boolean {
 /**
  * Vertical agenda timeline for the plan-day step.
  */
-export function AgendaTimeline({ events, loading, error, comingSoon = false }: AgendaTimelineProps) {
+export function AgendaTimeline({
+  events,
+  loading,
+  error,
+  notConnected = false,
+  onConnectClick,
+  comingSoon = false,
+}: AgendaTimelineProps) {
   const sorted = [...events].sort((a, b) => {
     if (a.isAllDay !== b.isAllDay) return a.isAllDay ? -1 : 1
     return a.start.getTime() - b.start.getTime()
@@ -45,6 +56,19 @@ export function AgendaTimeline({ events, loading, error, comingSoon = false }: A
 
       {comingSoon ? (
         <p className="text-secondary text-on-surface-variant">Coming soon</p>
+      ) : notConnected ? (
+        <div className="text-secondary text-on-surface-variant">
+          <p>Connect Google Calendar in Settings to see today&apos;s agenda.</p>
+          {onConnectClick ? (
+            <button
+              type="button"
+              onClick={onConnectClick}
+              className="text-secondary mt-2 font-medium text-primary hover:underline"
+            >
+              Connect in Settings
+            </button>
+          ) : null}
+        </div>
       ) : loading ? (
         <p className="text-secondary text-on-surface-variant">Loading today&apos;s events…</p>
       ) : sorted.length === 0 ? (

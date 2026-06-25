@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { MaterialIcon } from '../../../components/MaterialIcon'
+import { getDailyQuote } from '../../../lib/inspirationalQuotes'
 import type { HabitEntry, HabitWithStreaks } from '../types'
 import type { Task } from '../../tasks/types'
 import { buildHabitReminderRows } from '../utils/habitReminderRows'
@@ -70,6 +71,7 @@ export function HabitRemindersPanel({
   vacationModeActive = false,
 }: HabitRemindersPanelProps) {
   const [showAll, setShowAll] = useState(false)
+  const dailyQuote = getDailyQuote()
 
   /* Build and classify reminder rows for today */
   const { displayRows, remainingCount } = useMemo(() => {
@@ -197,10 +199,10 @@ export function HabitRemindersPanel({
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
           <div className="relative flex h-full min-h-[200px] flex-col justify-end p-6 lg:min-h-0">
             <h2 className="text-body font-bold leading-tight text-white">
-              Focus on the process, not the outcome.
+              {dailyQuote.text}
             </h2>
             <p className="mt-2 text-secondary text-white/70">
-              Bonsai helps you cultivate meaningful routines.
+              {dailyQuote.author ?? 'Bonsai helps you cultivate meaningful routines.'}
             </p>
           </div>
         </div>

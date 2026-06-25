@@ -1,7 +1,7 @@
 /* MemorableMomentReflectionScreen: Yesterday reflection with years-ago card */
 
 import { MaterialIcon } from '../../components/MaterialIcon'
-import { DEFAULT_MORNING_BRIEFING_QUOTE } from './constants/morningBriefingQuotes'
+import { getDailyQuote } from './constants/morningBriefingQuotes'
 import { BriefingShell, BriefingScreenHeading } from './components/BriefingShell'
 import { BriefingTextarea } from './components/BriefingTextarea'
 import type { ReflectionEntry } from '../reflections/types'
@@ -40,6 +40,8 @@ export function MemorableMomentReflectionScreen({
   onBack,
   onClose,
 }: MemorableMomentReflectionScreenProps) {
+  const dailyQuote = getDailyQuote()
+
   return (
     <BriefingShell>
       <div className="mx-auto max-w-2xl">
@@ -62,7 +64,7 @@ export function MemorableMomentReflectionScreen({
 
         <div className="mb-10 text-center">
           <p className="text-body mx-auto max-w-lg italic text-on-surface-variant">
-            &ldquo;{DEFAULT_MORNING_BRIEFING_QUOTE}&rdquo;
+            &ldquo;{dailyQuote.text}&rdquo;
           </p>
         </div>
 

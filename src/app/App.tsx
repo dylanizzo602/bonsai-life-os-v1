@@ -118,6 +118,23 @@ function App() {
     }
   }, [activeSection, devModeEnabled, setActiveSection])
 
+  /* OAuth / deep-link return: navigate to settings when ?section=settings is present */
+  useEffect(() => {
+    if (!session) return
+    const params = new URLSearchParams(window.location.search)
+    const section = params.get('section')
+    if (section !== 'settings') return
+
+    setActiveSection('settings')
+    params.delete('section')
+    const remaining = params.toString()
+    window.history.replaceState(
+      null,
+      '',
+      window.location.pathname + (remaining ? `?${remaining}` : ''),
+    )
+  }, [session, setActiveSection])
+
   /* Content rendering: Render the appropriate page component based on active section */
   const renderContent = () => {
     switch (activeSection) {
@@ -129,6 +146,7 @@ function App() {
             key={briefingContinueSession ? 'briefing-continue' : 'briefing-fresh'}
             continueSession={briefingContinueSession}
             onNavigateToReflections={() => setActiveSection('reflections')}
+            onNavigateToSettings={() => setActiveSection('settings')}
             onClose={closeBriefing}
           />
         )
@@ -139,6 +157,7 @@ function App() {
             key="briefings-preview"
             previewMode
             onNavigateToReflections={() => setActiveSection('reflections')}
+            onNavigateToSettings={() => setActiveSection('settings')}
             onClose={() => setActiveSection('home')}
           />
         )

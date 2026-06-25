@@ -81,6 +81,30 @@ This repo supports **PWA mobile push** via:
 - `npm run preview` - Preview production build
 - `npm run lint` - Run ESLint
 
+## Google Sign-In (Supabase Auth)
+
+Bonsai supports **Google OAuth login** alongside email/password. Each user gets an isolated Supabase Auth account; app data is scoped by `user_id` + RLS.
+
+### Setup steps
+
+1. **Google Cloud Console** — use the same project as Calendar (or a dedicated one):
+   - Enable **Google Calendar API** (required for calendar connect below)
+   - Configure **OAuth consent screen** (External for production; add test users while in Testing)
+   - Create a **Web application** OAuth client with **authorized redirect URIs**:
+     - `https://YOUR_PROJECT_REF.supabase.co/auth/v1/callback` (Supabase Auth)
+     - `https://YOUR_PROJECT_REF.supabase.co/functions/v1/google-oauth-callback` (Calendar connect)
+
+2. **Supabase Dashboard → Authentication → Providers → Google**
+   - Enable Google provider
+   - Paste **Client ID** and **Client Secret**
+   - Under **URL Configuration**, set **Site URL** to your app (e.g. `http://localhost:5173`) and add production URLs to **Redirect URLs**
+   - Enable **automatic account linking by email** so email/password users can later sign in with Google using the same address
+
+3. **Sign in from the app**
+   - Use **Sign in with Google** on the login or sign-up screen
+
+**Note:** Google sign-in grants profile/email only. Connecting **Google Calendar** is a separate consent step in **Settings → Account & Integrations**.
+
 ## Google Calendar (OAuth) for Morning Briefing
 
 This repo supports connecting **Google Calendar** so the Morning Briefing can show **today’s events** without pasting an ICS link.
@@ -92,7 +116,7 @@ This repo supports connecting **Google Calendar** so the Morning Briefing can sh
 
 ### Setup steps
 
-1. **Create a Google OAuth client** (Google Cloud Console)
+1. **Create a Google OAuth client** (Google Cloud Console) — see [Google Sign-In](#google-sign-in-supabase-auth) for redirect URIs
    - Type: “Web application”
    - Add an **authorized redirect URI** pointing to your Supabase Edge Function callback:
      - `https://YOUR_PROJECT_REF.supabase.co/functions/v1/google-oauth-callback`
@@ -108,15 +132,16 @@ This repo supports connecting **Google Calendar** so the Morning Briefing can sh
      - `SUPABASE_SERVICE_ROLE_KEY` (needed by the edge functions to read/write token rows securely)
 
 3. **Deploy the Edge Functions**
-   - Functions added for Google Calendar:
+   - Functions for Google Calendar:
      - `google-oauth-start`
      - `google-oauth-callback`
      - `google-calendar-events-today`
      - `google-calendar-disconnect`
+     - `google-calendar-status`
 
 4. **Connect from the app**
-   - Open **Settings → Calendar** and click **Connect Google Calendar**
-   - After granting access, return to Morning Briefing → “Today’s calendar”
+   - Open **Settings → Account & Integrations** and click **Connect**
+   - After granting access, open **Morning Briefing** to see today’s agenda
 
 ## Project Structure
 

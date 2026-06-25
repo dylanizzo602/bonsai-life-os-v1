@@ -11,6 +11,7 @@ import type { Session, User } from '@supabase/supabase-js'
 import {
   getSession,
   signInWithEmail,
+  signInWithGoogle as supabaseSignInWithGoogle,
   signUpWithEmail,
   signOut as supabaseSignOut,
   onAuthStateChange,
@@ -31,6 +32,8 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<void>
   /** Sign up with email/password */
   signUp: (email: string, password: string) => Promise<void>
+  /** Sign in with Google OAuth (redirects browser) */
+  signInWithGoogle: () => Promise<void>
   /** Sign out current user */
   signOut: () => Promise<void>
 }
@@ -102,6 +105,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, [])
 
+  /* Sign in handler: Google OAuth redirect */
+  const handleSignInWithGoogle = useCallback(async () => {
+    const { error } = await supabaseSignInWithGoogle()
+    if (error) {
+      throw error
+    }
+  }, [])
+
   /* Sign out handler */
   const handleSignOut = useCallback(async () => {
     const error = await supabaseSignOut()
@@ -118,6 +129,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     clearPasswordRecovery,
     signIn: handleSignIn,
     signUp: handleSignUp,
+    signInWithGoogle: handleSignInWithGoogle,
     signOut: handleSignOut,
   }
 

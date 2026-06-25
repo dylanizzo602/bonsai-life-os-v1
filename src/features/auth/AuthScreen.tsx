@@ -28,7 +28,7 @@ export function AuthScreen() {
   const [loginErrorModalOpen, setLoginErrorModalOpen] = useState(false)
   const [signUpExistsModalOpen, setSignUpExistsModalOpen] = useState(false)
 
-  const { signIn, isPasswordRecovery, clearPasswordRecovery, signOut } = useAuth()
+  const { signIn, signInWithGoogle, isPasswordRecovery, clearPasswordRecovery, signOut } = useAuth()
 
   /* Open reset modal when user returns from password reset email link */
   useEffect(() => {
@@ -67,6 +67,22 @@ export function AuthScreen() {
     } catch {
       setLoginErrorModalOpen(true)
       setError(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  /* Handle Google OAuth sign-in */
+  const handleGoogleSignIn = async () => {
+    setError(null)
+    setInfoMessage(null)
+    try {
+      setLoading(true)
+      await signInWithGoogle()
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Could not sign in with Google. Please try again.'
+      setError(message)
     } finally {
       setLoading(false)
     }
@@ -216,15 +232,13 @@ export function AuthScreen() {
                 </div>
                 <button
                   type="button"
-                  disabled
-                  className="border-outline-variant/40 bg-surface-container-low/50 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border py-3 opacity-60 grayscale"
-                  aria-label="Sign in with Google — coming soon"
+                  disabled={loading}
+                  onClick={() => void handleGoogleSignIn()}
+                  className="border-outline-variant/40 bg-surface-container-low hover:bg-surface-container flex w-full items-center justify-center gap-2 rounded-lg border py-3 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                  aria-label="Sign in with Google"
                 >
                   <GoogleIcon />
                   <span className="text-on-surface text-sm font-medium">Google</span>
-                  <span className="rounded bg-outline-variant/30 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-outline">
-                    Coming Soon
-                  </span>
                 </button>
               </div>
             </div>

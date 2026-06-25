@@ -68,7 +68,10 @@ import {
 } from './preview/briefingPreviewFixtures'
 import {
   getPriorityTasksDueTodayCount,
+  formatFirstMeetingSubtitle,
+  getFirstTimedEventToday,
 } from './utils/greetingSummary'
+import { useGoogleCalendarEventsToday } from './hooks/useGoogleCalendarEventsToday'
 import { computeYesterdayReviewStats } from './utils/yesterdayReviewStats'
 import { getYesterdayHabitBreakdown } from './utils/yesterdayHabitBreakdown'
 import { getUndergrowthTasks } from './utils/undergrowthTasks'
@@ -82,6 +85,8 @@ export interface BriefingsPageProps {
   onNavigateToReflections?: () => void
   /** Optional: close the briefing flow (e.g. navigate to home) */
   onClose?: () => void
+  /** Optional: open Settings (e.g. to connect Google Calendar) */
+  onNavigateToSettings?: () => void
 }
 
 /**
@@ -92,11 +97,38 @@ export function BriefingsPage({
   continueSession = false,
   onNavigateToReflections,
   onClose,
+  onNavigateToSettings,
 }: BriefingsPageProps) {
   /* User time zone: due dates and briefing completion align with Settings */
   const timeZone = useUserTimeZone()
   const { isActive: vacationModeActive } = useVacationMode()
   const { user } = useAuth()
+
+  /* Google Calendar: today's events for greeting + plan-day agenda */
+  const {
+    loading: calendarLoading,
+    connected: calendarConnected,
+    error: calendarError,
+    eventsToday,
+    countToday: calendarEventCount,
+    refetch: refetchCalendar,
+  } = useGoogleCalendarEventsToday()
+
+  /* Refetch calendar after OAuth return while briefing is open */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('google_calendar') !== 'connected') return
+    void refetchCalendar()
+  }, [refetchCalendar])
+
+  const calendarSubtitle = useMemo(
+    () => formatFirstMeetingSubtitle(getFirstTimedEventToday(eventsToday), eventsToday),
+    [eventsToday],
+  )
+
+  const handleConnectCalendar = useCallback(() => {
+    onNavigateToSettings?.()
+  }, [onNavigateToSettings])
 
   /* Profile fields for personalized greeting */
   const firstName =
@@ -838,6 +870,11 @@ export function BriefingsPage({
           location={location}
           tasksDueTodayCount={tasksDueTodayCount}
           priorityTasksDueTodayCount={priorityTasksDueTodayCount}
+          calendarLoading={previewMode ? false : calendarLoading}
+          calendarConnected={previewMode ? false : calendarConnected}
+          calendarEventCount={previewMode ? 0 : calendarEventCount}
+          calendarSubtitle={previewMode ? 'Preview mode' : calendarSubtitle}
+          onConnectCalendar={previewMode ? undefined : handleConnectCalendar}
           onBegin={advanceStep}
         />
       )}
@@ -923,6 +960,11 @@ export function BriefingsPage({
           lineupTasks={lineupTasks}
           backlogCandidates={backlogCandidates}
           goalsById={goalsById}
+          calendarEvents={previewMode ? [] : eventsToday}
+          calendarLoading={previewMode ? false : calendarLoading}
+          calendarError={previewMode ? null : calendarError}
+          calendarConnected={previewMode ? false : calendarConnected}
+          onConnectCalendar={previewMode ? undefined : handleConnectCalendar}
           onAddToLineUp={addToLineUp}
           onEditTask={openEditTask}
           onToggleComplete={handleToggleTaskComplete}
