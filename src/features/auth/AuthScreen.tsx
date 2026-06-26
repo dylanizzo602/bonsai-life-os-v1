@@ -122,7 +122,7 @@ export function AuthScreen() {
           }}
         />
       ) : (
-        <main className="flex items-center justify-center px-6 py-12">
+        <main className="flex flex-1 items-center justify-center px-6 py-12">
           <div className="flex w-full max-w-[440px] flex-col items-center">
             {/* Brand identity */}
             <div className="mb-6 text-center">

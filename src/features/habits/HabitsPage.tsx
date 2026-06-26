@@ -14,7 +14,7 @@ import { HabitRemindersPanel } from './components/HabitRemindersPanel'
 import { HabitSectionHeader } from './components/HabitSectionHeader'
 import type { HabitEntry, HabitWithStreaks } from './types'
 import { isHabitScheduledOnDate } from './utils/habitScheduling'
-import { peekSearchOpenIntent, clearSearchOpenIntent } from '../search/searchOpenIntent'
+import { useSearchOpenIntent } from '../search/hooks/useSearchOpenIntent'
 import { useVacationMode } from '../settings/useVacationMode'
 
 /** Format YYYY-MM-DD for a friendly label */
@@ -132,19 +132,22 @@ export function HabitsPage() {
   }
 
   /* Global search: open habit edit modal when navigated from search result */
-  useEffect(() => {
-    const intent = peekSearchOpenIntent()
-    if (intent?.kind !== 'habit') return
-    const habit = habitsWithStreaks.find((h) => h.id === intent.id)
-    if (!habit) return
+  useSearchOpenIntent({
+    kinds: 'habit',
+    ready: !loading,
+    onMatch: (intent) => {
+      if (intent.kind !== 'habit') return false
 
-    clearSearchOpenIntent()
-    const frame = requestAnimationFrame(() => {
-      setEditingHabit(habit)
-      setModalOpen(true)
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [habitsWithStreaks])
+      const habit = habitsWithStreaks.find((h) => h.id === intent.id)
+      if (!habit) return false
+
+      requestAnimationFrame(() => {
+        setEditingHabit(habit)
+        setModalOpen(true)
+      })
+    },
+    deps: [habitsWithStreaks, loading],
+  })
 
   const hasHabits = habitsWithStreaks.length > 0
 

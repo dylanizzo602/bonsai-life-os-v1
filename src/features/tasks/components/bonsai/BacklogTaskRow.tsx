@@ -17,6 +17,7 @@ import { BonsaiTaskStatusButton } from './BonsaiTaskStatusButton'
 import { StatusPickerModal } from '../../modals/StatusPickerModal'
 import { PriorityPickerModal } from '../../modals/PriorityPickerModal'
 import { getTaskDisplayStatus, getTaskStatusFromDisplayStatus } from '../../TaskStatusIndicator'
+import { useTaskListLayout } from '../../taskListItemShared'
 import type { UpdateTaskInput } from '../../types'
 
 interface BacklogTaskRowProps {
@@ -53,6 +54,7 @@ export function BacklogTaskRow({
   onUpdateTask,
 }: BacklogTaskRowProps) {
   const timeZone = useUserTimeZone()
+  const viewport = useTaskListLayout()
   const statusButtonRef = useRef<HTMLButtonElement>(null)
   const priorityButtonRef = useRef<HTMLButtonElement>(null)
   const [statusPickerOpen, setStatusPickerOpen] = useState(false)
@@ -60,11 +62,71 @@ export function BacklogTaskRow({
   const primaryTag = task.tags[0]
   const dateDisplay = getBacklogDateDisplay(task, timeZone)
   const dateColorClass = getDueDateColorClass(task.due_date, timeZone)
-  const statusSize = size === 'sm' ? 'sm' : 'md'
-  const titleClass =
-    size === 'sm'
-      ? 'text-on-surface-variant text-sm flex-1'
-      : 'text-body font-medium text-on-surface-variant transition-colors group-hover:text-on-surface'
+  const isRecurring = Boolean(task.recurrence_pattern)
+  const showPriority = task.goal_id || task.priority !== 'none'
+  const showSubtaskBadge = Boolean(task.parent_id && parentTaskTitle != null)
+  const isCompact = size === 'sm'
+  const statusSize = viewport === 'desktop' && !isCompact ? 'md' : 'sm'
+
+  /* Typography: smaller on mobile/tablet, body/secondary sizes on desktop */
+  const titleClass = isCompact
+    ? 'text-xs font-medium text-on-surface-variant lg:text-sm'
+    : 'text-sm font-medium text-on-surface-variant transition-colors group-hover:text-on-surface lg:text-body'
+  const metadataClass = isCompact
+    ? 'text-[9px] font-medium text-outline/70 lg:text-[10px]'
+    : 'text-[11px] font-medium text-outline/70 lg:text-secondary'
+  const calendarIconClass = isCompact
+    ? 'text-[10px] lg:text-[12px]'
+    : 'text-[11px] lg:text-[14px]'
+  const syncIconClass = isCompact
+    ? 'text-[9px] lg:text-[10px]'
+    : 'text-[9px] lg:text-[12px]'
+  const blockIconClass = isCompact
+    ? 'text-[10px] lg:text-[12px]'
+    : 'text-[11px] lg:text-[14px]'
+  const priorityFlagClass = isCompact
+    ? 'text-sm lg:text-lg'
+    : 'text-base lg:text-xl'
+  const priorityTrophyClass = isCompact
+    ? 'h-3.5 w-3.5 lg:h-4 lg:w-4'
+    : 'h-4 w-4 lg:h-5 lg:w-5'
+
+  const hasMetadataRow =
+    showSubtaskBadge || primaryTag || enrichment.isBlocked || dateDisplay || showPriority
+
+  /* Priority control: tappable when onUpdateTask is set */
+  const renderPriorityIndicator = (flagClass: string, trophyClass: string) => {
+    if (task.goal_id) {
+      return (
+        <TrophyIcon
+          className={`${trophyClass} shrink-0 stroke-yellow-500 fill-yellow-100 text-yellow-600`}
+          aria-hidden
+        />
+      )
+    }
+    return <PriorityFlagIcon priority={task.priority} className={flagClass} />
+  }
+
+  const renderPriorityControl = (flagClass: string, trophyClass: string) => {
+    if (!showPriority) return null
+    const indicator = renderPriorityIndicator(flagClass, trophyClass)
+    if (!onUpdateTask) return indicator
+    return (
+      <button
+        ref={priorityButtonRef}
+        type="button"
+        data-task-interactive
+        onClick={(e) => {
+          e.stopPropagation()
+          setPriorityPickerOpen(true)
+        }}
+        className="shrink-0 rounded p-0.5 transition-colors hover:bg-surface-container-low"
+        aria-label={task.goal_id ? 'Edit priority (linked to goal)' : 'Edit priority'}
+      >
+        {indicator}
+      </button>
+    )
+  }
 
   return (
     <>
@@ -105,11 +167,12 @@ export function BacklogTaskRow({
             onOpen()
           }
         }}
-        className={`group flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-transparent px-3 transition-all hover:border-outline-variant hover:bg-surface-container-low lg:items-center lg:justify-start lg:gap-4 lg:rounded-xl lg:border-transparent lg:px-4 lg:hover:bg-surface-container ${
-          size === 'sm' ? 'py-2 lg:py-2' : 'py-3 lg:py-4'
+        className={`group flex cursor-pointer items-start gap-1.5 rounded-lg border border-transparent px-2.5 transition-all hover:border-outline-variant hover:bg-surface-container-low lg:gap-2 lg:rounded-xl lg:px-4 lg:hover:bg-surface-container ${
+          isCompact ? 'py-1.5 lg:py-2' : 'py-2.5 lg:py-3.5'
         }`}
       >
-        <div className="flex items-center gap-2">
+        {/* Leading controls: expand chevron + status button */}
+        <div className="flex shrink-0 items-center gap-1 pt-0.5">
           {showChevron ? (
             <button
               type="button"
@@ -123,7 +186,7 @@ export function BacklogTaskRow({
             >
               <MaterialIcon
                 name="chevron_right"
-                className={`text-sm transition-transform ${expanded ? 'rotate-90' : ''}`}
+                className={`text-xs transition-transform lg:text-sm ${expanded ? 'rotate-90' : ''}`}
               />
             </button>
           ) : null}
@@ -143,59 +206,46 @@ export function BacklogTaskRow({
           />
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-          <span className={`min-w-0 truncate ${titleClass}`}>{task.title}</span>
-          {task.parent_id && parentTaskTitle != null ? (
-            <span
-              className="text-[10px] font-medium uppercase tracking-tight text-outline"
-              title={`Subtask of ${parentTaskTitle}`}
-            >
-              Subtask
-            </span>
-          ) : null}
-          {primaryTag ? (
-            <span className={getBacklogTagPillClassName(primaryTag)}>{primaryTag.name}</span>
-          ) : null}
-          {enrichment.isBlocked ? (
-            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-tighter text-error">
-              <MaterialIcon name="block" className="text-[14px]" />
-              <span>Blocked</span>
-            </span>
-          ) : null}
-        </div>
+        {/* Content: title row, then compact metadata row */}
+        <div className="min-w-0 flex-1">
+          <span className={`block min-w-0 truncate ${titleClass}`}>{task.title}</span>
 
-        <div className={`flex shrink-0 items-center gap-6 text-[11px] font-medium ${dateColorClass}`}>
-          {dateDisplay ? <span className="flex items-center gap-1">{dateDisplay}</span> : null}
-          {task.goal_id || task.priority !== 'none' ? (
-            onUpdateTask ? (
-              <button
-                ref={priorityButtonRef}
-                type="button"
-                data-task-interactive
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setPriorityPickerOpen(true)
-                }}
-                className="shrink-0 rounded p-0.5 transition-colors hover:bg-surface-container-low"
-                aria-label={task.goal_id ? 'Edit priority (linked to goal)' : 'Edit priority'}
-              >
-                {task.goal_id ? (
-                  <TrophyIcon
-                    className="h-5 w-5 shrink-0 stroke-yellow-500 fill-yellow-100 text-yellow-600"
-                    aria-hidden
-                  />
-                ) : (
-                  <PriorityFlagIcon priority={task.priority} className="text-xl" />
-                )}
-              </button>
-            ) : task.goal_id ? (
-              <TrophyIcon
-                className="h-5 w-5 shrink-0 stroke-yellow-500 fill-yellow-100 text-yellow-600"
-                aria-hidden
-              />
-            ) : (
-              <PriorityFlagIcon priority={task.priority} className="text-xl" />
-            )
+          {hasMetadataRow ? (
+            <div
+              className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 lg:mt-1 lg:gap-x-3 lg:gap-y-1 ${metadataClass}`}
+            >
+              {showSubtaskBadge ? (
+                <span
+                  className="shrink-0 uppercase tracking-tight text-outline"
+                  title={`Subtask of ${parentTaskTitle}`}
+                >
+                  Subtask
+                </span>
+              ) : null}
+              {primaryTag ? (
+                <span
+                  className={`${getBacklogTagPillClassName(primaryTag)} max-lg:px-1.5 max-lg:py-px max-lg:text-[9px]`}
+                >
+                  {primaryTag.name}
+                </span>
+              ) : null}
+              {enrichment.isBlocked ? (
+                <span className="flex shrink-0 items-center gap-0.5 font-bold uppercase tracking-tighter text-error lg:gap-1">
+                  <MaterialIcon name="block" className={blockIconClass} />
+                  <span>Blocked</span>
+                </span>
+              ) : null}
+              {dateDisplay ? (
+                <span className={`flex shrink-0 items-center gap-0.5 lg:gap-1 ${dateColorClass}`}>
+                  <MaterialIcon name="calendar_today" className={calendarIconClass} />
+                  <span>{dateDisplay}</span>
+                  {isRecurring ? (
+                    <MaterialIcon name="sync" className={syncIconClass} aria-hidden />
+                  ) : null}
+                </span>
+              ) : null}
+              {renderPriorityControl(priorityFlagClass, priorityTrophyClass)}
+            </div>
           ) : null}
         </div>
       </div>

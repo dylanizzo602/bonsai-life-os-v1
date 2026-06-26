@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { consumeQuickAddIntent } from '../layout/quickAddIntent'
-import { peekSearchOpenIntent, clearSearchOpenIntent } from '../search/searchOpenIntent'
+import { useSearchOpenIntent } from '../search/hooks/useSearchOpenIntent'
 import { AddEditTaskModal } from './AddEditTaskModal'
 import { TaskList } from './TaskList'
 import { TasksBonsaiView } from './components/bonsai/TasksBonsaiView'
@@ -17,7 +17,7 @@ import { computeBlockedTaskIds, computeBlockingTaskIds } from './utils/dependenc
 import { useTasks } from './hooks/useTasks'
 import { useTodaysLineup } from './hooks/useTodaysLineup'
 import { useHabits } from '../habits/hooks/useHabits'
-import { getDependenciesForTaskIds } from '../../lib/supabase/tasks'
+import { getDependenciesForTaskIds, getTasksByIds } from '../../lib/supabase/tasks'
 import { useTags } from './hooks/useTags'
 import { FilterModal } from './modals/FilterModal'
 import type { Task } from './types'
@@ -492,18 +492,25 @@ export function TasksPage() {
   }
 
   /* Global search: open task edit modal when navigated from search result */
-  useEffect(() => {
-    const intent = peekSearchOpenIntent()
-    if (intent?.kind !== 'task') return
-    const task = tasks.find((t) => t.id === intent.id)
-    if (!task) return
+  useSearchOpenIntent({
+    kinds: 'task',
+    ready: !loading,
+    onMatch: async (intent) => {
+      if (intent.kind !== 'task') return false
 
-    clearSearchOpenIntent()
-    const frame = requestAnimationFrame(() => {
-      openEdit(task)
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [tasks])
+      let task = tasks.find((t) => t.id === intent.id)
+      if (!task) {
+        const fetched = await getTasksByIds([intent.id])
+        task = fetched[0]
+      }
+      if (!task) return false
+
+      requestAnimationFrame(() => {
+        openEdit(task)
+      })
+    },
+    deps: [tasks, loading],
+  })
 
   const closeModal = () => {
     setIsModalOpen(false)

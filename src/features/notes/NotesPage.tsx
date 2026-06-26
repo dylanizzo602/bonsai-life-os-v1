@@ -1,7 +1,7 @@
 /* Notes page: Library/detail container with hierarchical pages per document */
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { consumeQuickAddIntent } from '../layout/quickAddIntent'
-import { peekSearchOpenIntent, clearSearchOpenIntent } from '../search/searchOpenIntent'
+import { useSearchOpenIntent } from '../search/hooks/useSearchOpenIntent'
 import { useNotes } from './hooks/useNotes'
 import { useNoteFolders } from './hooks/useNoteFolders'
 import { useNotePages } from './hooks/useNotePages'
@@ -134,39 +134,39 @@ export function NotesPage() {
     if (consumeQuickAddIntent() === 'note') void handleNewNote()
   }, [handleNewNote])
 
-  /* Global search: open note or filter folder from search result */
-  useEffect(() => {
-    const intent = peekSearchOpenIntent()
-    if (!intent) return
+  /* Global search: filter library to folder from search result */
+  useSearchOpenIntent({
+    kinds: 'note_folder',
+    onMatch: (intent) => {
+      if (intent.kind !== 'note_folder') return false
 
-    if (intent.kind === 'note_folder') {
-      clearSearchOpenIntent()
-      const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
         setSelectedFolderId(intent.id)
         setSelectedNoteId(null)
         setSelectedPageId(null)
       })
-      return () => cancelAnimationFrame(frame)
-    }
+    },
+  })
 
-    if (intent.kind === 'note') {
-      if (loading) return
+  /* Global search: open note doc view from search result */
+  useSearchOpenIntent({
+    kinds: 'note',
+    ready: !loading,
+    onMatch: (intent) => {
+      if (intent.kind !== 'note') return false
+
       const noteExists = notes.some((n) => n.id === intent.id)
-      if (!noteExists) {
-        clearSearchOpenIntent()
-        return
-      }
+      if (!noteExists) return true
 
-      clearSearchOpenIntent()
       const notePages = pagesByNoteId[intent.id]
       const pageId = intent.pageId ?? getDefaultSelectedPageId(notePages ?? []) ?? null
-      const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
         setSelectedNoteId(intent.id)
         setSelectedPageId(pageId)
       })
-      return () => cancelAnimationFrame(frame)
-    }
-  }, [notes, pagesByNoteId, loading])
+    },
+    deps: [notes, pagesByNoteId, loading],
+  })
 
   const handleNoteClick = useCallback((id: string) => {
     setSelectedNoteId(id)

@@ -11,7 +11,7 @@ import { JournalEntryEditor } from './components/JournalEntryEditor'
 import { WeeklyEntryView } from './components/WeeklyEntryView'
 import { useReflections } from './hooks/useReflections'
 import { useBriefingStatus } from './hooks/useBriefingStatus'
-import { peekSearchOpenIntent, clearSearchOpenIntent } from '../search/searchOpenIntent'
+import { useSearchOpenIntent } from '../search/hooks/useSearchOpenIntent'
 
 interface ReflectionsPageProps {
   /** Open morning briefing; pass true to continue today's session from the greeting */
@@ -79,27 +79,23 @@ export function ReflectionsPage({ onOpenMorningBriefing }: ReflectionsPageProps)
   }, [])
 
   /* Global search: open reflection entry from search result */
-  useEffect(() => {
-    const intent = peekSearchOpenIntent()
-    if (intent?.kind !== 'reflection') return
+  useSearchOpenIntent({
+    kinds: 'reflection',
+    onMatch: async (intent) => {
+      if (intent.kind !== 'reflection') return false
 
-    const existing = entries.find((e) => e.id === intent.id)
-    if (existing) {
-      clearSearchOpenIntent()
-      void openEntry(existing)
-      return
-    }
+      const existing = entries.find((e) => e.id === intent.id)
+      if (existing) {
+        await openEntry(existing)
+        return
+      }
 
-    let cancelled = false
-    void getReflectionEntry(intent.id).then((entry) => {
-      if (cancelled || !entry) return
-      clearSearchOpenIntent()
-      void openEntry(entry)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [entries, openEntry])
+      const entry = await getReflectionEntry(intent.id)
+      if (!entry) return false
+      await openEntry(entry)
+    },
+    deps: [entries, openEntry],
+  })
 
   const handleBackToList = useCallback(() => {
     setSelectedEntry(null)

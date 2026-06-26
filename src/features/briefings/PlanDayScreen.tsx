@@ -6,7 +6,7 @@ import { BacklogAddPanel } from './components/BacklogAddPanel'
 import { BriefingLineupTaskRow } from './components/BriefingLineupTaskRow'
 import { BriefingShell, BriefingScreenHeading } from './components/BriefingShell'
 import type { CalendarAgendaEvent } from './types'
-import type { Task } from '../tasks/types'
+import type { Task, TaskStatus } from '../tasks/types'
 
 interface PlanDayScreenProps {
   lineupTasks: Task[]
@@ -19,7 +19,7 @@ interface PlanDayScreenProps {
   onConnectCalendar?: () => void
   onAddToLineUp: (taskId: string) => void
   onEditTask: (task: Task) => void
-  onToggleComplete: (taskId: string) => void
+  onUpdateStatus?: (taskId: string, status: TaskStatus) => Promise<void>
   onClose?: () => void
 }
 
@@ -37,7 +37,7 @@ export function PlanDayScreen({
   onConnectCalendar,
   onAddToLineUp,
   onEditTask,
-  onToggleComplete,
+  onUpdateStatus,
   onClose,
 }: PlanDayScreenProps) {
   return (
@@ -77,7 +77,7 @@ export function PlanDayScreen({
                     key={task.id}
                     task={task}
                     goalName={task.goal_id ? goalsById[task.goal_id] : null}
-                    onToggleComplete={onToggleComplete}
+                    onUpdateStatus={onUpdateStatus}
                     onEdit={onEditTask}
                   />
                 ))}

@@ -11,10 +11,14 @@ export type SearchOpenIntent =
 
 const STORAGE_KEY = 'bonsai_search_open_intent'
 
-/** Store intent before navigating; target page consumes on mount */
+/** Custom event fired when a new search open intent is stored (same-section navigation) */
+export const SEARCH_OPEN_INTENT_EVENT = 'bonsai:search-open-intent'
+
+/** Store intent before navigating; target page consumes on mount or via event */
 export function setSearchOpenIntent(intent: SearchOpenIntent): void {
   if (typeof window === 'undefined') return
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(intent))
+  window.dispatchEvent(new CustomEvent(SEARCH_OPEN_INTENT_EVENT))
 }
 
 /** Parse stored intent JSON */
@@ -66,4 +70,11 @@ export function consumeSearchOpenIntent(): SearchOpenIntent | null {
   const intent = peekSearchOpenIntent()
   clearSearchOpenIntent()
   return intent
+}
+
+/** Subscribe to search open intent updates; returns unsubscribe */
+export function subscribeSearchOpenIntent(listener: () => void): () => void {
+  if (typeof window === 'undefined') return () => {}
+  window.addEventListener(SEARCH_OPEN_INTENT_EVENT, listener)
+  return () => window.removeEventListener(SEARCH_OPEN_INTENT_EVENT, listener)
 }

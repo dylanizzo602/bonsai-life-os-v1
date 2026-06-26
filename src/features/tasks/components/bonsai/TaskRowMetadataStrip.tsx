@@ -21,6 +21,8 @@ interface TaskRowMetadataStripProps {
   primaryTag?: Tag | null
   /** Resolved goal title when task.goal_id is set */
   goalName?: string | null
+  /** Optional leading items (e.g. date + priority) rendered in the same metadata row */
+  leadingContent?: ReactNode
 }
 
 /**
@@ -33,6 +35,7 @@ export function TaskRowMetadataStrip({
   compact = false,
   primaryTag = null,
   goalName = null,
+  leadingContent = null,
 }: TaskRowMetadataStripProps) {
   const iconClass = compact ? 'text-[14px]' : 'text-[16px]'
   const textClass = compact
@@ -168,10 +171,11 @@ export function TaskRowMetadataStrip({
     })
   }
 
-  if (items.length === 0) return null
+  if (items.length === 0 && !leadingContent) return null
 
   return (
     <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+      {leadingContent}
       {items.map((item) => (
         <span key={item.key}>{item.node}</span>
       ))}

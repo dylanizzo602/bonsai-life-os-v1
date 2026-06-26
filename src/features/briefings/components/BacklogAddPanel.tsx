@@ -2,7 +2,10 @@
 
 import { useMemo, useState } from 'react'
 import { MaterialIcon } from '../../../components/MaterialIcon'
+import { useUserTimeZone } from '../../settings/useUserTimeZone'
 import type { Task } from '../../tasks/types'
+import { taskDateToComparableMs } from '../../tasks/utils/date'
+import { getDueDateColorClass, getLineupDateDisplay } from '../../tasks/utils/taskRowDisplay'
 
 interface BacklogAddPanelProps {
   candidates: Task[]
@@ -19,16 +22,26 @@ function matchesSearch(task: Task, query: string): boolean {
   )
 }
 
+/** Sort backlog candidates by due date (soonest first; no due date last). */
+function sortByDueDate(tasks: Task[], timeZone: string): Task[] {
+  return [...tasks].sort((a, b) => {
+    const aDue = taskDateToComparableMs(a.due_date, timeZone) ?? Number.MAX_SAFE_INTEGER
+    const bDue = taskDateToComparableMs(b.due_date, timeZone) ?? Number.MAX_SAFE_INTEGER
+    return aDue - bDue
+  })
+}
+
 /**
  * Searchable backlog list for adding tasks to Today's Lineup.
  */
 export function BacklogAddPanel({ candidates, onAddToLineUp }: BacklogAddPanelProps) {
+  const timeZone = useUserTimeZone()
   const [query, setQuery] = useState('')
 
   const filtered = useMemo(() => {
-    const list = candidates.filter((t) => matchesSearch(t, query))
+    const list = sortByDueDate(candidates.filter((t) => matchesSearch(t, query)), timeZone)
     return list.slice(0, 10)
-  }, [candidates, query])
+  }, [candidates, query, timeZone])
 
   return (
     <div className="rounded-xl bg-surface-container p-6">
@@ -52,12 +65,17 @@ export function BacklogAddPanel({ candidates, onAddToLineUp }: BacklogAddPanelPr
         {filtered.length === 0 ? (
           <p className="text-secondary text-sm text-on-surface-variant">No matching tasks</p>
         ) : (
-          filtered.map((task) => (
+          filtered.map((task) => {
+            const dateDisplay = getLineupDateDisplay(task, timeZone)
+            const dateColorClass = getDueDateColorClass(task.due_date, timeZone)
+            const isRecurring = Boolean(task.recurrence_pattern)
+
+            return (
             <button
               key={task.id}
               type="button"
               onClick={() => onAddToLineUp(task.id)}
-              className="group flex w-full items-center justify-between rounded-lg bg-surface-container-low/50 p-3 text-left transition-colors hover:bg-surface-container-high"
+              className="group flex w-full items-center justify-between gap-3 rounded-lg bg-surface-container-low/50 p-3 text-left transition-colors hover:bg-surface-container-high"
             >
               <div className="flex min-w-0 items-center gap-3">
                 <MaterialIcon
@@ -66,11 +84,20 @@ export function BacklogAddPanel({ candidates, onAddToLineUp }: BacklogAddPanelPr
                 />
                 <span className="text-body truncate text-sm text-on-surface-variant">{task.title}</span>
               </div>
-              <span className="text-secondary shrink-0 rounded bg-surface-container-highest px-2 py-0.5 text-[10px] text-outline">
-                {task.tags[0]?.name ?? 'Backlog'}
-              </span>
+              {dateDisplay ? (
+                <div
+                  className={`flex shrink-0 items-center gap-0.5 text-[10px] font-medium leading-tight ${dateColorClass}`}
+                >
+                  <MaterialIcon name="calendar_today" className="text-[11px]" />
+                  {dateDisplay}
+                  {isRecurring ? (
+                    <MaterialIcon name="sync" className="text-[10px]" aria-hidden />
+                  ) : null}
+                </div>
+              ) : null}
             </button>
-          ))
+            )
+          })
         )}
       </div>
     </div>

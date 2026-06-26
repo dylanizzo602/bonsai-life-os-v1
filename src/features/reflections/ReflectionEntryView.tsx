@@ -29,7 +29,9 @@ interface ReflectionEntryViewProps {
   /** Label for the back button */
   backLabel?: string
   /** Called when user clicks back */
-  onBack: () => void
+  onBack?: () => void
+  /** When true, omit the back button (e.g. inside a modal with its own close control) */
+  hideBackButton?: boolean
 }
 
 /** Labels for morning briefing questions shown in detail view (excludes removed weekly prompts) */
@@ -55,6 +57,7 @@ export function ReflectionEntryView({
   responses,
   backLabel = 'Back to list',
   onBack,
+  hideBackButton = false,
 }: ReflectionEntryViewProps) {
   const r = responses as MorningBriefingResponses
   /* Only show prompts that were answered (skip empty / deprecated fields) */
@@ -86,9 +89,11 @@ export function ReflectionEntryView({
           </div>
         ))}
       </div>
-      <Button type="button" variant="secondary" onClick={onBack}>
-        {backLabel}
-      </Button>
+      {!hideBackButton && onBack ? (
+        <Button type="button" variant="secondary" onClick={onBack}>
+          {backLabel}
+        </Button>
+      ) : null}
     </div>
   )
 }

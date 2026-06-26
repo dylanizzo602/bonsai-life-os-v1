@@ -12,7 +12,7 @@ import { CompletedGoalsForest } from './CompletedGoalsForest'
 import { GoalDrawer } from './GoalDrawer'
 import { AddEditGoalModal } from './AddEditGoalModal'
 import type { Goal } from './types'
-import { consumeSearchOpenIntent } from '../search/searchOpenIntent'
+import { useSearchOpenIntent } from '../search/hooks/useSearchOpenIntent'
 
 /**
  * Goals page component.
@@ -24,13 +24,22 @@ export function GoalsPage() {
   const { goals, loading, error, createGoal, createGoalWithSetup, updateGoal, refetch, patchGoal } = useGoals()
   const { milestonesByGoal, taskTreesByMilestoneId, progressByGoalId } = useGoalMilestoneProgress(goals)
   const { considerPrompting, modal: goalReflectionModal } = useGoalCompletionReflection()
-  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(() => {
-    const intent = consumeSearchOpenIntent()
-    if (intent?.kind === 'goal') return intent.id
-    if (intent?.kind === 'milestone') return intent.goalId
-    return null
-  })
+  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+
+  /* Global search: open goal drawer when navigated from search result */
+  useSearchOpenIntent({
+    kinds: ['goal', 'milestone'],
+    onMatch: (intent) => {
+      if (intent.kind === 'goal') {
+        requestAnimationFrame(() => setSelectedGoalId(intent.id))
+        return
+      }
+      if (intent.kind === 'milestone') {
+        requestAnimationFrame(() => setSelectedGoalId(intent.goalId))
+      }
+    },
+  })
 
   /* Split goals into active, inactive, and completed sections */
   const { activeGoals, inactiveGoals, completedGoals } = useMemo(() => {

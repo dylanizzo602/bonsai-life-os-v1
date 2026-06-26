@@ -19,9 +19,10 @@ import {
   saveOrUpdateMorningBriefingEntryForToday,
   getRandomReflectionEntryYearsAgoToday,
   getTodaysMorningBriefingEntry,
+  getReflectionEntry,
 } from '../../lib/supabase/reflections'
 import { useTodaysLineup } from '../tasks/hooks/useTodaysLineup'
-import type { Task } from '../tasks/types'
+import type { Task, TaskStatus } from '../tasks/types'
 import type { MorningBriefingResponses } from '../reflections/types'
 import type { ReflectionEntry } from '../reflections/types'
 import type { HabitWithStreaks } from '../habits/types'
@@ -41,6 +42,7 @@ import { GratitudeReflectionScreen } from './GratitudeReflectionScreen'
 import { CompletionScreen } from './CompletionScreen'
 import { OverviewScreen } from './OverviewScreen'
 import { AddEditTaskModal } from '../tasks/AddEditTaskModal'
+import { ReflectionEntryModal } from '../reflections/components/ReflectionEntryModal'
 import type { InboxItem } from '../home/types'
 import { useAuth } from '../auth/AuthContext'
 import { getDueStatus } from '../tasks/utils/date'
@@ -206,6 +208,10 @@ export function BriefingsPage({
       cancelled = true
     }
   }, [previewMode, timeZone])
+
+  /* Years-ago entry modal: read full entry without leaving the briefing */
+  const [yearsAgoModalEntry, setYearsAgoModalEntry] = useState<ReflectionEntry | null>(null)
+  const [yearsAgoModalLoading, setYearsAgoModalLoading] = useState(false)
 
   /* Milestones completed yesterday for review stats */
   const [milestonesReachedYesterday, setMilestonesReachedYesterday] = useState(0)
@@ -626,6 +632,20 @@ export function BriefingsPage({
     [previewMode, toggleComplete],
   )
 
+  const handleUpdateTaskStatus = useCallback(
+    async (taskId: string, status: TaskStatus) => {
+      if (previewMode && isPreviewFixtureId(taskId)) return
+      if (status === 'completed') {
+        await toggleComplete(taskId, true)
+        await refetchTasks()
+        return
+      }
+      await updateTask(taskId, { status })
+      await refetchTasks()
+    },
+    [previewMode, toggleComplete, updateTask, refetchTasks],
+  )
+
   /* Goal milestone handlers for Sunday review */
   const refreshGoalMilestones = useCallback(async (goalId: string) => {
     const goalBefore = goals.find((g) => g.id === goalId)
@@ -758,11 +778,29 @@ export function BriefingsPage({
   }, [])
 
   const handleReadYearsAgoEntry = useCallback(
-    (_entry: ReflectionEntry) => {
-      onNavigateToReflections?.()
+    async (entry: ReflectionEntry) => {
+      setYearsAgoModalEntry(entry)
+      if (previewMode || isPreviewFixtureId(entry.id)) {
+        setYearsAgoModalLoading(false)
+        return
+      }
+      setYearsAgoModalLoading(true)
+      try {
+        const full = (await getReflectionEntry(entry.id)) ?? entry
+        setYearsAgoModalEntry(full)
+      } catch {
+        setYearsAgoModalEntry(entry)
+      } finally {
+        setYearsAgoModalLoading(false)
+      }
     },
-    [onNavigateToReflections],
+    [previewMode],
   )
+
+  const closeYearsAgoModal = useCallback(() => {
+    setYearsAgoModalEntry(null)
+    setYearsAgoModalLoading(false)
+  }, [])
 
   /* Footer action slot by step */
   const footerAction = useMemo(() => {
@@ -967,7 +1005,7 @@ export function BriefingsPage({
           onConnectCalendar={previewMode ? undefined : handleConnectCalendar}
           onAddToLineUp={addToLineUp}
           onEditTask={openEditTask}
-          onToggleComplete={handleToggleTaskComplete}
+          onUpdateStatus={handleUpdateTaskStatus}
           onClose={onClose}
         />
       )}
@@ -1054,6 +1092,13 @@ export function BriefingsPage({
         onRemoveDependency={onRemoveDependency}
       />
       {goalReflectionModal}
+
+      <ReflectionEntryModal
+        isOpen={yearsAgoModalEntry != null}
+        entry={yearsAgoModalEntry}
+        loading={yearsAgoModalLoading}
+        onClose={closeYearsAgoModal}
+      />
     </div>
   )
 }

@@ -305,54 +305,41 @@ export function LineupTaskCard({
 
           </div>
 
-          <div className="min-w-0 flex-1 space-y-3">
+          <div className="min-w-0 flex-1 space-y-1">
 
-            <div className="flex items-start justify-between gap-2">
+            {/* Mobile: task title gets the full row */}
+            <h3
+              className={`font-semibold leading-tight text-on-surface ${isCompleted ? 'line-through opacity-50' : ''}`}
+            >
+              {task.title}
+            </h3>
 
-              <h3
-
-                className={`min-w-0 flex-1 font-semibold leading-tight text-on-surface ${isCompleted ? 'line-through opacity-50' : ''}`}
-
-              >
-
-                {task.title}
-
-              </h3>
-
-              {/* Mobile: due date immediately left of priority flag (matches desktop row) */}
-              {(dateDisplay || showFlag || task.goal_id) ? (
-                <div className="flex shrink-0 items-center gap-2">
-                  {dateDisplay ? (
-                    <div
-                      className={`flex items-center gap-1 text-[12px] font-medium ${dateColorClass}`}
-                    >
-                      <MaterialIcon name="calendar_today" className="text-[16px]" />
-                      <span>{dateDisplay}</span>
-                      {isRecurring ? (
-                        <MaterialIcon name="sync" className="text-[14px]" aria-hidden />
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {renderPriorityControl('text-2xl', 'h-6 w-6', !isDesktopLineupLayout)}
-                </div>
-              ) : null}
-
-            </div>
-
+            {/* Mobile: dates, priority, and metadata icons share one row */}
             <TaskRowMetadataStrip
-
               task={task}
-
               enrichment={enrichment}
-
               showChecklistAsSubtasks
-
               compact
-
               primaryTag={primaryTagForStrip}
-
               goalName={goalName}
-
+              leadingContent={
+                dateDisplay || showFlag || task.goal_id ? (
+                  <>
+                    {dateDisplay ? (
+                      <span
+                        className={`flex items-center gap-1 text-[12px] font-medium ${dateColorClass}`}
+                      >
+                        <MaterialIcon name="calendar_today" className="text-[16px]" />
+                        <span>{dateDisplay}</span>
+                        {isRecurring ? (
+                          <MaterialIcon name="sync" className="text-[14px]" aria-hidden />
+                        ) : null}
+                      </span>
+                    ) : null}
+                    {renderPriorityControl('text-xl', 'h-5 w-5', !isDesktopLineupLayout)}
+                  </>
+                ) : null
+              }
             />
 
           </div>
